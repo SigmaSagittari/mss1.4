@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="src"><UniqueIdentifier>{3B8E3CF7-0B08-4D68-AB35-7A861B1EA1B2}</UniqueIdentifier></Filter>
+    <Filter Include="src\algo"><UniqueIdentifier>{6D0B2A2B-5BC2-4B0D-B765-86C20E4B5A3A}</UniqueIdentifier></Filter>
+    <Filter Include="src\algo\bruteforce"><UniqueIdentifier>{B4BDB0EF-1C25-45B2-A35B-3B03DD2D98DD}</UniqueIdentifier></Filter>
+    <Filter Include="src\algo\probability"><UniqueIdentifier>{D2E3F11F-9DE0-4688-8E70-5A6AB62311AC}</UniqueIdentifier></Filter>
+    <Filter Include="src\algo\shape_solver"><UniqueIdentifier>{7F6B3F4A-6018-4E2D-91D2-30B2BDBB8AD1}</UniqueIdentifier></Filter>
+    <Filter Include="src\core"><UniqueIdentifier>{0ACB0F25-DDF1-44A7-A94C-A07B72E9BC85}</UniqueIdentifier></Filter>
+    <Filter Include="src\core\utility"><UniqueIdentifier>{B3E89C88-5D3D-41F8-BC0C-E1DE8EA5DDE7}</UniqueIdentifier></Filter>
+    <Filter Include="src\test"><UniqueIdentifier>{A2BCF0D8-1BAE-4A88-A5C6-07C67F598A94}</UniqueIdentifier></Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\main.cpp"><Filter>src</Filter></ClCompile>
+    <ClCompile Include="src\algo\basic.cpp"><Filter>src\algo</Filter></ClCompile>
+    <ClCompile Include="src\algo\bruteforce\bruteforce.cpp"><Filter>src\algo\bruteforce</Filter></ClCompile>
+    <ClCompile Include="src\algo\observed_board.cpp"><Filter>src\algo</Filter></ClCompile>
+    <ClCompile Include="src\algo\probability\global_solver.cpp"><Filter>src\algo\probability</Filter></ClCompile>
+    <ClCompile Include="src\algo\probability\observe.cpp"><Filter>src\algo\probability</Filter></ClCompile>
+    <ClCompile Include="src\algo\probability\probability.cpp"><Filter>src\algo\probability</Filter></ClCompile>
+    <ClCompile Include="src\algo\shape_solver\dfs_solver.cpp"><Filter>src\algo\shape_solver</Filter></ClCompile>
+    <ClCompile Include="src\algo\shape_solver\graph_solver.cpp"><Filter>src\algo\shape_solver</Filter></ClCompile>
+    <ClCompile Include="src\algo\shape_solver\shape_solver.cpp"><Filter>src\algo\shape_solver</Filter></ClCompile>
+    <ClCompile Include="src\algo\structure.cpp"><Filter>src\algo</Filter></ClCompile>
+    <ClCompile Include="src\test\basic.cpp"><Filter>src\test</Filter></ClCompile>
+    <ClCompile Include="src\test\bruteforce.cpp"><Filter>src\test</Filter></ClCompile>
+    <ClCompile Include="src\test\common.cpp"><Filter>src\test</Filter></ClCompile>
+    <ClCompile Include="src\test\flat_hashtable.cpp"><Filter>src\test</Filter></ClCompile>
+    <ClCompile Include="src\test\harness.cpp"><Filter>src\test</Filter></ClCompile>
+    <ClCompile Include="src\test\observed_board.cpp"><Filter>src\test</Filter></ClCompile>
+    <ClCompile Include="src\test\radix_sort.cpp"><Filter>src\test</Filter></ClCompile>
+    <ClCompile Include="src\test\structure.cpp"><Filter>src\test</Filter></ClCompile>
+    <ClCompile Include="src\test\bruteforce_initial.cpp"><Filter>src\test</Filter></ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\algo\basic.h"><Filter>src\algo</Filter></ClInclude>
+    <ClInclude Include="src\algo\bruteforce\bruteforce.h"><Filter>src\algo\bruteforce</Filter></ClInclude>
+    <ClInclude Include="src\algo\observed_board.h"><Filter>src\algo</Filter></ClInclude>
+    <ClInclude Include="src\algo\probability\global_solver.h"><Filter>src\algo\probability</Filter></ClInclude>
+    <ClInclude Include="src\algo\probability\observe.h"><Filter>src\algo\probability</Filter></ClInclude>
+    <ClInclude Include="src\algo\probability\probability.h"><Filter>src\algo\probability</Filter></ClInclude>
+    <ClInclude Include="src\algo\shape_solver\dfs_solver.h"><Filter>src\algo\shape_solver</Filter></ClInclude>
+    <ClInclude Include="src\algo\shape_solver\graph_solver.h"><Filter>src\algo\shape_solver</Filter></ClInclude>
+    <ClInclude Include="src\algo\shape_solver\shape_solver.h"><Filter>src\algo\shape_solver</Filter></ClInclude>
+    <ClInclude Include="src\algo\structure.h"><Filter>src\algo</Filter></ClInclude>
+    <ClInclude Include="src\core\assert.h"><Filter>src\core</Filter></ClInclude>
+    <ClInclude Include="src\core\config.h"><Filter>src\core</Filter></ClInclude>
+    <ClInclude Include="src\core\types.h"><Filter>src\core</Filter></ClInclude>
+    <ClInclude Include="src\core\utility\combinatorics.h"><Filter>src\core\utility</Filter></ClInclude>
+    <ClInclude Include="src\core\utility\dynamic_bitset.h"><Filter>src\core\utility</Filter></ClInclude>
+    <ClInclude Include="src\core\utility\flat_hashtable.h"><Filter>src\core\utility</Filter></ClInclude>
+    <ClInclude Include="src\core\utility\grid.h"><Filter>src\core\utility</Filter></ClInclude>
+    <ClInclude Include="src\core\utility\hash.h"><Filter>src\core\utility</Filter></ClInclude>
+    <ClInclude Include="src\core\utility\radix_sort.h"><Filter>src\core\utility</Filter></ClInclude>
+    <ClInclude Include="src\core\utility\rng.h"><Filter>src\core\utility</Filter></ClInclude>
+    <ClInclude Include="src\test\basic.h"><Filter>src\test</Filter></ClInclude>
+    <ClInclude Include="src\test\bruteforce.h"><Filter>src\test</Filter></ClInclude>
+    <ClInclude Include="src\test\common.h"><Filter>src\test</Filter></ClInclude>
+    <ClInclude Include="src\test\flat_hashtable.h"><Filter>src\test</Filter></ClInclude>
+    <ClInclude Include="src\test\harness.h"><Filter>src\test</Filter></ClInclude>
+    <ClInclude Include="src\test\observed_board.h"><Filter>src\test</Filter></ClInclude>
+    <ClInclude Include="src\test\radix_sort.h"><Filter>src\test</Filter></ClInclude>
+    <ClInclude Include="src\test\structure.h"><Filter>src\test</Filter></ClInclude>
+  </ItemGroup>
+</Project>
