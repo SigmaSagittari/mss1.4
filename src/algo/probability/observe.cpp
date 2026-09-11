@@ -3,26 +3,22 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
+#include <numeric>
+#include <utility>
 
 #include "algo/shape_solver/dfs_solver.h"
+#include "algo/shape_solver/graph_solver.h"
 #include "core/assert.h"
 #include "core/utility/combinatorics.h"
 
-namespace mss {
-
-namespace Probability {
+namespace mss::Probability {
 
 namespace {
 
 struct Poly {
     int start = 0;
     std::vector<long double> coeffs;
-};
-
-struct Transfer {
-    int h = 0;
-    int y = 0;
-    long double ways = 0.0L;
 };
 
 struct Workspace {
@@ -32,12 +28,10 @@ struct Workspace {
     std::vector<ComponentId> captured;
     std::vector<char> seen;
     std::vector<int> adjacentBoxCells;
-    std::vector<Transfer> transfers;
-    std::vector<std::pair<int, int>> transferRanges;
-    std::vector<std::array<long double, 9>> accumulated;
     std::vector<long double> dp;
     std::vector<long double> nextDp;
     std::vector<long double> restWays;
+    std::vector<ObserveTransfer> transfers;
 };
 
 thread_local Workspace workspace;
@@ -52,60 +46,6 @@ void polyMultiply(int leftStart, std::span<const long double> left,
         for (int j = 0; j < static_cast<int>(right.size()); ++j)
             out.coeffs[i + j] += left[i] * right[j];
     out.start = leftStart + rightStart;
-}
-
-void buildTransfer(const Structure::Shape& shape, std::span<const int> adjacent,
-                   int xBox, std::vector<Transfer>& out) {
-    int maxTotal = 0;
-    for (const auto& box : shape.boxes) maxTotal += box.size;
-    Workspace& ws = workspace;
-    ws.accumulated.assign(maxTotal + 1, {});
-
-    ShapeSolver::DfsSolver::forEachAssignment(
-        shape, [&](std::span<const char> assignment, long double ways) {
-            int totalMines = 0;
-            std::array<long double, 9> convolution{};
-            convolution[0] = 1.0L;
-            for (std::size_t boxId = 0; boxId < assignment.size(); ++boxId) {
-                const int mines = assignment[boxId];
-                totalMines += mines;
-                const int adjacentCount = adjacent[boxId];
-                const bool isXBox = static_cast<int>(boxId) == xBox;
-                if (adjacentCount == 0 && !isXBox) continue;
-
-                const int size = shape.boxes[boxId].size;
-                const int pool = isXBox ? size - 1 : size;
-                std::array<long double, 9> local{};
-                const int maxAdjacentMines = (std::min)(adjacentCount, mines);
-                for (int adjacentMines = 0;
-                     adjacentMines <= maxAdjacentMines; ++adjacentMines) {
-                    const int remaining = mines - adjacentMines;
-                    if (remaining > pool - adjacentCount) continue;
-                    local[adjacentMines] =
-                        combLog(adjacentCount, adjacentMines) *
-                        combLog(pool - adjacentCount, remaining) /
-                        combLog(size, mines);
-                }
-
-                std::array<long double, 9> next{};
-                for (int h = 0; h <= 8; ++h)
-                    if (convolution[h] != 0.0L)
-                        for (int adjacentMines = 0; adjacentMines <= 8 - h;
-                             ++adjacentMines)
-                            next[h + adjacentMines] +=
-                                convolution[h] * local[adjacentMines];
-                convolution = next;
-            }
-            for (int h = 0; h <= 8; ++h)
-                if (convolution[h] != 0.0L)
-                    ws.accumulated[totalMines][h] += ways * convolution[h];
-        });
-
-    for (int totalMines = 0; totalMines <= maxTotal; ++totalMines)
-        for (int h = 0; h <= 8; ++h)
-            if (ws.accumulated[totalMines][h] != 0.0L)
-                out.push_back(
-                    {h, totalMines, ws.accumulated[totalMines][h]});
 }
 
 void polyMultiplyInto(Poly& accumulator, int sourceStart,
@@ -129,6 +69,17 @@ long double denominator(const Poly& polynomial, int totalMines, int tSum) {
 
 }  // namespace
 
+void buildObserveTable(const Structure::Shape& shape,
+                       std::span<const int> adjacentBoxCells, int xBox,
+                       std::vector<ObserveTransfer>& out) {
+    out.clear();
+    if (static_cast<int>(shape.boxes.size()) < ShapeSolver::graphThreshold)
+        return ShapeSolver::DfsSolver::buildObserveTable(
+            shape, adjacentBoxCells, xBox, out);
+    ShapeSolver::GraphSolver::buildObserveTable(
+        shape, adjacentBoxCells, xBox, out);
+}
+
 ObserveResult observe(const ObservedBoard::Result& board,
                       const Basic::Result& basic,
                       const Structure::Result& structure,
@@ -142,7 +93,8 @@ ObserveResult observe(const ObservedBoard::Result& board,
     const int totalMines = board.totalMines - basic.mineSum;
     ObserveResult result;
 
-    if (board.board[x][y] != ObservedBoard::CellState::Hidden) return result;
+    assert_(board.board[x][y] == ObservedBoard::CellState::Hidden,
+            "Probability::observe: cell 必须是 Hidden");
     if (basic.marks[x][y] == Mark::Mine) {
         result.probability[9] = 1.0L;
         return result;
@@ -159,8 +111,6 @@ ObserveResult observe(const ObservedBoard::Result& board,
 
     ws.captured.clear();
     ws.seen.assign(structure.components.size(), 0);
-    ws.transfers.clear();
-    ws.transferRanges.clear();
     forEachAdjacent(x, y, board.rows, board.cols, [&](int nx, int ny) {
         if (basic.marks[nx][ny] == Mark::Mine) {
             ++fixedMines;
@@ -182,7 +132,32 @@ ObserveResult observe(const ObservedBoard::Result& board,
     for (const ComponentId component : ws.captured) {
         const Structure::Instance& instance = structure.components[component];
         const Structure::Shape& shape = shapes.get(instance.shape);
-        for (const auto& box : shape.boxes) maxCapturedMines += box.size;
+        for (const Structure::Shape::Box& box : shape.boxes)
+            maxCapturedMines += box.size;
+    }
+
+    const int stride = maxCapturedMines + 1;
+    ws.dp.assign(9 * stride, 0.0L);
+    ws.dp[0] = 1.0L;
+    auto applyTransfer = [&](const ObserveTransfer& transfer) {
+        for (int neighborMines = 0;
+             neighborMines + transfer.neighborMines <= 8;
+             ++neighborMines)
+            for (int capturedMines = 0;
+                 capturedMines + transfer.componentMines <= maxCapturedMines;
+                 ++capturedMines) {
+                const long double base =
+                    ws.dp[neighborMines * stride + capturedMines];
+                if (base == 0.0L) continue;
+                ws.nextDp[(neighborMines + transfer.neighborMines) * stride +
+                          capturedMines + transfer.componentMines] +=
+                    base * transfer.ways;
+            }
+    };
+
+    for (const ComponentId component : ws.captured) {
+        const Structure::Instance& instance = structure.components[component];
+        const Structure::Shape& shape = shapes.get(instance.shape);
 
         ws.adjacentBoxCells.assign(shape.boxes.size(), 0);
         for (std::size_t box = 0; box < shape.boxes.size(); ++box)
@@ -194,42 +169,19 @@ ObserveResult observe(const ObservedBoard::Result& board,
                     ++ws.adjacentBoxCells[box];
             }
 
-        const int offset = static_cast<int>(ws.transfers.size());
-        buildTransfer(shape, ws.adjacentBoxCells,
-                      component == xComponent ? xBox : -1, ws.transfers);
-        ws.transferRanges.emplace_back(
-            offset, static_cast<int>(ws.transfers.size()) - offset);
+        ws.nextDp.assign(9 * stride, 0.0L);
+        buildObserveTable(shape, ws.adjacentBoxCells,
+                          component == xComponent ? static_cast<int>(xBox) : -1,
+                          ws.transfers);
+        for (const ObserveTransfer& transfer : ws.transfers)
+            applyTransfer(transfer);
+        ws.dp.swap(ws.nextDp);
     }
 
     if (unknownNeighbors > 0) {
-        const int offset = static_cast<int>(ws.transfers.size());
-        for (int mines = 0; mines <= unknownNeighbors; ++mines)
-            ws.transfers.push_back(
-                {mines, mines, combLog(unknownNeighbors, mines)});
-        ws.transferRanges.emplace_back(
-            offset, static_cast<int>(ws.transfers.size()) - offset);
-    }
-
-    const int stride = maxCapturedMines + 1;
-    ws.dp.assign(9 * stride, 0.0L);
-    ws.dp[0] = 1.0L;
-    for (const auto [offset, count] : ws.transferRanges) {
         ws.nextDp.assign(9 * stride, 0.0L);
-        for (int i = 0; i < count; ++i) {
-            const Transfer& transfer = ws.transfers[offset + i];
-            for (int neighborMines = 0;
-                 neighborMines + transfer.h <= 8; ++neighborMines)
-                for (int capturedMines = 0;
-                     capturedMines + transfer.y <= maxCapturedMines;
-                     ++capturedMines) {
-                    const long double base =
-                        ws.dp[neighborMines * stride + capturedMines];
-                    if (base == 0.0L) continue;
-                    ws.nextDp[(neighborMines + transfer.h) * stride +
-                              capturedMines + transfer.y] +=
-                        base * transfer.ways;
-                }
-        }
+        for (int mines = 0; mines <= unknownNeighbors; ++mines)
+            applyTransfer({mines, mines, combLog(unknownNeighbors, mines)});
         ws.dp.swap(ws.nextDp);
     }
 
@@ -240,10 +192,8 @@ ObserveResult observe(const ObservedBoard::Result& board,
          component < static_cast<ComponentId>(structure.components.size());
          ++component) {
         if (ws.seen[component]) continue;
-        const Structure::Shape& shape =
-            shapes.get(structure.components[component].shape);
-        const DistributionId id =
-            ShapeSolver::analyze(shape, distributions);
+        const DistributionId id = ShapeSolver::analyze(
+            shapes.get(structure.components[component].shape), distributions);
         const auto& distribution = distributions.get(id);
         polyMultiplyInto(ws.rest, distribution.start(), distribution.ways(),
                          ws.mult);
@@ -292,6 +242,248 @@ ObserveResult observe(const ObservedBoard::Result& board,
     return result;
 }
 
-}  // namespace Probability
+}  // namespace mss::Probability
 
-}  // namespace mss
+namespace mss::ShapeSolver::DfsSolver {
+
+void buildObserveTable(
+    const Structure::Shape& shape, std::span<const int> adjacentBoxCells,
+    int xBox, std::vector<Probability::ObserveTransfer>& out) {
+    int maxMineCount = 0;
+    for (const Structure::Shape::Box& box : shape.boxes)
+        maxMineCount += box.size;
+
+    thread_local std::vector<std::array<long double, 9>> accumulated;
+    accumulated.assign(maxMineCount + 1, {});
+
+    forEachAssignment(shape, [&](std::span<const char> assignment,
+                                 long double weight) {
+        int componentMines = 0;
+        std::array<long double, 9> convolution{};
+        convolution[0] = 1.0L;
+
+        for (std::size_t boxId = 0; boxId < assignment.size(); ++boxId) {
+            const int mines = assignment[boxId];
+            componentMines += mines;
+            const int adjacent = adjacentBoxCells[boxId];
+            const bool isXBox = static_cast<int>(boxId) == xBox;
+            if (adjacent == 0 && !isXBox) continue;
+
+            const int size = shape.boxes[boxId].size;
+            const int pool = isXBox ? size - 1 : size;
+            std::array<long double, 9> local{};
+            const int maxAdjacent = (std::min)(adjacent, mines);
+            for (int adjacentMines = 0;
+                 adjacentMines <= maxAdjacent; ++adjacentMines) {
+                const int remaining = mines - adjacentMines;
+                if (remaining > pool - adjacent) continue;
+                local[adjacentMines] =
+                    combLog(adjacent, adjacentMines) *
+                    combLog(pool - adjacent, remaining) /
+                    combLog(size, mines);
+            }
+
+            std::array<long double, 9> next{};
+            for (int h = 0; h <= 8; ++h)
+                if (convolution[h] != 0.0L)
+                    for (int adjacentMines = 0; adjacentMines <= 8 - h;
+                         ++adjacentMines)
+                        next[h + adjacentMines] +=
+                            convolution[h] * local[adjacentMines];
+            convolution = next;
+        }
+
+        for (int h = 0; h <= 8; ++h)
+            if (convolution[h] != 0.0L)
+                accumulated[componentMines][h] += weight * convolution[h];
+    });
+
+    for (int componentMines = 0; componentMines <= maxMineCount;
+         ++componentMines)
+        for (int neighborMines = 0; neighborMines <= 8; ++neighborMines)
+            if (accumulated[componentMines][neighborMines] != 0.0L)
+                out.push_back({neighborMines, componentMines,
+                               accumulated[componentMines][neighborMines]});
+}
+
+}  // namespace mss::ShapeSolver::DfsSolver
+
+namespace mss::ShapeSolver::GraphSolver {
+
+namespace {
+
+using detail::StepPlan;
+
+struct ObserveLayer {
+    struct Count {
+        int componentMines = 0;
+        int neighborMines = 0;
+        long double ways = 0.0L;
+        int next = -1;
+    };
+
+    struct State {
+        std::size_t frontierOffset = 0;
+        int firstCount = -1;
+        int lastCount = -1;
+    };
+
+    std::vector<State> states;
+    std::vector<Count> counts;
+    std::vector<char> frontierValues;
+    FlatHashTable<U128, std::size_t, U128Hash> index;
+
+    void reset() {
+        states.clear();
+        counts.clear();
+        frontierValues.clear();
+        index.clear();
+
+        states.push_back({0, 0, 0});
+        counts.push_back({0, 0, 1.0L, -1});
+    }
+
+    Count& findOrAddCount(State& state, int componentMines,
+                          int neighborMines) {
+        for (int i = state.firstCount; i >= 0; i = counts[i].next)
+            if (counts[i].componentMines == componentMines &&
+                counts[i].neighborMines == neighborMines)
+                return counts[i];
+
+        const int index = static_cast<int>(counts.size());
+        counts.push_back({componentMines, neighborMines, 0.0L, -1});
+        if (state.lastCount >= 0)
+            counts[state.lastCount].next = index;
+        else
+            state.firstCount = index;
+        state.lastCount = index;
+        return counts.back();
+    }
+
+    void advance(const StepPlan& plan, ObserveLayer& nextLayer,
+                 std::span<const int> adjacentBoxCells, int xBox) const {
+        nextLayer.states.clear();
+        nextLayer.counts.clear();
+        nextLayer.frontierValues.clear();
+        nextLayer.index.clear();
+        nextLayer.states.reserve(states.size() * (plan.boxSize + 1));
+        nextLayer.counts.reserve(counts.size() * (plan.boxSize + 1));
+        nextLayer.frontierValues.reserve(
+            frontierValues.size() + plan.boxSize + 1);
+
+        const int adjacent = adjacentBoxCells[plan.box];
+        const bool isXBox = static_cast<int>(plan.box) == xBox;
+        const int size = plan.boxSize;
+        const int pool = isXBox ? size - 1 : size;
+
+        for (const State& state : states) {
+            int minMine = 0;
+            int maxMine = plan.boxSize;
+            for (const StepPlan::Check& check : plan.checks) {
+                int partial = 0;
+                for (int i = 0; i < check.readCount; ++i)
+                    partial += frontierValues[state.frontierOffset +
+                                              check.readSlots[i]];
+                minMine = (std::max)(minMine,
+                                     check.sum - partial - check.remainingSize);
+                maxMine = (std::min)(maxMine, check.sum - partial);
+            }
+
+            for (int mine = minMine; mine <= maxMine; ++mine) {
+                U128Hasher hasher;
+                for (int source : plan.gather) {
+                    const char value = source < 0
+                                           ? static_cast<char>(mine)
+                                           : frontierValues[state.frontierOffset +
+                                                            source];
+                    hasher.mix(static_cast<std::uint64_t>(
+                        static_cast<unsigned char>(value)));
+                }
+                const U128 hash = hasher.finalize();
+
+                State* target;
+                if (const std::size_t* found = nextLayer.index.find(hash)) {
+                    target = &nextLayer.states[*found];
+                } else {
+                    const std::size_t id = nextLayer.states.size();
+                    nextLayer.states.push_back(
+                        {nextLayer.frontierValues.size(), -1, -1});
+                    for (int source : plan.gather)
+                        nextLayer.frontierValues.push_back(
+                            source < 0
+                                ? static_cast<char>(mine)
+                                : frontierValues[state.frontierOffset + source]);
+                    nextLayer.index.emplace(hash, id);
+                    target = &nextLayer.states.back();
+                }
+
+                if (!isXBox && adjacent == 0) {
+                    const long double factor =
+                        DfsSolver::detail::binom(size, mine);
+                    for (int sourceIndex = state.firstCount;
+                         sourceIndex >= 0;
+                         sourceIndex = counts[sourceIndex].next) {
+                        const Count& source = counts[sourceIndex];
+                        Count& destination = nextLayer.findOrAddCount(
+                            *target, source.componentMines + mine,
+                            source.neighborMines);
+                        destination.ways += source.ways * factor;
+                    }
+                    continue;
+                }
+
+                const int maxAdjacent = (std::min)(adjacent, mine);
+                for (int neighborMines = 0;
+                     neighborMines <= maxAdjacent; ++neighborMines) {
+                    const int remaining = mine - neighborMines;
+                    if (remaining > pool - adjacent) continue;
+                    const long double factor =
+                        DfsSolver::detail::binom(adjacent, neighborMines) *
+                        DfsSolver::detail::binom(pool - adjacent, remaining);
+                    for (int sourceIndex = state.firstCount;
+                         sourceIndex >= 0;
+                         sourceIndex = counts[sourceIndex].next) {
+                        const Count& source = counts[sourceIndex];
+                        if (source.neighborMines + neighborMines > 8) continue;
+                        Count& destination = nextLayer.findOrAddCount(
+                            *target, source.componentMines + mine,
+                            source.neighborMines + neighborMines);
+                        destination.ways += source.ways * factor;
+                    }
+                }
+            }
+        }
+    }
+
+    void emit(std::vector<Probability::ObserveTransfer>& out) const {
+        for (const State& state : states)
+            for (int index = state.firstCount; index >= 0;
+                 index = counts[index].next) {
+                const Count& count = counts[index];
+                if (count.ways == 0.0L) continue;
+                out.push_back({count.neighborMines, count.componentMines,
+                               count.ways});
+            }
+    }
+};
+
+}  // namespace
+
+void buildObserveTable(
+    const Structure::Shape& shape, std::span<const int> adjacentBoxCells,
+    int xBox, std::vector<Probability::ObserveTransfer>& out) {
+    const detail::Graph graph = detail::Graph::fromShape(shape);
+    const std::vector<BoxId> order =
+        detail::makeOrder(graph, PolishKind::Adjacent);
+
+    ObserveLayer current;
+    ObserveLayer next;
+    current.reset();
+    detail::walkSteps(shape, order, [&](const detail::StepPlan& plan) {
+        current.advance(plan, next, adjacentBoxCells, xBox);
+        std::swap(current, next);
+    });
+    current.emit(out);
+}
+
+}  // namespace mss::ShapeSolver::GraphSolver

@@ -1,5 +1,11 @@
 #pragma once
 
+#include <algorithm>
+#include <array>
+#include <span>
+#include <utility>
+#include <vector>
+
 #include "algo/shape_solver/shape_solver.h"
 
 namespace mss {
@@ -12,6 +18,273 @@ enum class PolishKind {
     Adjacent,
     Window3,
 };
+
+namespace detail {
+
+struct Graph {
+    std::vector<int> offsets;
+    std::vector<BoxId> adjacent;
+
+    static Graph fromShape(const Structure::Shape& shape) {
+        const int boxCount = static_cast<int>(shape.boxes.size());
+        Graph graph;
+        graph.offsets.assign(boxCount + 1, 0);
+
+        std::vector<int> head(boxCount, -1);
+        std::vector<BoxId> to;
+        std::vector<int> next;
+        std::vector<char> marked(boxCount, 0);
+
+        auto addEdge = [&](BoxId from, BoxId target) {
+            next.push_back(head[from]);
+            to.push_back(target);
+            head[from] = static_cast<int>(to.size()) - 1;
+        };
+
+        for (int i = 0; i < static_cast<int>(shape.constraintCount()); ++i) {
+            const Structure::Shape::ConstraintView constraint = shape.constraint(i);
+            for (int a = 0; a < static_cast<int>(constraint.boxIds.size()); ++a)
+                for (int b = a + 1; b < static_cast<int>(constraint.boxIds.size()); ++b) {
+                    addEdge(constraint.boxIds[a], constraint.boxIds[b]);
+                    addEdge(constraint.boxIds[b], constraint.boxIds[a]);
+                }
+        }
+
+        for (BoxId box = 0; box < boxCount; ++box) {
+            for (int edge = head[box]; edge >= 0; edge = next[edge]) {
+                const BoxId target = to[edge];
+                if (marked[target]) continue;
+                marked[target] = 1;
+                ++graph.offsets[box + 1];
+            }
+            for (int edge = head[box]; edge >= 0; edge = next[edge])
+                marked[to[edge]] = 0;
+        }
+        for (int box = 0; box < boxCount; ++box)
+            graph.offsets[box + 1] += graph.offsets[box];
+
+        graph.adjacent.resize(graph.offsets.back());
+        for (BoxId box = 0; box < boxCount; ++box) {
+            int write = graph.offsets[box];
+            for (int edge = head[box]; edge >= 0; edge = next[edge]) {
+                const BoxId target = to[edge];
+                if (marked[target]) continue;
+                marked[target] = 1;
+                graph.adjacent[write++] = target;
+            }
+            for (int edge = head[box]; edge >= 0; edge = next[edge])
+                marked[to[edge]] = 0;
+        }
+        return graph;
+    }
+
+    std::span<const BoxId> neighbors(BoxId box) const {
+        const int begin = offsets[box];
+        const int end = offsets[box + 1];
+        return {adjacent.data() + begin, static_cast<std::size_t>(end - begin)};
+    }
+};
+
+inline std::pair<int, int> orderScore(const Graph& graph, const std::vector<BoxId>& order) {
+    const int boxCount = static_cast<int>(order.size());
+    std::vector<int> remaining(graph.offsets.size() - 1);
+    std::vector<char> selected(remaining.size(), 0);
+    for (BoxId box = 0; box < boxCount; ++box)
+        remaining[box] = static_cast<int>(graph.neighbors(box).size());
+
+    int frontier = 0;
+    int peak = 0;
+    int area = 0;
+    for (BoxId box : order) {
+        if (remaining[box] != 0) ++frontier;
+        for (BoxId neighbor : graph.neighbors(box))
+            if (selected[neighbor] && remaining[neighbor] == 1)
+                --frontier;
+        selected[box] = 1;
+        for (BoxId neighbor : graph.neighbors(box)) --remaining[neighbor];
+        peak = (std::max)(peak, frontier);
+        area += frontier;
+    }
+    return {peak, area};
+}
+
+inline std::vector<BoxId> makeOrder(const Graph& graph, PolishKind polish) {
+    const int boxCount = static_cast<int>(graph.offsets.size()) - 1;
+    std::vector<BoxId> order;
+    order.reserve(boxCount);
+    std::vector<int> remaining(boxCount);
+    std::vector<char> selected(boxCount, 0);
+    for (BoxId box = 0; box < boxCount; ++box)
+        remaining[box] = static_cast<int>(graph.neighbors(box).size());
+
+    for (int step = 0; step < boxCount; ++step) {
+        BoxId best = -1;
+        int bestDelta = 0;
+        for (BoxId candidate = 0; candidate < boxCount; ++candidate) {
+            if (selected[candidate]) continue;
+            int closes = 0;
+            for (BoxId neighbor : graph.neighbors(candidate))
+                if (selected[neighbor] && remaining[neighbor] == 1)
+                    ++closes;
+            const int delta = static_cast<int>(remaining[candidate] != 0) - closes;
+            if (best < 0 || delta < bestDelta) {
+                best = candidate;
+                bestDelta = delta;
+            }
+        }
+
+        selected[best] = 1;
+        order.push_back(best);
+        for (BoxId neighbor : graph.neighbors(best)) --remaining[neighbor];
+    }
+
+    if (polish == PolishKind::Window3) {
+        for (int start = 0; start < boxCount; start += 3) {
+            const int length = (std::min)(3, boxCount - start);
+            std::array<BoxId, 3> candidate{};
+            std::array<BoxId, 3> best{};
+            for (int i = 0; i < length; ++i) {
+                candidate[i] = order[start + i];
+                best[i] = candidate[i];
+            }
+            std::pair<int, int> bestScore = orderScore(graph, order);
+
+            auto consider = [&] {
+                for (int i = 0; i < length; ++i) order[start + i] = candidate[i];
+                const std::pair<int, int> score = orderScore(graph, order);
+                if (score < bestScore) {
+                    bestScore = score;
+                    best = candidate;
+                }
+            };
+
+            if (length == 1) {
+                consider();
+            } else if (length == 2) {
+                if (candidate[1] < candidate[0]) std::swap(candidate[0], candidate[1]);
+                consider();
+                std::swap(candidate[0], candidate[1]);
+                consider();
+            } else {
+                std::sort(candidate.begin(), candidate.end());
+                do {
+                    consider();
+                } while (std::next_permutation(candidate.begin(), candidate.end()));
+            }
+            for (int i = 0; i < length; ++i) order[start + i] = best[i];
+        }
+    }
+    return order;
+}
+
+struct StepPlan {
+    struct Check {
+        int sum = 0;
+        int remainingSize = 0;
+        std::array<int, 8> readSlots{};
+        int readCount = 0;
+    };
+
+    struct Closing {
+        BoxId box = 0;
+        int oldSlot = -1;
+    };
+
+    BoxId box = 0;
+    int boxSize = 0;
+    std::vector<Check> checks;
+    std::vector<int> gather;
+    std::vector<Closing> closings;
+};
+
+
+
+template <typename Callback>
+inline void walkSteps(const Structure::Shape& shape, const std::vector<BoxId>& order,
+               Callback&& callback) {
+    const int boxCount = static_cast<int>(shape.boxes.size());
+    std::vector<int> position(boxCount);
+    for (int step = 0; step < boxCount; ++step) position[order[step]] = step;
+
+    const int constraintCount = static_cast<int>(shape.constraintCount());
+    std::vector<int> constraintLast(constraintCount, -1);
+    std::vector<int> boxHead(boxCount, -1);
+    std::vector<int> nextLink;
+    std::vector<int> constraintIds;
+    for (int constraint = 0; constraint < constraintCount; ++constraint) {
+        const Structure::Shape::ConstraintView view = shape.constraint(constraint);
+        for (BoxId box : view.boxIds)
+            constraintLast[constraint] = (std::max)(constraintLast[constraint], position[box]);
+        for (BoxId box : view.boxIds) {
+            nextLink.push_back(boxHead[box]);
+            constraintIds.push_back(constraint);
+            boxHead[box] = static_cast<int>(constraintIds.size()) - 1;
+        }
+    }
+
+    std::vector<int> closeStep = position;
+    for (int constraint = 0; constraint < constraintCount; ++constraint)
+        for (BoxId box : shape.constraint(constraint).boxIds)
+            closeStep[box] = (std::max)(closeStep[box], constraintLast[constraint]);
+
+    std::vector<int> closeHead(boxCount, -1);
+    std::vector<int> closeNext(boxCount, -1);
+    for (BoxId box = 0; box < boxCount; ++box) {
+        closeNext[box] = closeHead[closeStep[box]];
+        closeHead[closeStep[box]] = box;
+    }
+
+    std::vector<BoxId> layout;
+    std::vector<BoxId> nextLayout;
+    std::vector<int> slotOf(boxCount, -1);
+    StepPlan plan;
+    for (int step = 0; step < boxCount; ++step) {
+        plan.box = order[step];
+        plan.boxSize = shape.boxes[plan.box].size;
+        plan.checks.clear();
+        plan.gather.clear();
+        plan.closings.clear();
+
+        for (int link = boxHead[plan.box]; link >= 0; link = nextLink[link]) {
+            const Structure::Shape::ConstraintView view =
+                shape.constraint(constraintIds[link]);
+            StepPlan::Check check;
+            check.sum = view.sum;
+            for (BoxId member : view.boxIds) {
+                if (position[member] < step)
+                    check.readSlots[check.readCount++] = slotOf[member];
+                else if (position[member] > step)
+                    check.remainingSize += shape.boxes[member].size;
+            }
+            plan.checks.push_back(check);
+        }
+
+        nextLayout.clear();
+        for (std::size_t oldSlot = 0; oldSlot < layout.size(); ++oldSlot) {
+            const BoxId box = layout[oldSlot];
+            if (closeStep[box] == step) continue;
+            plan.gather.push_back(static_cast<int>(oldSlot));
+            nextLayout.push_back(box);
+        }
+        if (closeStep[plan.box] > step) {
+            plan.gather.push_back(-1);
+            nextLayout.push_back(plan.box);
+        }
+        for (BoxId box = closeHead[step]; box >= 0; box = closeNext[box])
+            plan.closings.push_back({box, box == plan.box ? -1 : slotOf[box]});
+
+        callback(plan);
+
+        std::fill(slotOf.begin(), slotOf.end(), -1);
+        for (int slot = 0; slot < static_cast<int>(nextLayout.size()); ++slot)
+            slotOf[nextLayout[slot]] = slot;
+        layout.swap(nextLayout);
+    }
+}
+
+
+
+}  // namespace detail
 
 // Graph DP 后端的普通分布求解。
 DistributionId analyze(const Structure::Shape& shape, Distribution::Pool& pool,

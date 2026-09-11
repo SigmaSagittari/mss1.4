@@ -22,11 +22,6 @@ namespace {
 using ConfigId = std::uint32_t;
 using CandidateId = std::uint32_t;
 
-struct SafeEntry {
-    U128 hash;
-    ConfigId p = 0;
-};
-
 struct Session {
     struct Candidate {
         int x = 0;
@@ -57,10 +52,8 @@ struct ScratchBuffers {
         std::vector<int> suffix;
         std::array<std::vector<ConfigId>, 9> groups;
         std::vector<std::pair<int, int>> groupList;
-        std::vector<SafeEntry> safeEntries;
-        std::vector<SafeEntry> safeEntriesTmp;
-        std::vector<ConfigId> safeConfigs;
-        std::vector<std::span<const ConfigId>> safeGroupList;
+        std::vector<U128> safeHashes;
+        std::vector<std::span<ConfigId>> safeGroupList;
     };
 
     Layer& layer(int depth) {
@@ -76,9 +69,7 @@ struct ScratchBuffers {
             l.suffix.clear();
             for (std::vector<ConfigId>& g : l.groups) g.clear();
             l.groupList.clear();
-            l.safeEntries.clear();
-            l.safeEntriesTmp.clear();
-            l.safeConfigs.clear();
+            l.safeHashes.clear();
             l.safeGroupList.clear();
         }
     }
@@ -282,7 +273,7 @@ Session buildSession(const ObservedBoard::Result& board,
 }
 
 template <bool CheckAllMoves, bool IsRoot>
-int solve(Session& s, std::span<const ConfigId> configs, int need, int depth,
+int solve(Session& s, std::span<ConfigId> configs, int need, int depth,
           FlatHashTable<U128, int, U128Hash>& cache, Result& result) {
     // 正数是满足 need 的精确 wins；负数表示未求出精确值，-返回值是真实上界；
     // 零表示上界为零。负值让上界沿递归直接向上传递，避免父节点再次查缓存。
@@ -320,9 +311,11 @@ int solve(Session& s, std::span<const ConfigId> configs, int need, int depth,
         ++s.nodes;
         const int n = configs.size();
         if (n <= 1) {
+            // n <= 1 是刻意的终止语义，不是遗漏检查：唯一配置已经确定，
+            // 此处直接返回其可胜配置数；根节点仅顺便回填落子位置。
             if (need > n) return -n;
             if constexpr (IsRoot) if (n == 1)
-                for (int j = 0; j < s.candidates.size(); ++j)
+                for (int j = 0; j < (int)s.candidates.size(); ++j)
                     if (!mineAt(s, configs[0], j)) {
                         result.moves[0].x = s.candidates[j].x;
                         result.moves[0].y = s.candidates[j].y;
@@ -358,41 +351,43 @@ int solve(Session& s, std::span<const ConfigId> configs, int need, int depth,
             }
             // 安全格在所有配置中都不会死，先统一点开再按观测向量分支。
             for (int j : safeCells) s.unopened.reset(j);
-            std::vector<SafeEntry>& entries = buf.safeEntries;
-            entries.clear();
+            std::vector<U128>& hashes = buf.safeHashes;
+            hashes.clear();
             const std::size_t keyLen = safeCells.size();
             for (ConfigId ci : configs) {
                 U128Hasher hasher;
                 for (std::size_t i = 0; i < keyLen; ++i)
                     hasher.mix(static_cast<std::uint64_t>(revealAt(s, ci, safeCells[i])) * (keyLen + 1) + i);
-                entries.push_back({hasher.finalize(), ci});
+                hashes.push_back(hasher.finalize());
             }
-            radix_sort::sort(entries, buf.safeEntriesTmp,
-                             [](const SafeEntry& e) { return e.hash.hi; },
-                             [](const SafeEntry& e) { return e.hash.lo; },
-                             [](const SafeEntry& e) { return e.p; });
+            radix_sort::sortBy(hashes.size(),
+                               [&](std::size_t i) { return hashes[i]; },
+                               [&](std::size_t dst, std::size_t src) {
+                                   hashes[dst] = hashes[src];
+                                   configs[dst] = configs[src];
+                               },
+                               [&](std::size_t i, std::size_t j) {
+                                   std::swap(hashes[i], hashes[j]);
+                                   std::swap(configs[i], configs[j]);
+                               });
             // radix 后相同观测向量已相邻；只需切连续 span，不再建分组 vector。
-            std::vector<ConfigId>& safeConfigs = buf.safeConfigs;
-            safeConfigs.resize(entries.size());
-            for (std::size_t i = 0; i < entries.size(); ++i)
-                safeConfigs[i] = entries[i].p;
-            std::vector<std::span<const ConfigId>>& groupList = buf.safeGroupList;
+            std::vector<std::span<ConfigId>>& groupList = buf.safeGroupList;
             groupList.clear();
-            for (std::size_t i = 0; i < entries.size();) {
+            for (std::size_t i = 0; i < hashes.size();) {
                 std::size_t j = i + 1;
-                while (j < entries.size() && entries[j].hash == entries[i].hash) ++j;
-                groupList.emplace_back(safeConfigs.data() + i, j - i);
+                while (j < hashes.size() && hashes[j] == hashes[i]) ++j;
+                groupList.emplace_back(configs.data() + i, j - i);
                 i = j;
             }
             std::sort(groupList.begin(), groupList.end(),
                       [](auto a, auto b) { return a.size() > b.size(); });
             std::vector<int>& suffix = buf.suffix;
             suffix.assign(groupList.size() + 1, 0);
-            for (int i = groupList.size() - 1; i >= 0; --i) suffix[i] = suffix[i + 1] + groupList[i].size();
+            for (int i = (int)groupList.size() - 1; i >= 0; --i) suffix[i] = suffix[i + 1] + groupList[i].size();
             int wins = 0;
             bool bailed = false;
             int upper = 0;
-            for (int i = 0; i < groupList.size(); ++i) {
+            for (int i = 0; i < (int)groupList.size(); ++i) {
                 const int size = groupList[i].size();
                 if (wins + size + suffix[i + 1] < need) {
                     upper = wins + size + suffix[i + 1];
@@ -448,13 +443,13 @@ int solve(Session& s, std::span<const ConfigId> configs, int need, int depth,
             std::sort(groupList.begin(), groupList.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
             std::vector<int>& suffix = buf.suffix;
             suffix.assign(groupList.size() + 1, 0);
-            for (int i = groupList.size() - 1; i >= 0; --i) suffix[i] = suffix[i + 1] + groupList[i].second;
+            for (int i = (int)groupList.size() - 1; i >= 0; --i) suffix[i] = suffix[i + 1] + groupList[i].second;
             s.unopened.reset(j);
             int wins = 0;
             bool bailed = false;
             int moveUpper = 0;
-            for (int i = 0; i < groupList.size(); ++i) {
-                const std::vector<ConfigId>& group = groups[groupList[i].first];
+            for (int i = 0; i < (int)groupList.size(); ++i) {
+                std::vector<ConfigId>& group = groups[groupList[i].first];
                 if (wins + groupList[i].second + suffix[i + 1] < target) {
                     moveUpper = wins + groupList[i].second + suffix[i + 1];
                     bailed = true;
@@ -513,7 +508,7 @@ Result solve(const ObservedBoard::Result& board,
     result.possibilities = session.possibilityCount;
     if (session.possibilityCount == 0 || session.candidateCount == 0) return result;
     std::vector<ConfigId> configs(session.possibilityCount);
-    for (ConfigId i = 0; i < session.possibilityCount; ++i) configs[i] = i;
+    for (ConfigId i = 0; (int)i < session.possibilityCount; ++i) configs[i] = i;
 
     if (config.checkAllMoves) {
         solve<true, true>(session, configs, 1, 0, cache, result);

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <array>
 #include <cstddef>
 #include <span>
 #include <vector>
@@ -58,11 +57,6 @@ namespace Probability {
         std::vector<long double> boxProbabilities_;
         long double tCellProbability_ = 0.0L;
         long double candidates_ = 0.0L;
-    };
-
-    // 下标 0..8 为显示数字，下标 9 为爆炸。
-    struct ObserveResult {
-        std::array<long double, 10> probability = {};
     };
 
 }  // namespace Probability

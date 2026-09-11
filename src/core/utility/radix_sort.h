@@ -21,6 +21,110 @@ struct radix_sort {
     // 条目数小于该值时用比较排序，省掉基数排序的固定开销
     static constexpr std::uint32_t kThreshold = 256;
 
+private:
+    template <typename Key>
+    static unsigned char byteAt(const Key& key, std::size_t bi) {
+        if constexpr (std::is_unsigned_v<Key>) {
+            return static_cast<unsigned char>(key >> (bi * 8));
+        } else if constexpr (requires { key.lo; key.hi; }) {
+            if (bi < sizeof(key.lo)) return static_cast<unsigned char>(key.lo >> (bi * 8));
+            return static_cast<unsigned char>(key.hi >> ((bi - sizeof(key.lo)) * 8));
+        } else {
+            static_assert(std::is_unsigned_v<Key>, "radix_sort::sortBy 的键必须是无符号整数或具有 lo/hi 的定宽键");
+        }
+    }
+
+    template <typename Key>
+    static constexpr std::size_t keyBytes() {
+        if constexpr (std::is_unsigned_v<Key>) return sizeof(Key);
+        else if constexpr (requires(const Key& key) { key.lo; key.hi; })
+            return sizeof(std::declval<Key>().lo) + sizeof(std::declval<Key>().hi);
+        else return 0;
+    }
+
+    template <typename Key>
+    static bool lessKey(const Key& lhs, const Key& rhs) {
+        if constexpr (std::is_unsigned_v<Key>) {
+            return lhs < rhs;
+        } else if constexpr (requires { lhs.lo; lhs.hi; }) {
+            return lhs.hi < rhs.hi || (lhs.hi == rhs.hi && lhs.lo < rhs.lo);
+        } else {
+            static_assert(std::is_unsigned_v<Key>, "radix_sort::sortBy 的键必须是无符号整数或具有 lo/hi 的定宽键");
+        }
+    }
+
+public:
+    // 按逻辑下标排序。Reader 读取键，Writer 描述独立目标存储上的复制，
+    // Swapper 描述当前存储上的原地交换；排序器不接触元素的实际布局。
+    template <typename Reader, typename Writer, typename Swapper>
+    static void sortBy(std::size_t n, Reader read, Writer write, Swapper swap) {
+        using Key = std::remove_cvref_t<decltype(read(std::size_t{}))>;
+        static_assert(keyBytes<Key>() != 0, "radix_sort::sortBy 不支持此键类型");
+        (void)write;
+        if (n <= 1) return;
+
+        static thread_local std::vector<std::size_t> target;
+        target.resize(n);
+
+        if (n <= kThreshold) {
+            std::array<std::size_t, kThreshold> order;
+            constexpr std::size_t marker = std::size_t(1) << (sizeof(std::size_t) * 8 - 1);
+            constexpr std::size_t indexMask = ~marker;
+            for (std::size_t i = 0; i < n; ++i) order[i] = i;
+            std::sort(order.begin(), order.begin() + n, [&](std::size_t lhs, std::size_t rhs) {
+                const Key lhsKey = read(lhs);
+                const Key rhsKey = read(rhs);
+                if (lessKey(lhsKey, rhsKey)) return true;
+                if (lessKey(rhsKey, lhsKey)) return false;
+                return lhs < rhs;
+            });
+            for (std::size_t i = 0; i < n; ++i) {
+                if (order[i] & marker) continue;
+                std::size_t source = order[i];
+                order[i] |= marker;
+                if (source == i) continue;
+                swap(i, source);
+                while (source != i) {
+                    const std::size_t nextSource = order[source] & indexMask;
+                    order[source] |= marker;
+                    if (nextSource == i) break;
+                    swap(source, nextSource);
+                    source = nextSource;
+                }
+            }
+            return;
+        }
+
+        // 每趟只保存“当前逻辑位置 -> 稳定目标逻辑位置”的置换。
+        // 置换应用阶段必须用 swap；对同一份存储直接 write 会破坏非平凡环。
+        std::array<std::size_t, 256> next;
+        for (std::size_t bi = 0; bi < keyBytes<Key>(); ++bi) {
+            std::array<std::size_t, 256> count{};
+            for (std::size_t i = 0; i < n; ++i) ++count[byteAt(read(i), bi)];
+            std::size_t offset = 0;
+            for (std::size_t b = 0; b < count.size(); ++b) {
+                next[b] = offset;
+                offset += count[b];
+            }
+            for (std::size_t i = 0; i < n; ++i)
+                target[i] = next[byteAt(read(i), bi)]++;
+            constexpr std::size_t marker = std::size_t(1) << (sizeof(std::size_t) * 8 - 1);
+            constexpr std::size_t indexMask = ~marker;
+            for (std::size_t i = 0; i < n; ++i) {
+                if (target[i] & marker) continue;
+                std::size_t k = target[i];
+                target[i] |= marker;
+                if (k == i) continue;
+                while (k != i) {
+                    const std::size_t nextK = target[k] & indexMask;
+                    target[k] |= marker;
+                    swap(i, k);
+                    k = nextK;
+                }
+            }
+        }
+    }
+
     // 按访问器给出的字段升序排序；tmp 为调用方持有、复用的输出缓冲。
     // 小数组走 std::stable_sort，保持与基数路径一致的稳定语义。
     template <typename Entry, typename... Accessor>
