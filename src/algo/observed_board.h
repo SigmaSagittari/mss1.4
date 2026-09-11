@@ -4,6 +4,7 @@
 #include <utility>
 #include <vector>
 
+#include "core/assert.h"
 #include "core/types.h"
 
 namespace mss {
@@ -49,9 +50,35 @@ struct ObservedBoard {
         void clear() { changes.clear(); }
     };
 
+    //==============================================================================
     static Result analyze(int rows, int cols, int mines) { return Result(rows, cols, mines); }
-    static Delta update(Result& board, Delta delta);
-    static void applyDelta(Result& board, const Delta& delta, bool reverse = true);
+    static Delta update(Result& board, Delta delta) {
+        for (Change& change : delta.changes) {
+            assert_(change.next != CellState::Hidden,
+                    "ObservedBoard::update: next state must not be Hidden");
+            const auto [x, y] = board.pos(change.cell);
+            assert_(board.board[x][y] == CellState::Hidden,
+                    "ObservedBoard::update: target must be Hidden");
+            change.previous = board.board[x][y];
+            board.board[x][y] = change.next;
+        }
+        return delta;
+    }
+
+    static void applyDelta(Result& board, const Delta& delta, bool reverse = true) {
+        if (reverse) {
+            for (std::size_t i = delta.changes.size(); i-- > 0;) {
+                const Change& change = delta.changes[i];
+                const auto [x, y] = board.pos(change.cell);
+                board.board[x][y] = change.previous;
+            }
+            return;
+        }
+        for (const Change& change : delta.changes) {
+            const auto [x, y] = board.pos(change.cell);
+            board.board[x][y] = change.next;
+        }
+    }
 };
 
 }  // namespace mss

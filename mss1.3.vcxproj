@@ -91,27 +91,6 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\main.cpp" />
-    <ClCompile Include="src\algo\basic.cpp"><ObjectFileName>$(IntDir)algo_basic.obj</ObjectFileName></ClCompile>
-    <ClCompile Include="src\algo\bruteforce\bruteforce.cpp" />
-    <ClCompile Include="src\algo\observed_board.cpp"><ObjectFileName>$(IntDir)algo_observed_board.obj</ObjectFileName></ClCompile>
-    <ClCompile Include="src\algo\probability\global_solver.cpp" />
-    <ClCompile Include="src\algo\probability\observe.cpp" />
-    <ClCompile Include="src\algo\probability\probability.cpp" />
-    <ClCompile Include="src\algo\shape_solver\dfs_solver.cpp" />
-    <ClCompile Include="src\algo\shape_solver\graph_solver.cpp" />
-    <ClCompile Include="src\algo\shape_solver\shape_solver.cpp" />
-    <ClCompile Include="src\algo\structure.cpp"><ObjectFileName>$(IntDir)algo_structure.obj</ObjectFileName></ClCompile>
-    <ClCompile Include="src\test\basic.cpp"><ObjectFileName>$(IntDir)test_basic.obj</ObjectFileName></ClCompile>
-    <ClCompile Include="src\test\bruteforce.cpp"><ObjectFileName>$(IntDir)test_bruteforce.obj</ObjectFileName></ClCompile>
-    <ClCompile Include="src\test\common.cpp" />
-    <ClCompile Include="src\test\flat_hashtable.cpp" />
-    <ClCompile Include="src\test\harness.cpp" />
-    <ClCompile Include="src\test\observed_board.cpp"><ObjectFileName>$(IntDir)test_observed_board.obj</ObjectFileName></ClCompile>
-    <ClCompile Include="src\test\radix_sort.cpp" />
-    <ClCompile Include="src\test\structure.cpp"><ObjectFileName>$(IntDir)test_structure.obj</ObjectFileName></ClCompile>
-    <ClCompile Include="src\test\bruteforce_initial.cpp">
-      <ExcludedFromBuild>true</ExcludedFromBuild>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\algo\basic.h" />
