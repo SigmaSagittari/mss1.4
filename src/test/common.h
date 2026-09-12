@@ -1,6 +1,5 @@
 #pragma once
 
-#include <algorithm>
 #include <deque>
 #include <cstdlib>
 #include <iostream>
@@ -161,28 +160,6 @@ inline std::vector<mss::CellId> hiddenSafeCells(const Game& game,
             if (game.board.board[x][y] == mss::ObservedBoard::CellState::Hidden &&
                 analysis.basic.marks[x][y] == mss::Basic::Mark::Safe)
                 result.push_back(game.board.id(x, y));
-    return result;
-}
-
-inline mss::CellId lowestRiskCell(const Game& game, const Analysis& analysis,
-                                  std::span<const mss::CellId> excluded = {}) {
-    mss::CellId result = -1;
-    long double risk = 1.0L;
-    for (int x = 1; x <= game.board.rows; ++x)
-        for (int y = 1; y <= game.board.cols; ++y) {
-            if (game.board.board[x][y] != mss::ObservedBoard::CellState::Hidden) continue;
-            const auto mark = analysis.basic.marks[x][y];
-            if (mark != mss::Basic::Mark::Frontier && mark != mss::Basic::Mark::Unknown)
-                continue;
-            const mss::CellId cell = game.board.id(x, y);
-            if (std::find(excluded.begin(), excluded.end(), cell) != excluded.end()) continue;
-            const long double current = analysis.probability.mineProbability(
-                cell, game.board, analysis.basic, analysis.structure);
-            if (current < risk) {
-                risk = current;
-                result = cell;
-            }
-        }
     return result;
 }
 

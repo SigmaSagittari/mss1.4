@@ -45,6 +45,8 @@ inline void findGuessGame(const FindGuessGameConfig& config) {
     long long guessStates = 0;
     long long pseudoStates = 0;
     long long javaStates = 0;
+    long long rangeStates = 0;
+    long long rangePseudoStates = 0;
 
     while (played < config.games && std::chrono::steady_clock::now() < deadline) {
         ++played;
@@ -70,22 +72,32 @@ inline void findGuessGame(const FindGuessGameConfig& config) {
 
             ++guessStates;
             const mss::LongTermRiskReference::Config riskConfig{};
-            mss::ObservedBoard::Result riskBoard = game.board;
-            mss::Basic::Result riskBasic = analysis.basic;
-            mss::Structure::Result riskStructure = analysis.structure;
-            const mss::LongTermRiskReference::Influence risk =
+            ++javaStates;
+            mss::ObservedBoard::Result javaBoard = game.board;
+            mss::Basic::Result javaBasic = analysis.basic;
+            mss::Structure::ShapePool javaShapes;
+            mss::Structure::Result javaStructure =
+                mss::Structure::analyze(javaBoard, javaBasic, javaShapes);
+            mss::ShapeSolver::Distribution::Pool javaDistributions;
+            mss::Probability::Result javaProbability = mss::Probability::analyze(
+                javaBoard, javaBasic, javaStructure, javaShapes, javaDistributions);
+            const mss::LongTermRiskReference::Influence javaRisk =
                 mss::LongTermRiskReference::findInfluence(
-                    riskBoard, riskBasic, riskStructure, analysis.probability,
-                    analysis.shapes, analysis.distributions, {}, riskConfig);
-            std::vector<mss::CellId> pseudos = risk.pseudos;
+                    javaBoard, javaBasic, javaStructure, javaProbability, javaShapes,
+                    javaDistributions, {}, riskConfig);
+            std::vector<mss::CellId> pseudos = javaRisk.pseudos;
             if (pseudos.empty())
                 pseudos = mss::PseudoReference::findPseudo5050(
-                    game.board, analysis.basic, analysis.structure, analysis.shapes,
-                    analysis.probability);
+                    javaBoard, javaBasic, javaStructure, javaShapes, javaProbability);
             if (!pseudos.empty()) ++pseudoStates;
 
             const long double solutions = analysis.probability.candidates();
-            if (pseudos.empty() && solutions > 10000.0L && solutions < 200000.0L) {
+            const bool inRange = solutions > 10000.0L && solutions < 200000.0L;
+            if (inRange) {
+                ++rangeStates;
+                if (!pseudos.empty()) ++rangePseudoStates;
+            }
+            if (inRange && pseudos.empty()) {
                 int cells = 0;
                 for (int x = 1; x <= game.board.rows; ++x)
                     for (int y = 1; y <= game.board.cols; ++y) {
@@ -110,30 +122,14 @@ inline void findGuessGame(const FindGuessGameConfig& config) {
                 else ++cellBuckets[5];
             }
 
-            std::vector<mss::CellId> dead;
-            if (solutions > 200000.0L) {
-                ++javaStates;
-                mss::ObservedBoard::Result javaBoard = game.board;
-                mss::Basic::Result javaBasic = analysis.basic;
-                mss::Structure::ShapePool javaShapes;
-                mss::Structure::Result javaStructure =
-                    mss::Structure::analyze(javaBoard, javaBasic, javaShapes);
-                mss::ShapeSolver::Distribution::Pool javaDistributions;
-                mss::Probability::Result javaProbability = mss::Probability::analyze(
-                    javaBoard, javaBasic, javaStructure, javaShapes, javaDistributions);
-                const mss::LongTermRiskReference::Influence javaRisk =
-                    mss::LongTermRiskReference::findInfluence(
-                        javaBoard, javaBasic, javaStructure, javaProbability, javaShapes,
-                        javaDistributions, {}, riskConfig);
-                const mss::JavaEvaluate::Result evaluation = mss::JavaEvaluate::solve(
-                    javaBoard, javaBasic, javaStructure, javaProbability, javaShapes,
-                    javaDistributions, javaRisk, {}, {});
-                dead = std::move(evaluation.deadCells);
-            }
-
-            const mss::CellId cell = lowestRiskCell(game, analysis, dead);
-            if (cell == -1) break;
-            const auto [x, y] = game.board.pos(cell);
+            const mss::JavaEvaluate::Result evaluation = mss::JavaEvaluate::solve(
+                javaBoard, javaBasic, javaStructure, javaProbability, javaShapes,
+                javaDistributions, javaRisk, {}, {});
+            check(evaluation.x >= 1 && evaluation.x <= game.board.rows &&
+                      evaluation.y >= 1 && evaluation.y <= game.board.cols,
+                  "Java reference returned no move");
+            const auto [x, y] = std::pair{evaluation.x, evaluation.y};
+            const mss::CellId cell = game.board.id(x, y);
             mss::ObservedBoard::Delta updates;
             if (!game.reveal(x, y, updates)) {
                 ++losses;
@@ -163,6 +159,8 @@ inline void findGuessGame(const FindGuessGameConfig& config) {
               << solutionBuckets[0] << ' ' << solutionBuckets[1] << ' '
               << solutionBuckets[2] << ' ' << solutionBuckets[3] << ' '
               << solutionBuckets[4] << '\n';
+    std::cout << "  target range states/pseudo-free/pseudo: " << rangeStates << '/'
+              << (rangeStates - rangePseudoStates) << '/' << rangePseudoStates << '\n';
     std::cout << "  candidate cells [1,33,65,129,257,513,+): "
               << cellBuckets[0] << ' ' << cellBuckets[1] << ' ' << cellBuckets[2]
               << ' ' << cellBuckets[3] << ' ' << cellBuckets[4] << ' ' << cellBuckets[5]
