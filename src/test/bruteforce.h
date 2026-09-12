@@ -14,12 +14,10 @@ inline void bruteforce() {
     const auto basic = mss::Basic::analyze(board);
     mss::Structure::ShapePool shapes;
     const auto structure = mss::Structure::analyze(board, basic, shapes);
-    mss::Probability::Result probability;
-    mss::ShapeSolver::Distribution::Pool distributions;
     const mss::BruteForce::Config config{false, 1};
     const auto start = std::chrono::steady_clock::now();
     const auto result = mss::BruteForce::solve(
-        board, basic, structure, probability, shapes, distributions, config);
+        board, basic, structure, shapes, config);
     const double milliseconds = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - start).count();
     check(result.possibilities == 12650, "5x5/4 possibility count changed");

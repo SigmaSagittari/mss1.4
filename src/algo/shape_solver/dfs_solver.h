@@ -8,86 +8,70 @@
 
 namespace mss {
 
-namespace ShapeSolver {
+struct ShapeSolver::DfsSolver {
+private:
+    struct AssignmentWorkspace {
+        struct Frame {
+            int index = 0;
+            int nextMine = 0;
+            int appliedIndex = -1;
+            int appliedMine = 0;
+            long double ways = 0;
+        };
 
-namespace DfsSolver {
-
-namespace detail {
-
-struct AssignmentWorkspace {
-    struct Frame {
-        int index = 0;
-        int nextMine = 0;
-        int appliedIndex = -1;
-        int appliedMine = 0;
-        long double ways = 0;
+        std::vector<int> boxHead;
+        std::vector<int> constraintNext;
+        std::vector<int> constraintIds;
+        std::vector<int> constraintSum;
+        std::vector<int> constraintMaxAdd;
+        std::vector<int> currentSum;
+        std::vector<int> assignedSize;
+        std::vector<char> assignment;
+        std::vector<Frame> frames;
     };
 
-    std::vector<int> boxHead;
-    std::vector<int> constraintNext;
-    std::vector<int> constraintIds;
-    std::vector<int> constraintSum;
-    std::vector<int> constraintMaxAdd;
-    std::vector<int> currentSum;
-    std::vector<int> assignedSize;
-    std::vector<char> assignment;
-    std::vector<Frame> frames;
+    static thread_local AssignmentWorkspace workspace;
+    static AssignmentWorkspace& assignmentWorkspace();
+
+public:
+    static long double binom(int n, int k);
+
+    template <typename Callback>
+    static void forEachAssignment(const Structure::Shape& shape, Callback&& callback);
+
+    static DistributionId analyze(const Structure::Shape& shape,
+                                  Distribution::Pool& pool);
 };
 
-AssignmentWorkspace& assignmentWorkspace();
+//==============================================================================
+inline thread_local ShapeSolver::DfsSolver::AssignmentWorkspace
+    ShapeSolver::DfsSolver::workspace;
 
-inline long double binom(int n, int k) {
-    constexpr int max = 9;
-    static constexpr std::array<std::array<long double, max + 1>, max + 1> table = [] {
-        std::array<std::array<long double, max + 1>, max + 1> result{};
-        for (int i = 0; i <= max; ++i) {
-            result[i][0] = 1;
-            result[i][i] = 1;
-            for (int j = 1; j < i; ++j)
-                result[i][j] = result[i - 1][j - 1] + result[i - 1][j];
-        }
-        return result;
-    }();
-    return table[n][k];
+inline ShapeSolver::DfsSolver::AssignmentWorkspace&
+ShapeSolver::DfsSolver::assignmentWorkspace() {
+    return workspace;
 }
 
-}  // namespace detail
-
-// 枚举满足 Shape 约束的 box 雷数分配。
-// callback 接收按 BoxId 编号的只读 assignment，以及该分配的组合权重。
-template <typename Callback>
-void forEachAssignment(const Structure::Shape& shape, Callback&& callback);
-
-// DFS 后端的普通分布求解。
-DistributionId analyze(const Structure::Shape& shape, Distribution::Pool& pool);
-
-}  // namespace DfsSolver
-
-}  // namespace ShapeSolver
-
-}  // namespace mss
-
-//==============================================================================
-namespace mss::ShapeSolver::DfsSolver {
-
-namespace {
-
-inline thread_local detail::AssignmentWorkspace workspace;
-
-}  // namespace
-
-namespace detail {
-
-inline AssignmentWorkspace& assignmentWorkspace() { return workspace; }
-
-}  // namespace detail
-
-}  // namespace mss::ShapeSolver::DfsSolver
+inline long double ShapeSolver::DfsSolver::binom(int n, int k) {
+    constexpr int max = 9;
+    static constexpr std::array<std::array<long double, max + 1>, max + 1>
+        table = [] {
+            std::array<std::array<long double, max + 1>, max + 1> result{};
+            for (int i = 0; i <= max; ++i) {
+                result[i][0] = 1;
+                result[i][i] = 1;
+                for (int j = 1; j < i; ++j)
+                    result[i][j] = result[i - 1][j - 1] + result[i - 1][j];
+            }
+            return result;
+        }();
+    return table[n][k];
+}
 
 template <typename Callback>
 inline void mss::ShapeSolver::DfsSolver::forEachAssignment(
     const Structure::Shape& shape, Callback&& callback) {
-    detail::AssignmentWorkspace& workspace = detail::assignmentWorkspace();
+    AssignmentWorkspace& workspace = assignmentWorkspace();
     const int boxCount = static_cast<int>(shape.boxes.size());
     const int constraintCount = static_cast<int>(shape.constraintCount());
 
@@ -122,7 +106,7 @@ inline void mss::ShapeSolver::DfsSolver::forEachAssignment(
     workspace.frames.push_back({0, 0, -1, 0, 1.0L});
 
     while (!workspace.frames.empty()) {
-        detail::AssignmentWorkspace::Frame& frame = workspace.frames.back();
+        AssignmentWorkspace::Frame& frame = workspace.frames.back();
         if (frame.index == boxCount) {
             callback(std::span<const char>(workspace.assignment), frame.ways);
             const int appliedIndex = frame.appliedIndex;
@@ -182,14 +166,13 @@ inline void mss::ShapeSolver::DfsSolver::forEachAssignment(
             workspace.assignedSize[constraint] += maxMine;
         }
         workspace.frames.push_back(
-            {index + 1, 0, index, mine, frame.ways * detail::binom(maxMine, mine)});
+            {index + 1, 0, index, mine,
+             frame.ways * binom(maxMine, mine)});
     }
 }
 
-namespace mss::ShapeSolver::DfsSolver {
-
-inline DistributionId analyze(const Structure::Shape& shape,
-                              Distribution::Pool& pool) {
+inline DistributionId mss::ShapeSolver::DfsSolver::analyze(
+    const Structure::Shape& shape, Distribution::Pool& pool) {
     const DistributionId cached = pool.find(shape.hash);
     if (cached >= 0) return cached;
 
@@ -235,4 +218,4 @@ inline DistributionId analyze(const Structure::Shape& shape,
     return pool.insert(shape.hash, std::move(result));
 }
 
-}  // namespace mss::ShapeSolver::DfsSolver
+}  // namespace mss

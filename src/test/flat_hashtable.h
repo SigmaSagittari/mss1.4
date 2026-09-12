@@ -12,10 +12,8 @@
 
 namespace test {
 
-namespace {
-
-template <typename Table>
-inline void runTableChecks(Table& table) {
+inline void flatHashtable() {
+    auto runTableChecks = []<typename Table>(Table& table) {
     std::map<std::uint64_t, std::uint64_t> map;
     std::set<std::uint64_t> set;
     constexpr std::uint64_t kGrowthKeys = 4096;
@@ -25,7 +23,7 @@ inline void runTableChecks(Table& table) {
         set.insert(key);
     }
     const std::uint64_t fixedKeys[] = {
-        0, 1, std::numeric_limits<std::uint64_t>::max(),
+        0, 1, (std::numeric_limits<std::uint64_t>::max)(),
         0x8000000000000000ULL, 0xffff00000000ffffULL};
     for (std::uint64_t key : fixedKeys) {
         table[key] = key ^ 0x9e3779b97f4a7c15ULL;
@@ -80,11 +78,7 @@ inline void runTableChecks(Table& table) {
     set.clear();
     check(table.empty(), "clear did not empty table");
     check(table.size() == map.size(), "clear size mismatch");
-}
-
-}  // namespace
-
-inline void flatHashtable() {
+    };
     mss::FlatHashTable<std::uint64_t, std::uint64_t> defaultHash;
     runTableChecks(defaultHash);
     mss::FlatHashTable<std::uint64_t, std::uint64_t, mss::SplitMix64Hash> mixedHash;

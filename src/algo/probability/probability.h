@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <span>
 #include <vector>
@@ -11,10 +12,15 @@
 
 namespace mss {
 
-namespace Probability {
+struct Probability {
+
+    struct ObserveTransfer;
+    struct ObserveResult;
+
+public:
 
     // 将浮点概率尾差收敛到精确的一。
-    inline long double limitProbability(long double probability) {
+    inline static long double limitProbability(long double probability) {
         return probability >= 1.0L - 1e-10L ? 1.0L : probability;
     }
 
@@ -46,12 +52,7 @@ namespace Probability {
                            Callback&& callback) const;
 
     private:
-        friend void analyze(const ObservedBoard::Result& board,
-                            const Basic::Result& basic,
-                            const Structure::Result& structure,
-                            const Structure::ShapePool& shapes,
-                            ShapeSolver::Distribution::Pool& distributions,
-                            Result& result);
+        friend struct Probability;
 
         void reset(std::span<const std::size_t> componentBoxCounts);
 
@@ -61,14 +62,70 @@ namespace Probability {
         long double candidates_ = 0.0L;
     };
 
-}  // namespace Probability
+private:
+    struct ObservePoly;
+    struct ObserveWorkspace;
+    struct GraphLayer;
+    static thread_local ObserveWorkspace observeWorkspace;
+
+    static void observePolyMultiply(
+        int leftStart, std::span<const long double> left, int rightStart,
+        std::span<const long double> right, ObservePoly& out);
+    static void observePolyMultiplyInto(
+        ObservePoly& accumulator, int sourceStart,
+        std::span<const long double> source, ObservePoly& mult);
+    static long double observeDenominator(const ObservePoly& polynomial,
+                                          int totalMines, int tSum);
+    static void buildDfsTable(
+        const Structure::Shape& shape, std::span<const int> adjacentBoxCells,
+        int xBox, std::vector<ObserveTransfer>& out);
+    static void buildGraphTable(
+        const Structure::Shape& shape, std::span<const int> adjacentBoxCells,
+        int xBox, std::vector<ObserveTransfer>& out);
+
+    struct Poly;
+    struct Workspace;
+    static thread_local Workspace globalWorkspace;
+    static void polyMultiply(int leftStart, std::span<const long double> left,
+                             int rightStart, std::span<const long double> right,
+                             Poly& out);
+    static long double denominator(const Poly& polynomial, int totalMines,
+                                   int tSum);
+    static long double unknownMineProbability(const Poly& polynomial,
+                                              int totalMines, int tSum,
+                                              long double candidates);
+
+public:
+
+    static Result analyze(const ObservedBoard::Result& board,
+                          const Basic::Result& basic,
+                          const Structure::Result& structure,
+                          const Structure::ShapePool& shapes,
+                          ShapeSolver::Distribution::Pool& distributions);
+    static void analyze(const ObservedBoard::Result& board,
+                        const Basic::Result& basic,
+                        const Structure::Result& structure,
+                        const Structure::ShapePool& shapes,
+                        ShapeSolver::Distribution::Pool& distributions,
+                        Result& result);
+
+    static void buildObserveTable(
+        const Structure::Shape& shape, std::span<const int> adjacentBoxCells,
+        int xBox, std::vector<ObserveTransfer>& out);
+    static ObserveResult observe(
+        const ObservedBoard::Result& board, const Basic::Result& basic,
+        const Structure::Result& structure, const Structure::ShapePool& shapes,
+        const Result& probability,
+        ShapeSolver::Distribution::Pool& distributions, CellId cell);
+};
 
 }  // namespace mss
 
 //==============================================================================
-namespace mss::Probability {
+namespace mss {
 
-inline void Result::reset(std::span<const std::size_t> componentBoxCounts) {
+inline void Probability::Result::reset(
+    std::span<const std::size_t> componentBoxCounts) {
     components_.reserve(componentBoxCounts.size());
     components_.resize(componentBoxCounts.size());
     std::size_t totalBoxCount = 0;
@@ -83,7 +140,7 @@ inline void Result::reset(std::span<const std::size_t> componentBoxCounts) {
     }
 }
 
-inline long double Result::mineProbability(
+inline long double Probability::Result::mineProbability(
     CellId cell, const ObservedBoard::Result& board, const Basic::Result& basic,
     const Structure::Result& structure) const {
     const auto [x, y] = board.pos(cell);
@@ -91,16 +148,16 @@ inline long double Result::mineProbability(
     if (loc.component == -1) {
         if (basic.marks[x][y] == Basic::Mark::Mine) return 1.0L;
         if (basic.marks[x][y] == Basic::Mark::Unknown)
-            return limitProbability(tCellProbability_);
+            return Probability::limitProbability(tCellProbability_);
         return 0.0L;
     }
     if (loc.box == -1) return 0.0L;
     const long double probability =
         components_[loc.component].boxProbabilities[loc.box];
-    return limitProbability(probability);
+    return Probability::limitProbability(probability);
 }
 
-}  // namespace mss::Probability
+}  // namespace mss
 
 template <typename Callback>
 inline void mss::Probability::Result::frontierCells(

@@ -53,8 +53,21 @@ struct Basic {
         bool oldValid = true;
     };
 
-    //==============================================================================
-    static Result analyze(const ObservedBoard::Result& state) {
+private:
+    static bool isNumber(ObservedBoard::CellState state);
+    static int numberValue(ObservedBoard::CellState state);
+    static bool isCandidate(Mark mark);
+
+public:
+    static Result analyze(const ObservedBoard::Result& state);
+    static Delta update(const ObservedBoard::Result& board, Result& result,
+                        const ObservedBoard::Delta& updates, Delta delta);
+    static void applyDelta(Result& result, const Delta& delta,
+                           bool reverse = true);
+};
+
+//==============================================================================
+inline Basic::Result Basic::analyze(const ObservedBoard::Result& state) {
         Result result;
         result.rows = state.rows;
         result.cols = state.cols;
@@ -162,8 +175,10 @@ struct Basic {
         return result;
     }
 
-    static Delta update(const ObservedBoard::Result& board, Result& result,
-                        const ObservedBoard::Delta& updates, Delta delta) {
+inline Basic::Delta Basic::update(const ObservedBoard::Result& board,
+                                  Result& result,
+                                  const ObservedBoard::Delta& updates,
+                                  Delta delta) {
         delta.changes.clear();
         delta.oldUnknownSum = result.unknownSum;
         delta.oldMineSum = result.mineSum;
@@ -271,7 +286,7 @@ struct Basic {
         return delta;
     }
 
-    static void applyDelta(Result& result, const Delta& delta, bool reverse = true) {
+inline void Basic::applyDelta(Result& result, const Delta& delta, bool reverse) {
         auto account = [&](CellId cell, Mark old, Mark now) {
             if ((old == Mark::F) == (now == Mark::F) &&
                 isCandidate(old) == isCandidate(now)) return;
@@ -308,14 +323,19 @@ struct Basic {
         result.mineSum = delta.mineSum;
         result.safeCount = delta.safeCount;
         result.valid = delta.valid;
-    }
+}
 
-private:
-    static bool isNumber(ObservedBoard::CellState state) {
-        return static_cast<int>(state) <= static_cast<int>(ObservedBoard::CellState::Num8);
-    }
-    static int numberValue(ObservedBoard::CellState state) { return static_cast<int>(state); }
-    static bool isCandidate(Mark mark) { return mark == Mark::H || mark == Mark::T; }
-};
+inline bool Basic::isNumber(ObservedBoard::CellState state) {
+    return static_cast<int>(state) <=
+           static_cast<int>(ObservedBoard::CellState::Num8);
+}
+
+inline int Basic::numberValue(ObservedBoard::CellState state) {
+    return static_cast<int>(state);
+}
+
+inline bool Basic::isCandidate(Mark mark) {
+    return mark == Mark::H || mark == Mark::T;
+}
 
 }  // namespace mss

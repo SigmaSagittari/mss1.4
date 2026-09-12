@@ -10,12 +10,8 @@
 
 namespace mss {
 
-namespace Probability {
-
-namespace GlobalSolver {
-
 // 生成函数的稀疏区间表示：coeffs[i] 对应 x^(start + i)。
-struct Poly {
+struct Probability::Poly {
     int start = 0;
     std::vector<long double> coeffs;
     std::span<const long double> view;
@@ -31,7 +27,7 @@ struct Poly {
     }
 };
 
-struct Workspace {
+struct Probability::Workspace {
     Poly identity;
     std::vector<DistributionId> distributions;
     std::vector<std::size_t> componentBoxCounts;
@@ -40,42 +36,16 @@ struct Workspace {
     std::vector<Poly> outside;
 };
 
-extern thread_local Workspace workspace;
-
-// 以下三个函数是全局概率引擎的可测试算法接口，不负责管理工作区。
-void polyMultiply(int leftStart, std::span<const long double> left,
-                  int rightStart, std::span<const long double> right,
-                  Poly& out);
-long double denominator(const Poly& polynomial, int totalMines, int tSum);
-long double unknownMineProbability(const Poly& polynomial, int totalMines,
-                                   int tSum, long double candidates);
-
-}  // namespace GlobalSolver
-
 // 根据盘面约束计算全局雷概率并返回结果。
-Result analyze(const ObservedBoard::Result& board, const Basic::Result& basic,
-               const Structure::Result& structure,
-               const Structure::ShapePool& shapes,
-               ShapeSolver::Distribution::Pool& distributions);
 
 // 高性能复用入口：result 由本函数完全重建，内部容量可跨次调用复用。
-void analyze(const ObservedBoard::Result& board, const Basic::Result& basic,
-             const Structure::Result& structure,
-             const Structure::ShapePool& shapes,
-             ShapeSolver::Distribution::Pool& distributions, Result& result);
-
-}  // namespace Probability
-
-}  // namespace mss
 
 //==============================================================================
-namespace mss::Probability::GlobalSolver {
+inline thread_local Probability::Workspace Probability::globalWorkspace;
 
-inline thread_local Workspace workspace;
-
-inline void polyMultiply(int leftStart, std::span<const long double> left,
-                         int rightStart, std::span<const long double> right,
-                         Poly& out) {
+inline void Probability::polyMultiply(
+    int leftStart, std::span<const long double> left, int rightStart,
+    std::span<const long double> right, Poly& out) {
     const int size = static_cast<int>(left.size()) +
                      static_cast<int>(right.size()) - 1;
     out.view = {};
@@ -86,7 +56,8 @@ inline void polyMultiply(int leftStart, std::span<const long double> left,
     out.start = leftStart + rightStart;
 }
 
-inline long double denominator(const Poly& polynomial, int totalMines, int tSum) {
+inline long double Probability::denominator(
+    const Poly& polynomial, int totalMines, int tSum) {
     long double result = 0.0L;
     const auto coefficients = polynomial.coefficients();
     for (int i = 0; i < static_cast<int>(coefficients.size()); ++i) {
@@ -98,10 +69,10 @@ inline long double denominator(const Poly& polynomial, int totalMines, int tSum)
     return result;
 }
 
-inline long double unknownMineProbability(const Poly& polynomial, int totalMines,
-                                          int tSum, long double denom) {
+inline long double Probability::unknownMineProbability(
+    const Poly& polynomial, int totalMines, int tSum, long double denom) {
     assert_(denom > 0.0L,
-            "Probability::GlobalSolver::unknownMineProbability: 分母为零");
+            "Probability::unknownMineProbability: 分母为零");
     long double result = 0.0L;
     const auto coefficients = polynomial.coefficients();
     for (int i = 0; i < static_cast<int>(coefficients.size()); ++i) {
@@ -113,25 +84,20 @@ inline long double unknownMineProbability(const Poly& polynomial, int totalMines
     return result / denom;
 }
 
-}  // namespace mss::Probability::GlobalSolver
-
-namespace mss::Probability {
-
-inline Result analyze(const ObservedBoard::Result& board, const Basic::Result& basic,
-                      const Structure::Result& structure,
-                      const Structure::ShapePool& shapes,
-                      ShapeSolver::Distribution::Pool& distributions) {
+inline Probability::Result Probability::analyze(
+    const ObservedBoard::Result& board, const Basic::Result& basic,
+    const Structure::Result& structure, const Structure::ShapePool& shapes,
+    ShapeSolver::Distribution::Pool& distributions) {
     Result result;
     analyze(board, basic, structure, shapes, distributions, result);
     return result;
 }
 
-inline void analyze(const ObservedBoard::Result& board, const Basic::Result& basic,
-                    const Structure::Result& structure,
-                    const Structure::ShapePool& shapes,
-                    ShapeSolver::Distribution::Pool& distributions,
-                    Result& result) {
-    GlobalSolver::Workspace& ws = GlobalSolver::workspace;
+inline void Probability::analyze(
+    const ObservedBoard::Result& board, const Basic::Result& basic,
+    const Structure::Result& structure, const Structure::ShapePool& shapes,
+    ShapeSolver::Distribution::Pool& distributions, Result& result) {
+    Workspace& ws = globalWorkspace;
     ws.distributions.clear();
     for (const Structure::Instance& instance : structure.components)
         ws.distributions.push_back(ShapeSolver::analyze(
@@ -158,8 +124,8 @@ inline void analyze(const ObservedBoard::Result& board, const Basic::Result& bas
     long double candidates;
     long double tCellProbability;
     if (componentCount == 0) {
-        candidates = GlobalSolver::denominator(ws.identity, totalMines, tSum);
-        tCellProbability = GlobalSolver::unknownMineProbability(
+        candidates = denominator(ws.identity, totalMines, tSum);
+        tCellProbability = unknownMineProbability(
             ws.identity, totalMines, tSum, candidates);
         result.tCellProbability_ = limitProbability(tCellProbability);
         result.candidates_ = candidates;
@@ -179,38 +145,36 @@ inline void analyze(const ObservedBoard::Result& board, const Basic::Result& bas
         }
     }
     for (std::size_t i = leafBase - 1; i > 0; --i) {
-        const GlobalSolver::Poly& left = ws.tree[i << 1];
-        const GlobalSolver::Poly& right = ws.tree[i << 1 | 1];
-        GlobalSolver::polyMultiply(left.start, left.coefficients(),
-                                   right.start, right.coefficients(), ws.tree[i]);
+        const Poly& left = ws.tree[i << 1];
+        const Poly& right = ws.tree[i << 1 | 1];
+        polyMultiply(left.start, left.coefficients(), right.start,
+                     right.coefficients(), ws.tree[i]);
     }
 
-    candidates = GlobalSolver::denominator(ws.tree[1], totalMines, tSum);
+    candidates = denominator(ws.tree[1], totalMines, tSum);
     assert_(candidates > 0.0L,
             "Probability::analyze: 当前盘面不存在全局可行方案");
-    tCellProbability = GlobalSolver::unknownMineProbability(
+    tCellProbability = unknownMineProbability(
         ws.tree[1], totalMines, tSum, candidates);
     tCellProbability = limitProbability(tCellProbability);
     ws.outside[1].setView(ws.identity.start, ws.identity.coeffs);
     for (std::size_t i = 1; i < leafBase; ++i) {
-        const GlobalSolver::Poly& right = ws.tree[i << 1 | 1];
-        GlobalSolver::polyMultiply(ws.outside[i].start,
-                                   ws.outside[i].coefficients(), right.start,
-                                   right.coefficients(), ws.outside[i << 1]);
-        const GlobalSolver::Poly& left = ws.tree[i << 1];
-        GlobalSolver::polyMultiply(ws.outside[i].start,
-                                   ws.outside[i].coefficients(), left.start,
-                                   left.coefficients(), ws.outside[i << 1 | 1]);
+        const Poly& right = ws.tree[i << 1 | 1];
+        polyMultiply(ws.outside[i].start, ws.outside[i].coefficients(),
+                     right.start, right.coefficients(), ws.outside[i << 1]);
+        const Poly& left = ws.tree[i << 1];
+        polyMultiply(ws.outside[i].start, ws.outside[i].coefficients(),
+                     left.start, left.coefficients(), ws.outside[i << 1 | 1]);
     }
 
     std::size_t boxOffset = 0;
     for (ComponentId cid = 0; cid < static_cast<ComponentId>(componentCount); ++cid) {
         const auto& distribution = distributions.get(ws.distributions[cid]);
         const auto ways = distribution.ways();
-        const GlobalSolver::Poly& others = ws.outside[leafBase + cid];
+        const Poly& others = ws.outside[leafBase + cid];
         ws.entryProbabilities.assign(ways.size(), 0.0L);
         for (std::size_t i = 0; i < ways.size(); ++i) {
-            const int componentMines = distribution.start() + i;
+            const int componentMines = distribution.start() + (int)i;
             long double numerator = 0.0L;
             const auto otherCoefficients = others.coefficients();
             for (int k = 0; k < static_cast<int>(otherCoefficients.size()); ++k) {
@@ -236,4 +200,4 @@ inline void analyze(const ObservedBoard::Result& board, const Basic::Result& bas
     result.candidates_ = candidates;
 }
 
-}  // namespace mss::Probability
+}  // namespace mss

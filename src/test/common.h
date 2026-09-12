@@ -8,9 +8,11 @@
 #include <windows.h>
 #include <dbghelp.h>
 
-namespace {
+namespace test {
 
-inline void printStackTrace() {
+struct StackTrace {
+private:
+    static void print() {
     void* frames[32];
     const USHORT count = CaptureStackBackTrace(1, 32, frames, nullptr);
     HANDLE process = GetCurrentProcess();
@@ -39,9 +41,12 @@ inline void printStackTrace() {
         std::cerr << '\n';
     }
     SymCleanup(process);
-}
+    }
 
-}  // namespace
+    friend void check(bool, const char*, std::source_location);
+};
+
+}  // namespace test
 #endif
 
 namespace test {
@@ -54,7 +59,7 @@ inline void check(bool condition, const char* errmsg,
               << "  function: " << location.function_name() << '\n'
               << "  stack:\n";
 #ifdef _WIN32
-    printStackTrace();
+    StackTrace::print();
 #endif
     std::abort();
 }

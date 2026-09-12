@@ -31,12 +31,17 @@ public:
     std::size_t size() const { return size_; }
     bool empty() const { return size_ == 0; }
 
-    void clear() { used_.assign(used_.size(), 0); size_ = 0; }
+    void clear() { activeCapacity_ = 0; size_ = 0; }
 
     // 预留容量，使负载因子不超过 kMaxLoadFactor
     void reserve(std::size_t expected) {
         const auto need = nextPowerOfTwo(expected > 0 ? expected * 2 : 1);
-        if (need > capacity()) rehash(need);
+        if (need <= activeCapacity_) return;
+        if (activeCapacity_ == 0) {
+            activate(need);
+            return;
+        }
+        rehash(need);
     }
 
     // 查找：命中返回指向值的指针，未命中返回 nullptr
@@ -57,11 +62,21 @@ public:
     }
 
 private:
-    std::size_t capacity() const { return keys_.size(); }
+    std::size_t capacity() const { return activeCapacity_; }
+
+    void activate(std::size_t newCap) {
+        if (newCap > keys_.size()) {
+            keys_.resize(newCap);
+            values_.resize(newCap);
+            used_.resize(newCap, 0);
+        }
+        for (std::size_t i = 0; i < newCap; ++i) used_[i] = 0;
+        activeCapacity_ = newCap;
+    }
 
     template <typename Values>
-    static auto valueAt(Values& values, std::size_t i) -> decltype(&values[i]) {
-        return i == values.size() ? nullptr : &values[i];
+    auto valueAt(Values& values, std::size_t i) const -> decltype(&values[i]) {
+        return i == activeCapacity_ ? nullptr : &values[i];
     }
 
     bool insertKey(std::size_t i, const Key& key) {
@@ -73,18 +88,18 @@ private:
     // capacity() 是未命中哨兵；实际槽位范围为 [0, capacity())。
     std::size_t findIndex(const Key& key) const {
         if (size_ == 0) return capacity();
-        const auto mask = capacity() - 1;
+        const auto mask = activeCapacity_ - 1;
         auto i = hash_(key) & mask;
         for (;;) {
-            if (!used_[i]) return capacity();
+            if (!used_[i]) return activeCapacity_;
             if (keys_[i] == key) return i;
             i = (i + 1) & mask;
         }
     }
 
     std::size_t insertionIndex(const Key& key) {
-        if (size_ + 1 > capacity() * kMaxLoadFactor) grow();
-        const auto mask = capacity() - 1;
+        if (size_ + 1 > activeCapacity_ * kMaxLoadFactor) grow();
+        const auto mask = activeCapacity_ - 1;
         auto i = hash_(key) & mask;
         for (;;) {
             if (!used_[i] || keys_[i] == key) return i;
@@ -98,14 +113,18 @@ private:
         return p;
     }
 
-    void grow() { rehash(capacity() > 0 ? capacity() * 2 : 4); }
+    void grow() {
+        if (activeCapacity_ == 0)
+            activate(keys_.empty() ? 4 : keys_.size());
+        else rehash(activeCapacity_ * 2);
+    }
 
     void rehash(std::size_t newCap) {
         std::vector<Key> newKeys(newCap);
         std::vector<Value> newValues(newCap);
         std::vector<unsigned char> newUsed(newCap, 0);
         const auto mask = newCap - 1;
-        for (auto i = std::size_t{}; i < capacity(); ++i) {
+        for (auto i = std::size_t{}; i < activeCapacity_; ++i) {
             if (!used_[i]) continue;
             auto j = hash_(keys_[i]) & mask;
             while (newUsed[j]) j = (j + 1) & mask;
@@ -116,6 +135,7 @@ private:
         keys_ = std::move(newKeys);
         values_ = std::move(newValues);
         used_ = std::move(newUsed);
+        activeCapacity_ = newCap;
     }
 
     Hash hash_;
@@ -123,6 +143,7 @@ private:
     std::vector<Value> values_;
     std::vector<unsigned char> used_;
     std::size_t size_ = 0;
+    std::size_t activeCapacity_ = 0;
 };
 
 }  // namespace mss

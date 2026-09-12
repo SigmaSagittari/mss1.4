@@ -54,13 +54,12 @@ private:
     }
 
 public:
-    // 按逻辑下标排序。Reader 读取键，Writer 描述独立目标存储上的复制，
-    // Swapper 描述当前存储上的原地交换；排序器不接触元素的实际布局。
-    template <typename Reader, typename Writer, typename Swapper>
-    static void sortBy(std::size_t n, Reader read, Writer write, Swapper swap) {
+    // 按逻辑下标排序。Reader 读取键，Swapper 描述当前存储上的原地交换；
+    // 排序器不接触元素的实际布局。
+    template <typename Reader, typename Swapper>
+    static void sortBy(std::size_t n, Reader read, Swapper swap) {
         using Key = std::remove_cvref_t<decltype(read(std::size_t{}))>;
         static_assert(keyBytes<Key>() != 0, "radix_sort::sortBy 不支持此键类型");
-        (void)write;
         if (n <= 1) return;
 
         static thread_local std::vector<std::size_t> target;

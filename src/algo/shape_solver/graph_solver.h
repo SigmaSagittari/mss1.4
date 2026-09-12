@@ -11,82 +11,135 @@
 
 namespace mss {
 
-namespace ShapeSolver {
+struct ShapeSolver::GraphSolver {
 
-namespace GraphSolver {
-
-enum class PolishKind {
-    Adjacent,
-    Window3,
-};
-
-namespace detail {
+public:
+    enum class PolishKind {
+        Adjacent,
+        Window3,
+    };
 
 struct Graph {
     std::vector<int> offsets;
     std::vector<BoxId> adjacent;
 
-    static Graph fromShape(const Structure::Shape& shape) {
-        const int boxCount = static_cast<int>(shape.boxes.size());
-        Graph graph;
-        graph.offsets.assign(boxCount + 1, 0);
-
-        std::vector<int> head(boxCount, -1);
-        std::vector<BoxId> to;
-        std::vector<int> next;
-        std::vector<char> marked(boxCount, 0);
-
-        auto addEdge = [&](BoxId from, BoxId target) {
-            next.push_back(head[from]);
-            to.push_back(target);
-            head[from] = static_cast<int>(to.size()) - 1;
-        };
-
-        for (int i = 0; i < static_cast<int>(shape.constraintCount()); ++i) {
-            const Structure::Shape::ConstraintView constraint = shape.constraint(i);
-            for (int a = 0; a < static_cast<int>(constraint.boxIds.size()); ++a)
-                for (int b = a + 1; b < static_cast<int>(constraint.boxIds.size()); ++b) {
-                    addEdge(constraint.boxIds[a], constraint.boxIds[b]);
-                    addEdge(constraint.boxIds[b], constraint.boxIds[a]);
-                }
-        }
-
-        for (BoxId box = 0; box < boxCount; ++box) {
-            for (int edge = head[box]; edge >= 0; edge = next[edge]) {
-                const BoxId target = to[edge];
-                if (marked[target]) continue;
-                marked[target] = 1;
-                ++graph.offsets[box + 1];
-            }
-            for (int edge = head[box]; edge >= 0; edge = next[edge])
-                marked[to[edge]] = 0;
-        }
-        for (int box = 0; box < boxCount; ++box)
-            graph.offsets[box + 1] += graph.offsets[box];
-
-        graph.adjacent.resize(graph.offsets.back());
-        for (BoxId box = 0; box < boxCount; ++box) {
-            int write = graph.offsets[box];
-            for (int edge = head[box]; edge >= 0; edge = next[edge]) {
-                const BoxId target = to[edge];
-                if (marked[target]) continue;
-                marked[target] = 1;
-                graph.adjacent[write++] = target;
-            }
-            for (int edge = head[box]; edge >= 0; edge = next[edge])
-                marked[to[edge]] = 0;
-        }
-        return graph;
-    }
-
-    std::span<const BoxId> neighbors(BoxId box) const {
-        const int begin = offsets[box];
-        const int end = offsets[box + 1];
-        return {adjacent.data() + begin, static_cast<std::size_t>(end - begin)};
-    }
+    static Graph fromShape(const Structure::Shape& shape);
+    std::span<const BoxId> neighbors(BoxId box) const;
 };
 
-inline std::pair<int, int> orderScore(const Graph& graph, const std::vector<BoxId>& order) {
+private:
+    static std::pair<int, int> orderScore(
+        const Graph& graph, const std::vector<BoxId>& order);
+
+public:
+    static std::vector<BoxId> makeOrder(const Graph& graph,
+                                        PolishKind polish);
+
+struct StepPlan {
+    struct Check {
+        int sum = 0;
+        int remainingSize = 0;
+        std::array<int, 8> readSlots{};
+        int readCount = 0;
+    };
+
+    struct Closing {
+        BoxId box = 0;
+        int oldSlot = -1;
+    };
+
+    BoxId box = 0;
+    int boxSize = 0;
+    std::vector<Check> checks;
+    std::vector<int> gather;
+    std::vector<Closing> closings;
+};
+
+
+
+template <typename Callback>
+static void walkSteps(const Structure::Shape& shape,
+                      const std::vector<BoxId>& order, Callback&& callback);
+
+
+
+private:
+    struct Layer;
+    static ShapeSolver::Distribution::Result materialize(const Layer& layer,
+                                                         int boxCount);
+
+public:
+
+    // Graph DP 后端的普通分布求解。
+    static DistributionId analyze(const Structure::Shape& shape,
+                                  Distribution::Pool& pool,
+                                  PolishKind polish);
+};
+
+//==============================================================================
+inline ShapeSolver::GraphSolver::Graph
+ShapeSolver::GraphSolver::Graph::fromShape(const Structure::Shape& shape) {
+    const int boxCount = static_cast<int>(shape.boxes.size());
+    Graph graph;
+    graph.offsets.assign(boxCount + 1, 0);
+
+    std::vector<int> head(boxCount, -1);
+    std::vector<BoxId> to;
+    std::vector<int> next;
+    std::vector<char> marked(boxCount, 0);
+
+    auto addEdge = [&](BoxId from, BoxId target) {
+        next.push_back(head[from]);
+        to.push_back(target);
+        head[from] = static_cast<int>(to.size()) - 1;
+    };
+
+    for (int i = 0; i < static_cast<int>(shape.constraintCount()); ++i) {
+        const Structure::Shape::ConstraintView constraint = shape.constraint(i);
+        for (int a = 0; a < static_cast<int>(constraint.boxIds.size()); ++a)
+            for (int b = a + 1; b < static_cast<int>(constraint.boxIds.size()); ++b) {
+                addEdge(constraint.boxIds[a], constraint.boxIds[b]);
+                addEdge(constraint.boxIds[b], constraint.boxIds[a]);
+            }
+    }
+
+    for (BoxId box = 0; box < boxCount; ++box) {
+        for (int edge = head[box]; edge >= 0; edge = next[edge]) {
+            const BoxId target = to[edge];
+            if (marked[target]) continue;
+            marked[target] = 1;
+            ++graph.offsets[box + 1];
+        }
+        for (int edge = head[box]; edge >= 0; edge = next[edge])
+            marked[to[edge]] = 0;
+    }
+    for (int box = 0; box < boxCount; ++box)
+        graph.offsets[box + 1] += graph.offsets[box];
+
+    graph.adjacent.resize(graph.offsets.back());
+    for (BoxId box = 0; box < boxCount; ++box) {
+        int write = graph.offsets[box];
+        for (int edge = head[box]; edge >= 0; edge = next[edge]) {
+            const BoxId target = to[edge];
+            if (marked[target]) continue;
+            marked[target] = 1;
+            graph.adjacent[write++] = target;
+        }
+        for (int edge = head[box]; edge >= 0; edge = next[edge])
+            marked[to[edge]] = 0;
+    }
+    return graph;
+}
+
+inline std::span<const BoxId>
+ShapeSolver::GraphSolver::Graph::neighbors(BoxId box) const {
+    const int begin = offsets[box];
+    const int end = offsets[box + 1];
+    return {adjacent.data() + begin, static_cast<std::size_t>(end - begin)};
+}
+
+inline std::pair<int, int> ShapeSolver::GraphSolver::orderScore(
+    const Graph& graph, const std::vector<BoxId>& order) {
     const int boxCount = static_cast<int>(order.size());
     std::vector<int> remaining(graph.offsets.size() - 1);
     std::vector<char> selected(remaining.size(), 0);
@@ -109,7 +162,8 @@ inline std::pair<int, int> orderScore(const Graph& graph, const std::vector<BoxI
     return {peak, area};
 }
 
-inline std::vector<BoxId> makeOrder(const Graph& graph, PolishKind polish) {
+inline std::vector<BoxId> ShapeSolver::GraphSolver::makeOrder(
+    const Graph& graph, PolishKind polish) {
     const int boxCount = static_cast<int>(graph.offsets.size()) - 1;
     std::vector<BoxId> order;
     order.reserve(boxCount);
@@ -178,31 +232,10 @@ inline std::vector<BoxId> makeOrder(const Graph& graph, PolishKind polish) {
     return order;
 }
 
-struct StepPlan {
-    struct Check {
-        int sum = 0;
-        int remainingSize = 0;
-        std::array<int, 8> readSlots{};
-        int readCount = 0;
-    };
-
-    struct Closing {
-        BoxId box = 0;
-        int oldSlot = -1;
-    };
-
-    BoxId box = 0;
-    int boxSize = 0;
-    std::vector<Check> checks;
-    std::vector<int> gather;
-    std::vector<Closing> closings;
-};
-
-
-
 template <typename Callback>
-inline void walkSteps(const Structure::Shape& shape, const std::vector<BoxId>& order,
-               Callback&& callback) {
+inline void ShapeSolver::GraphSolver::walkSteps(
+    const Structure::Shape& shape, const std::vector<BoxId>& order,
+    Callback&& callback) {
     const int boxCount = static_cast<int>(shape.boxes.size());
     std::vector<int> position(boxCount);
     for (int step = 0; step < boxCount; ++step) position[order[step]] = step;
@@ -215,7 +248,8 @@ inline void walkSteps(const Structure::Shape& shape, const std::vector<BoxId>& o
     for (int constraint = 0; constraint < constraintCount; ++constraint) {
         const Structure::Shape::ConstraintView view = shape.constraint(constraint);
         for (BoxId box : view.boxIds)
-            constraintLast[constraint] = (std::max)(constraintLast[constraint], position[box]);
+            constraintLast[constraint] =
+                (std::max)(constraintLast[constraint], position[box]);
         for (BoxId box : view.boxIds) {
             nextLink.push_back(boxHead[box]);
             constraintIds.push_back(constraint);
@@ -226,7 +260,8 @@ inline void walkSteps(const Structure::Shape& shape, const std::vector<BoxId>& o
     std::vector<int> closeStep = position;
     for (int constraint = 0; constraint < constraintCount; ++constraint)
         for (BoxId box : shape.constraint(constraint).boxIds)
-            closeStep[box] = (std::max)(closeStep[box], constraintLast[constraint]);
+            closeStep[box] =
+                (std::max)(closeStep[box], constraintLast[constraint]);
 
     std::vector<int> closeHead(boxCount, -1);
     std::vector<int> closeNext(boxCount, -1);
@@ -283,28 +318,9 @@ inline void walkSteps(const Structure::Shape& shape, const std::vector<BoxId>& o
     }
 }
 
+struct ShapeSolver::GraphSolver::Layer {
+    public:
 
-
-}  // namespace detail
-
-// Graph DP 后端的普通分布求解。
-DistributionId analyze(const Structure::Shape& shape, Distribution::Pool& pool,
-                       PolishKind polish);
-
-}  // namespace GraphSolver
-
-}  // namespace ShapeSolver
-
-}  // namespace mss
-
-//==============================================================================
-namespace mss::ShapeSolver::GraphSolver {
-
-namespace {
-
-using detail::StepPlan;
-
-struct Layer {
     struct Count {
         int mineCount = 0;
         long double ways = 0;
@@ -387,7 +403,7 @@ struct Layer {
                     nextLayer.index.emplace(hash, id);
                     target = &nextLayer.states.back();
                 }
-                const long double factor = DfsSolver::detail::binom(plan.boxSize, mine);
+                const long double factor = DfsSolver::binom(plan.boxSize, mine);
                 for (int sourceIndex = state.firstCount; sourceIndex >= 0;
                      sourceIndex = counts[sourceIndex].next) {
                     const Count& source = counts[sourceIndex];
@@ -413,7 +429,8 @@ struct Layer {
     }
 };
 
-inline Distribution::Result materialize(const Layer& layer, int boxCount) {
+inline ShapeSolver::Distribution::Result
+ShapeSolver::GraphSolver::materialize(const Layer& layer, int boxCount) {
     std::vector<int> countIds;
     int start = 0;
     int end = 0;
@@ -456,24 +473,23 @@ inline Distribution::Result materialize(const Layer& layer, int boxCount) {
     return {start, boxCount, std::move(sortedWays), std::move(moments)};
 }
 
-}  // namespace
-
-inline DistributionId analyze(const Structure::Shape& shape,
-                              Distribution::Pool& pool, PolishKind polish) {
+inline DistributionId ShapeSolver::GraphSolver::analyze(
+    const Structure::Shape& shape, ShapeSolver::Distribution::Pool& pool,
+    ShapeSolver::GraphSolver::PolishKind polish) {
     const DistributionId cached = pool.find(shape.hash);
     if (cached >= 0) return cached;
-    const detail::Graph graph = detail::Graph::fromShape(shape);
-    const std::vector<BoxId> order = detail::makeOrder(graph, polish);
+    const Graph graph = Graph::fromShape(shape);
+    const std::vector<BoxId> order = makeOrder(graph, polish);
     Layer current;
     Layer next;
     current.reset();
-    detail::walkSteps(shape, order, [&](const StepPlan& plan) {
+    walkSteps(shape, order, [&](const StepPlan& plan) {
         current.advance(plan, next);
         std::swap(current, next);
     });
-    Distribution::Result result = materialize(
+    ShapeSolver::Distribution::Result result = materialize(
         current, static_cast<int>(shape.boxes.size()));
     return pool.insert(shape.hash, std::move(result));
 }
 
-}  // namespace mss::ShapeSolver::GraphSolver
+}  // namespace mss

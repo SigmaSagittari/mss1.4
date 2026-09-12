@@ -10,15 +10,17 @@
 
 #include "algo/basic.h"
 #include "algo/observed_board.h"
-#include "algo/probability/probability.h"
 #include "algo/shape_solver/shape_solver.h"
 #include "algo/structure.h"
 #include "core/utility/dynamic_bitset.h"
-#include "core/utility/radix_sort.h"
+
+
 
 namespace mss {
 
-namespace BruteForce {
+struct BruteForce {
+
+public:
 
 struct Config {
     bool checkAllMoves;
@@ -39,27 +41,44 @@ struct Result {
 
 // 在当前盘面可能性上进行残局搜索。
 // Config 的所有字段必须由调用方显式指定；minWins 只影响非 checkAllMoves 模式。
-Result solve(const ObservedBoard::Result& board,
-             const Basic::Result& basic,
-             const Structure::Result& structure,
-             const Probability::Result& probability,
-             const Structure::ShapePool& shapes,
-             ShapeSolver::Distribution::Pool& distributions,
-             const Config& config);
+    static Result solve(const ObservedBoard::Result& board,
+                        const Basic::Result& basic,
+                        const Structure::Result& structure,
+                        const Structure::ShapePool& shapes,
+                        const Config& config);
 
-}  // namespace BruteForce
+private:
+    using ConfigId = std::uint32_t;
+    using CandidateId = std::uint32_t;
+
+    struct Session;
+    struct ScratchBuffers;
+
+    static thread_local ScratchBuffers scratch;
+    static thread_local FlatHashTable<U128, int, U128Hash> cache;
+
+    static int revealAt(const Session& session, ConfigId config,
+                        CandidateId candidate);
+    static bool mineAt(const Session& session, ConfigId config,
+                       CandidateId candidate);
+    static U128 hashConfigs(std::span<const ConfigId> configs);
+    static void saveFail(const U128& key, int upper, int count,
+                         FlatHashTable<U128, int, U128Hash>& table);
+    static Session buildSession(
+        const ObservedBoard::Result& board, const Basic::Result& basic,
+        const Structure::Result& structure, const Structure::ShapePool& shapes);
+    template <bool CheckAllMoves, bool IsRoot>
+    static int solve(Session& s, std::span<ConfigId> configs, int need,
+                     int depth, FlatHashTable<U128, int, U128Hash>& table,
+                     Result& result);
+};
 
 }  // namespace mss
 
 //==============================================================================
-namespace mss::BruteForce {
+namespace mss {
 
-namespace {
-
-using ConfigId = std::uint32_t;
-using CandidateId = std::uint32_t;
-
-struct Session {
+struct BruteForce::Session {
     struct Candidate {
         int x = 0;
         int y = 0;
@@ -79,7 +98,7 @@ struct Session {
     long long nodes = 0;
 };
 
-struct ScratchBuffers {
+struct BruteForce::ScratchBuffers {
     struct Layer {
         std::vector<int> deaths;
         std::vector<int> safeCells;
@@ -88,6 +107,10 @@ struct ScratchBuffers {
         std::array<std::vector<ConfigId>, 9> groups;
         std::vector<std::pair<int, int>> groupList;
         std::vector<U128> safeHashes;
+        std::vector<int> safeGroupIds;
+        std::vector<int> safeGroupSizes;
+        std::vector<int> safeGroupOffsets;
+        std::vector<ConfigId> safeGroupedConfigs;
         std::vector<std::span<ConfigId>> safeGroupList;
     };
     Layer& layer(int depth) {
@@ -103,35 +126,43 @@ struct ScratchBuffers {
             for (std::vector<ConfigId>& g : l.groups) g.clear();
             l.groupList.clear();
             l.safeHashes.clear();
+            l.safeGroupIds.clear();
+            l.safeGroupSizes.clear();
+            l.safeGroupOffsets.clear();
+            l.safeGroupedConfigs.clear();
             l.safeGroupList.clear();
         }
+        safeGroupTable.clear();
     }
+    FlatHashTable<U128, int, U128Hash> safeGroupTable;
     std::deque<Layer> layers;
 };
 
-inline thread_local ScratchBuffers scratch;
-inline thread_local FlatHashTable<U128, int, U128Hash> cache;
+inline thread_local BruteForce::ScratchBuffers BruteForce::scratch;
+inline thread_local FlatHashTable<U128, int, U128Hash> BruteForce::cache;
 
-inline int revealAt(const Session& session, ConfigId config, CandidateId candidate) {
+inline int BruteForce::revealAt(const Session& session, ConfigId config,
+                                CandidateId candidate) {
     return session.reveal[static_cast<std::size_t>(config) *
                           session.candidateCount + candidate];
 }
 
-inline bool mineAt(const Session& session, ConfigId config, CandidateId candidate) {
+inline bool BruteForce::mineAt(const Session& session, ConfigId config,
+                               CandidateId candidate) {
     return session.mine[static_cast<std::size_t>(config) *
                         session.candidateCount + candidate] != 0;
 }
 
-inline U128 hashConfigs(std::span<const ConfigId> configs) {
-    U128Hasher hasher;
-    const std::uint64_t count = configs.size();
-    for (int i = 0; i < static_cast<int>(configs.size()); ++i)
-        hasher.mix(static_cast<std::uint64_t>(configs[i]) * (count + 1) + i);
-    return hasher.finalize();
+inline U128 BruteForce::hashConfigs(std::span<const ConfigId> configs) {
+    U128 hash{configs.size(), configs.size()};
+    for (ConfigId config : configs)
+        hash += {splitmix64(config), splitmix64(config + 0x9e3779b97f4a7c15ULL)};
+    return hash;
 }
 
-inline void saveFail(const U128& key, int upper, int count,
-                     FlatHashTable<U128, int, U128Hash>& table) {
+inline void BruteForce::saveFail(
+    const U128& key, int upper, int count,
+    FlatHashTable<U128, int, U128Hash>& table) {
     if (upper <= 0 || upper >= count) return;
     int* old = table.find(key);
     if (old == nullptr) {
@@ -141,12 +172,9 @@ inline void saveFail(const U128& key, int upper, int count,
     if (*old < 0) *old = (std::max)(*old, -upper);
 }
 
-inline Session buildSession(const ObservedBoard::Result& board,
-                            const Basic::Result& basic,
-                            const Structure::Result& structure,
-                            const Probability::Result& probability,
-                            const Structure::ShapePool& shapes,
-                            ShapeSolver::Distribution::Pool& distributions) {
+inline BruteForce::Session BruteForce::buildSession(
+    const ObservedBoard::Result& board, const Basic::Result& basic,
+    const Structure::Result& structure, const Structure::ShapePool& shapes) {
     Session session;
     const int cellCount = (board.rows + 1) * (board.cols + 1);
     std::vector<int> candidateAt(cellCount, -1);
@@ -275,21 +303,20 @@ inline Session buildSession(const ObservedBoard::Result& board,
             session.reveal[static_cast<std::size_t>(config) *
                            session.candidateCount + candidate] = value;
         }
-    (void)probability;
-    (void)distributions;
     return session;
 }
 
 template <bool CheckAllMoves, bool IsRoot>
-inline int solve(Session& s, std::span<ConfigId> configs, int need, int depth,
-                 FlatHashTable<U128, int, U128Hash>& table, Result& result) {
+inline int BruteForce::solve(
+    Session& s, std::span<ConfigId> configs, int need, int depth,
+    FlatHashTable<U128, int, U128Hash>& table, Result& result) {
     if constexpr (CheckAllMoves && IsRoot) {
         ++s.nodes;
-        const int n = configs.size();
+        const int n = (int)configs.size();
         result.moves.clear();
         if (need > n) return -n;
         ScratchBuffers::Layer& buf = scratch.layer(depth);
-        const int m = s.candidates.size();
+        const int m = (int)s.candidates.size();
         std::vector<int>& deaths = buf.deaths;
         deaths.assign(m, 0);
         for (ConfigId ci : configs)
@@ -298,9 +325,10 @@ inline int solve(Session& s, std::span<ConfigId> configs, int need, int depth,
         int best = 0;
         std::array<std::vector<ConfigId>, 9>& groups = buf.groups;
         s.unopened.for_each([&](std::size_t j) {
+            const CandidateId candidate = (CandidateId)j;
             for (std::vector<ConfigId>& g : groups) g.clear();
             for (ConfigId ci : configs)
-                if (!mineAt(s, ci, j)) groups[revealAt(s, ci, j)].push_back(ci);
+                if (!mineAt(s, ci, candidate)) groups[revealAt(s, ci, candidate)].push_back(ci);
             s.unopened.reset(j);
             int wins = 0;
             for (int r = 0; r < 9; ++r) if (!groups[r].empty()) {
@@ -315,7 +343,7 @@ inline int solve(Session& s, std::span<ConfigId> configs, int need, int depth,
         return best;
     } else {
         ++s.nodes;
-        const int n = configs.size();
+        const int n = (int)configs.size();
         if (n <= 1) {
             if (need > n) return -n;
             if constexpr (IsRoot) if (n == 1)
@@ -334,7 +362,7 @@ inline int solve(Session& s, std::span<ConfigId> configs, int need, int depth,
             if (-*cached < need) return *cached;
         }
         ScratchBuffers::Layer& buf = scratch.layer(depth);
-        const int m = s.candidates.size();
+        const int m = (int)s.candidates.size();
         std::vector<int>& deaths = buf.deaths;
         deaths.assign(m, 0);
         for (ConfigId ci : configs)
@@ -343,7 +371,7 @@ inline int solve(Session& s, std::span<ConfigId> configs, int need, int depth,
         std::vector<int>& safeCells = buf.safeCells;
         safeCells.clear();
         s.unopened.for_each([&](std::size_t j) {
-            if (deaths[j] == 0) safeCells.push_back(j);
+            if (deaths[j] == 0) safeCells.push_back((int)j);
         });
         if (!safeCells.empty()) {
             if constexpr (IsRoot) {
@@ -361,35 +389,49 @@ inline int solve(Session& s, std::span<ConfigId> configs, int need, int depth,
                         s, ci, safeCells[i])) * (keyLen + 1) + i);
                 hashes.push_back(hasher.finalize());
             }
-            radix_sort::sortBy(hashes.size(),
-                [&](std::size_t i) { return hashes[i]; },
-                [&](std::size_t dst, std::size_t src) {
-                    hashes[dst] = hashes[src];
-                    configs[dst] = configs[src];
-                },
-                [&](std::size_t i, std::size_t j) {
-                    std::swap(hashes[i], hashes[j]);
-                    std::swap(configs[i], configs[j]);
-                });
             std::vector<std::span<ConfigId>>& groupList = buf.safeGroupList;
             groupList.clear();
-            for (std::size_t i = 0; i < hashes.size();) {
-                std::size_t j = i + 1;
-                while (j < hashes.size() && hashes[j] == hashes[i]) ++j;
-                groupList.emplace_back(configs.data() + i, j - i);
-                i = j;
+            FlatHashTable<U128, int, U128Hash>& groupTable = scratch.safeGroupTable;
+            std::vector<int>& groupIds = buf.safeGroupIds;
+            std::vector<int>& groupSizes = buf.safeGroupSizes;
+            std::vector<int>& groupOffsets = buf.safeGroupOffsets;
+            std::vector<ConfigId>& groupedConfigs = buf.safeGroupedConfigs;
+            groupTable.clear();
+            groupTable.reserve(hashes.size());
+            groupIds.resize(hashes.size());
+            groupSizes.clear();
+            for (std::size_t i = 0; i < hashes.size(); ++i) {
+                int& slot = groupTable[hashes[i]];
+                if (slot == 0) {
+                    slot = (int)groupSizes.size() + 1;
+                    groupSizes.push_back(0);
+                }
+                groupIds[i] = slot - 1;
+                ++groupSizes[groupIds[i]];
             }
+            groupOffsets.resize(groupSizes.size() + 1);
+            groupOffsets[0] = 0;
+            for (std::size_t i = 0; i < groupSizes.size(); ++i)
+                groupOffsets[i + 1] = groupOffsets[i] + groupSizes[i];
+            groupedConfigs.resize(configs.size());
+            for (std::size_t i = 0; i < groupSizes.size(); ++i)
+                groupSizes[i] = groupOffsets[i];
+            for (std::size_t i = 0; i < configs.size(); ++i)
+                groupedConfigs[groupSizes[groupIds[i]]++] = configs[i];
+            for (std::size_t i = 0; i < groupSizes.size(); ++i)
+                groupList.emplace_back(groupedConfigs.data() + groupOffsets[i],
+                                       groupOffsets[i + 1] - groupOffsets[i]);
             std::sort(groupList.begin(), groupList.end(),
                       [](auto a, auto b) { return a.size() > b.size(); });
             std::vector<int>& suffix = buf.suffix;
             suffix.assign(groupList.size() + 1, 0);
             for (int i = static_cast<int>(groupList.size()) - 1; i >= 0; --i)
-                suffix[i] = suffix[i + 1] + groupList[i].size();
+                suffix[i] = suffix[i + 1] + (int)groupList[i].size();
             int wins = 0;
             bool bailed = false;
             int upper = 0;
             for (int i = 0; i < static_cast<int>(groupList.size()); ++i) {
-                const int size = groupList[i].size();
+                const int size = (int)groupList[i].size();
                 if (wins + size + suffix[i + 1] < need) {
                     upper = wins + size + suffix[i + 1];
                     bailed = true;
@@ -416,7 +458,7 @@ inline int solve(Session& s, std::span<ConfigId> configs, int need, int depth,
 
         std::vector<int>& order = buf.order;
         order.clear();
-        s.unopened.for_each([&](std::size_t j) { order.push_back(j); });
+        s.unopened.for_each([&](std::size_t j) { order.push_back((int)j); });
         std::sort(order.begin(), order.end(),
                   [&](int a, int b) { return deaths[a] < deaths[b]; });
         int best = 0;
@@ -442,7 +484,7 @@ inline int solve(Session& s, std::span<ConfigId> configs, int need, int depth,
             std::vector<std::pair<int, int>>& groupList = buf.groupList;
             groupList.clear();
             for (int r = 0; r < 9; ++r)
-                if (!groups[r].empty()) groupList.push_back({r, groups[r].size()});
+                if (!groups[r].empty()) groupList.push_back({r, (int)groups[r].size()});
             std::sort(groupList.begin(), groupList.end(),
                       [](const auto& a, const auto& b) { return a.second > b.second; });
             std::vector<int>& suffix = buf.suffix;
@@ -498,17 +540,11 @@ inline int solve(Session& s, std::span<ConfigId> configs, int need, int depth,
     }
 }
 
-}  // namespace
-
-inline Result solve(const ObservedBoard::Result& board,
-                    const Basic::Result& basic,
-                    const Structure::Result& structure,
-                    const Probability::Result& probability,
-                    const Structure::ShapePool& shapes,
-                    ShapeSolver::Distribution::Pool& distributions,
-                    const Config& config) {
-    Session session = buildSession(board, basic, structure, probability,
-                                   shapes, distributions);
+inline BruteForce::Result BruteForce::solve(
+    const ObservedBoard::Result& board, const Basic::Result& basic,
+    const Structure::Result& structure, const Structure::ShapePool& shapes,
+    const Config& config) {
+    Session session = buildSession(board, basic, structure, shapes);
     scratch.reset();
     cache.clear();
     session.unopened.resize(session.candidateCount);
@@ -517,14 +553,15 @@ inline Result solve(const ObservedBoard::Result& board,
     result.possibilities = session.possibilityCount;
     if (session.possibilityCount == 0 || session.candidateCount == 0) return result;
     std::vector<ConfigId> configs(session.possibilityCount);
-    for (ConfigId i = 0; static_cast<int>(i) < session.possibilityCount; ++i)
+    for (ConfigId i = 0;
+         static_cast<int>(i) < session.possibilityCount; ++i)
         configs[i] = i;
     if (config.checkAllMoves) {
         solve<true, true>(session, configs, 1, 0, cache, result);
     } else {
         result.moves.resize(1);
-        const int wins = solve<false, true>(session, configs, config.minWins,
-                                            0, cache, result);
+        const int wins = solve<false, true>(
+            session, configs, config.minWins, 0, cache, result);
         if (wins >= config.minWins) result.moves[0].wins = wins;
         else result.moves.clear();
     }
@@ -533,4 +570,4 @@ inline Result solve(const ObservedBoard::Result& board,
     return result;
 }
 
-}  // namespace mss::BruteForce
+}  // namespace mss

@@ -15,63 +15,30 @@
 #include "core/assert.h"
 #include "core/utility/combinatorics.h"
 
-namespace mss::Probability {
+namespace mss {
 
-struct ObserveTransfer {
+struct Probability::ObserveTransfer {
     int neighborMines = 0;
     int componentMines = 0;
     long double ways = 0.0L;
 };
 
-void buildObserveTable(const Structure::Shape& shape,
-                       std::span<const int> adjacentBoxCells, int xBox,
-                       std::vector<ObserveTransfer>& out);
-
 // 点开一个隐藏格后的结果分布。
 // 下标 0..8 为显示数字，下标 9 为爆炸。
-struct ObserveResult {
+struct Probability::ObserveResult {
     std::array<long double, 10> probability = {};
 };
 
 // 计算点开 cell 后的结果分布。
 // distributions 可被补充组件分布缓存；其内容不代表 observe 的临时状态。
-ObserveResult observe(const ObservedBoard::Result& board,
-                      const Basic::Result& basic,
-                      const Structure::Result& structure,
-                      const Structure::ShapePool& shapes,
-                      const Result& probability,
-                      ShapeSolver::Distribution::Pool& distributions,
-                      CellId cell);
-
-}  // namespace mss::Probability
-
-namespace mss::ShapeSolver::DfsSolver {
-
-void buildObserveTable(const Structure::Shape& shape,
-                       std::span<const int> adjacentBoxCells, int xBox,
-                       std::vector<Probability::ObserveTransfer>& out);
-
-}  // namespace mss::ShapeSolver::DfsSolver
-
-namespace mss::ShapeSolver::GraphSolver {
-
-void buildObserveTable(const Structure::Shape& shape,
-                       std::span<const int> adjacentBoxCells, int xBox,
-                       std::vector<Probability::ObserveTransfer>& out);
-
-}  // namespace mss::ShapeSolver::GraphSolver
 
 //==============================================================================
-namespace mss::Probability {
-
-namespace {
-
-struct ObservePoly {
+struct Probability::ObservePoly {
     int start = 0;
     std::vector<long double> coeffs;
 };
 
-struct ObserveWorkspace {
+struct Probability::ObserveWorkspace {
     ObservePoly rest;
     ObservePoly all;
     ObservePoly mult;
@@ -84,11 +51,11 @@ struct ObserveWorkspace {
     std::vector<ObserveTransfer> transfers;
 };
 
-inline thread_local ObserveWorkspace workspace;
+inline thread_local Probability::ObserveWorkspace Probability::observeWorkspace;
 
-inline void polyMultiply(int leftStart, std::span<const long double> left,
-                         int rightStart, std::span<const long double> right,
-                         ObservePoly& out) {
+inline void Probability::observePolyMultiply(
+    int leftStart, std::span<const long double> left, int rightStart,
+    std::span<const long double> right, ObservePoly& out) {
     const int size = static_cast<int>(left.size()) +
                      static_cast<int>(right.size()) - 1;
     out.coeffs.assign(size, 0.0L);
@@ -98,16 +65,17 @@ inline void polyMultiply(int leftStart, std::span<const long double> left,
     out.start = leftStart + rightStart;
 }
 
-inline void polyMultiplyInto(ObservePoly& accumulator, int sourceStart,
-                             std::span<const long double> source,
-                             ObservePoly& mult) {
-    polyMultiply(accumulator.start, accumulator.coeffs, sourceStart, source, mult);
+inline void Probability::observePolyMultiplyInto(
+    ObservePoly& accumulator, int sourceStart,
+    std::span<const long double> source, ObservePoly& mult) {
+    observePolyMultiply(accumulator.start, accumulator.coeffs, sourceStart,
+                        source, mult);
     accumulator.coeffs.swap(mult.coeffs);
     accumulator.start = mult.start;
 }
 
-inline long double denominator(const ObservePoly& polynomial, int totalMines,
-                              int tSum) {
+inline long double Probability::observeDenominator(
+    const ObservePoly& polynomial, int totalMines, int tSum) {
     long double result = 0.0L;
     for (int i = 0; i < static_cast<int>(polynomial.coeffs.size()); ++i) {
         const int componentMines = polynomial.start + i;
@@ -118,26 +86,20 @@ inline long double denominator(const ObservePoly& polynomial, int totalMines,
     return result;
 }
 
-}  // namespace
-
-inline void buildObserveTable(const Structure::Shape& shape,
-                              std::span<const int> adjacentBoxCells, int xBox,
-                              std::vector<ObserveTransfer>& out) {
+inline void Probability::buildObserveTable(
+    const Structure::Shape& shape, std::span<const int> adjacentBoxCells,
+    int xBox, std::vector<ObserveTransfer>& out) {
     out.clear();
     if (static_cast<int>(shape.boxes.size()) < ShapeSolver::graphThreshold)
-        return ShapeSolver::DfsSolver::buildObserveTable(
-            shape, adjacentBoxCells, xBox, out);
-    ShapeSolver::GraphSolver::buildObserveTable(
-        shape, adjacentBoxCells, xBox, out);
+        return Probability::buildDfsTable(shape, adjacentBoxCells, xBox, out);
+    Probability::buildGraphTable(shape, adjacentBoxCells, xBox, out);
 }
 
-inline ObserveResult observe(const ObservedBoard::Result& board,
-                             const Basic::Result& basic,
-                             const Structure::Result& structure,
-                             const Structure::ShapePool& shapes,
-                             const Result& probability,
-                             ShapeSolver::Distribution::Pool& distributions,
-                             CellId cell) {
+inline Probability::ObserveResult Probability::observe(
+    const ObservedBoard::Result& board, const Basic::Result& basic,
+    const Structure::Result& structure, const Structure::ShapePool& shapes,
+    const Result& probability, ShapeSolver::Distribution::Pool& distributions,
+    CellId cell) {
     using Mark = Basic::Mark;
     const auto [x, y] = board.pos(cell);
     const int tSum = basic.unknownSum;
@@ -150,7 +112,7 @@ inline ObserveResult observe(const ObservedBoard::Result& board,
         return result;
     }
 
-    ObserveWorkspace& ws = workspace;
+    ObserveWorkspace& ws = observeWorkspace;
     const bool xInUnknown = basic.marks[x][y] == Mark::Unknown;
     const CellLocation xLocation = structure.cellLoc[cell];
     const bool xInBox = xLocation.component >= 0;
@@ -215,9 +177,10 @@ inline ObserveResult observe(const ObservedBoard::Result& board,
                     ++ws.adjacentBoxCells[box];
             }
         ws.nextDp.assign(9 * stride, 0.0L);
-        buildObserveTable(shape, ws.adjacentBoxCells,
-                          component == xComponent ? static_cast<int>(xBox) : -1,
-                          ws.transfers);
+        Probability::buildObserveTable(
+            shape, ws.adjacentBoxCells,
+            component == xComponent ? static_cast<int>(xBox) : -1,
+            ws.transfers);
         for (const ObserveTransfer& transfer : ws.transfers)
             applyTransfer(transfer);
         ws.dp.swap(ws.nextDp);
@@ -240,8 +203,8 @@ inline ObserveResult observe(const ObservedBoard::Result& board,
         const DistributionId id = ShapeSolver::analyze(
             shapes.get(structure.components[component].shape), distributions);
         const auto& distribution = distributions.get(id);
-        polyMultiplyInto(ws.rest, distribution.start(), distribution.ways(),
-                         ws.mult);
+        observePolyMultiplyInto(ws.rest, distribution.start(),
+                                distribution.ways(), ws.mult);
     }
     const int restMax = ws.rest.start +
                         static_cast<int>(ws.rest.coeffs.size()) - 1;
@@ -274,10 +237,11 @@ inline ObserveResult observe(const ObservedBoard::Result& board,
         const DistributionId id = ShapeSolver::analyze(
             shapes.get(structure.components[component].shape), distributions);
         const auto& distribution = distributions.get(id);
-        polyMultiplyInto(ws.all, distribution.start(), distribution.ways(),
-                         ws.mult);
+        observePolyMultiplyInto(ws.all, distribution.start(),
+                                distribution.ways(), ws.mult);
     }
-    const long double candidates = denominator(ws.all, totalMines, tSum);
+    const long double candidates = observeDenominator(
+        ws.all, totalMines, tSum);
     for (int neighborMines = 0;
          neighborMines + fixedMines <= 8; ++neighborMines)
         result.probability[fixedMines + neighborMines] =
@@ -285,11 +249,7 @@ inline ObserveResult observe(const ObservedBoard::Result& board,
     return result;
 }
 
-}  // namespace mss::Probability
-
-namespace mss::ShapeSolver::DfsSolver {
-
-inline void buildObserveTable(
+inline void Probability::buildDfsTable(
     const Structure::Shape& shape, std::span<const int> adjacentBoxCells,
     int xBox, std::vector<Probability::ObserveTransfer>& out) {
     int maxMineCount = 0;
@@ -297,8 +257,8 @@ inline void buildObserveTable(
         maxMineCount += box.size;
     thread_local std::vector<std::array<long double, 9>> accumulated;
     accumulated.assign(maxMineCount + 1, {});
-    forEachAssignment(shape, [&](std::span<const char> assignment,
-                                 long double weight) {
+    ShapeSolver::DfsSolver::forEachAssignment(
+        shape, [&](std::span<const char> assignment, long double weight) {
         int componentMines = 0;
         std::array<long double, 9> convolution{};
         convolution[0] = 1.0L;
@@ -333,7 +293,7 @@ inline void buildObserveTable(
         for (int h = 0; h <= 8; ++h)
             if (convolution[h] != 0.0L)
                 accumulated[componentMines][h] += weight * convolution[h];
-    });
+        });
     for (int componentMines = 0; componentMines <= maxMineCount;
          ++componentMines)
         for (int neighborMines = 0; neighborMines <= 8; ++neighborMines)
@@ -342,13 +302,7 @@ inline void buildObserveTable(
                                accumulated[componentMines][neighborMines]});
 }
 
-}  // namespace mss::ShapeSolver::DfsSolver
-
-namespace mss::ShapeSolver::GraphSolver {
-
-namespace {
-
-struct ObserveLayer {
+struct Probability::GraphLayer {
     struct Count {
         int componentMines = 0;
         int neighborMines = 0;
@@ -384,7 +338,8 @@ struct ObserveLayer {
         state.lastCount = index;
         return counts.back();
     }
-    void advance(const detail::StepPlan& plan, ObserveLayer& nextLayer,
+    void advance(const ShapeSolver::GraphSolver::StepPlan& plan,
+                 GraphLayer& nextLayer,
                  std::span<const int> adjacentBoxCells, int xBox) const {
         nextLayer.states.clear();
         nextLayer.counts.clear();
@@ -400,7 +355,8 @@ struct ObserveLayer {
         for (const State& state : states) {
             int minMine = 0;
             int maxMine = plan.boxSize;
-            for (const detail::StepPlan::Check& check : plan.checks) {
+            for (const ShapeSolver::GraphSolver::StepPlan::Check& check :
+                 plan.checks) {
                 int partial = 0;
                 for (int i = 0; i < check.readCount; ++i)
                     partial += frontierValues[state.frontierOffset + check.readSlots[i]];
@@ -431,7 +387,8 @@ struct ObserveLayer {
                     target = &nextLayer.states.back();
                 }
                 if (!isXBox && adjacent == 0) {
-                    const long double factor = DfsSolver::detail::binom(size, mine);
+                    const long double factor =
+                        ShapeSolver::DfsSolver::binom(size, mine);
                     for (int sourceIndex = state.firstCount;
                          sourceIndex >= 0;
                          sourceIndex = counts[sourceIndex].next) {
@@ -449,8 +406,10 @@ struct ObserveLayer {
                     const int remaining = mine - neighborMines;
                     if (remaining > pool - adjacent) continue;
                     const long double factor =
-                        DfsSolver::detail::binom(adjacent, neighborMines) *
-                        DfsSolver::detail::binom(pool - adjacent, remaining);
+                        ShapeSolver::DfsSolver::binom(adjacent,
+                                                              neighborMines) *
+                        ShapeSolver::DfsSolver::binom(pool - adjacent,
+                                                              remaining);
                     for (int sourceIndex = state.firstCount;
                          sourceIndex >= 0;
                          sourceIndex = counts[sourceIndex].next) {
@@ -477,21 +436,23 @@ struct ObserveLayer {
     }
 };
 
-}  // namespace
-
-inline void buildObserveTable(
+inline void Probability::buildGraphTable(
     const Structure::Shape& shape, std::span<const int> adjacentBoxCells,
     int xBox, std::vector<Probability::ObserveTransfer>& out) {
-    const detail::Graph graph = detail::Graph::fromShape(shape);
-    const std::vector<BoxId> order = detail::makeOrder(graph, PolishKind::Adjacent);
-    ObserveLayer current;
-    ObserveLayer next;
+    const ShapeSolver::GraphSolver::Graph graph =
+        ShapeSolver::GraphSolver::Graph::fromShape(shape);
+    const std::vector<BoxId> order = ShapeSolver::GraphSolver::makeOrder(
+        graph, ShapeSolver::GraphSolver::PolishKind::Adjacent);
+    GraphLayer current;
+    GraphLayer next;
     current.reset();
-    detail::walkSteps(shape, order, [&](const detail::StepPlan& plan) {
+    ShapeSolver::GraphSolver::walkSteps(
+        shape, order,
+        [&](const ShapeSolver::GraphSolver::StepPlan& plan) {
         current.advance(plan, next, adjacentBoxCells, xBox);
         std::swap(current, next);
-    });
+        });
     current.emit(out);
 }
 
-}  // namespace mss::ShapeSolver::GraphSolver
+}  // namespace mss

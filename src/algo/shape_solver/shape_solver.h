@@ -12,57 +12,57 @@
 
 namespace mss {
 
-namespace ShapeSolver {
+struct ShapeSolver {
+    struct Distribution {
+        class Result {
+        public:
+            Result(int start, int boxCount, std::vector<long double> ways,
+                   std::vector<long double> perBoxExpectations);
 
-namespace Distribution {
+            Result(const Result&) = delete;
+            Result& operator=(const Result&) = delete;
+            Result(Result&&) noexcept = default;
+            Result& operator=(Result&&) noexcept = default;
 
-    class Result {
-    public:
-        Result(int start, int boxCount, std::vector<long double> ways,
-               std::vector<long double> perBoxExpectations);
+            int start() const { return start_; }
+            int boxCount() const { return boxCount_; }
+            std::span<const long double> ways() const { return ways_; }
+            std::span<const std::span<const long double>> perBoxExpectations() const {
+                return perBoxExpectations_;
+            }
+            std::span<const long double> perBoxExpectation(std::size_t i) const {
+                return perBoxExpectations_[i];
+            }
 
-        Result(const Result&) = delete;
-        Result& operator=(const Result&) = delete;
-        Result(Result&&) noexcept = default;
-        Result& operator=(Result&&) noexcept = default;
+        private:
+            int start_;
+            int boxCount_;
+            std::vector<long double> ways_;
+            std::vector<std::span<const long double>> perBoxExpectations_;
+            std::vector<long double> perBoxExpectationData_;
+        };
 
-        int start() const { return start_; }
-        int boxCount() const { return boxCount_; }
-        std::span<const long double> ways() const { return ways_; }
-        std::span<const std::span<const long double>> perBoxExpectations() const {
-            return perBoxExpectations_;
-        }
-        std::span<const long double> perBoxExpectation(std::size_t i) const {
-            return perBoxExpectations_[i];
-        }
+        struct Pool {
+            DistributionId find(U128 hash) const;
+            const Result& get(DistributionId id) const { return results_[id]; }
+            DistributionId insert(U128 hash, Result result);
+            void clear();
+            std::size_t size() const { return results_.size(); }
 
-    private:
-        int start_;
-        int boxCount_;
-        std::vector<long double> ways_;
-        std::vector<std::span<const long double>> perBoxExpectations_;
-        std::vector<long double> perBoxExpectationData_;
+        private:
+            std::vector<Result> results_;
+            FlatHashTable<U128, DistributionId, U128Hash> index_;
+        };
     };
 
-    struct Pool {
-        DistributionId find(U128 hash) const;
-        const Result& get(DistributionId id) const { return results_[id]; }
-        DistributionId insert(U128 hash, Result result);
-        void clear();
-        std::size_t size() const { return results_.size(); }
+    struct DfsSolver;
+    struct GraphSolver;
 
-    private:
-        std::vector<Result> results_;
-        FlatHashTable<U128, DistributionId, U128Hash> index_;
-    };
+    static DistributionId analyze(const Structure::Shape& shape,
+                                  Distribution::Pool& pool);
 
-}  // namespace Distribution
-
-DistributionId analyze(const Structure::Shape& shape, Distribution::Pool& pool);
-
-inline constexpr int graphThreshold = 35;
-
-}  // namespace ShapeSolver
+    inline static constexpr int graphThreshold = 35;
+};
 
 }  // namespace mss
 
@@ -72,12 +72,9 @@ inline constexpr int graphThreshold = 35;
 
 namespace mss {
 
-namespace ShapeSolver {
-
-namespace Distribution {
-
-inline Result::Result(int start, int boxCount, std::vector<long double> ways,
-                      std::vector<long double> perBoxExpectations)
+inline ShapeSolver::Distribution::Result::Result(
+    int start, int boxCount, std::vector<long double> ways,
+    std::vector<long double> perBoxExpectations)
     : start_(start), boxCount_(boxCount), ways_(std::move(ways)),
       perBoxExpectationData_(std::move(perBoxExpectations)) {
     perBoxExpectations_.reserve(ways_.size());
@@ -87,12 +84,13 @@ inline Result::Result(int start, int boxCount, std::vector<long double> ways,
             allExpectations.subspan(i * boxCount_, boxCount_));
 }
 
-inline DistributionId Pool::find(U128 hash) const {
+inline DistributionId ShapeSolver::Distribution::Pool::find(U128 hash) const {
     if (const DistributionId* found = index_.find(hash)) return *found;
     return -1;
 }
 
-inline DistributionId Pool::insert(U128 hash, Result result) {
+inline DistributionId ShapeSolver::Distribution::Pool::insert(
+    U128 hash, ShapeSolver::Distribution::Result result) {
     if (const DistributionId* found = index_.find(hash)) return *found;
     const DistributionId id = static_cast<DistributionId>(results_.size());
     results_.push_back(std::move(result));
@@ -100,20 +98,17 @@ inline DistributionId Pool::insert(U128 hash, Result result) {
     return id;
 }
 
-inline void Pool::clear() {
+inline void ShapeSolver::Distribution::Pool::clear() {
     results_.clear();
     index_.clear();
 }
 
-}  // namespace Distribution
-
-inline DistributionId analyze(const Structure::Shape& shape,
-                              Distribution::Pool& pool) {
+inline DistributionId ShapeSolver::analyze(
+    const Structure::Shape& shape, ShapeSolver::Distribution::Pool& pool) {
     if (static_cast<int>(shape.boxes.size()) < graphThreshold)
-        return DfsSolver::analyze(shape, pool);
-    return GraphSolver::analyze(shape, pool, GraphSolver::PolishKind::Adjacent);
+        return ShapeSolver::DfsSolver::analyze(shape, pool);
+    return ShapeSolver::GraphSolver::analyze(
+        shape, pool, ShapeSolver::GraphSolver::PolishKind::Adjacent);
 }
-
-}  // namespace ShapeSolver
 
 }  // namespace mss

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "algo/ref/java_evaluate.h"
 #include "test/basic.h"
 #include "test/bruteforce.h"
 #include "test/flat_hashtable.h"
