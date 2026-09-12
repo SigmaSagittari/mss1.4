@@ -7,7 +7,7 @@
 #include <utility>
 #include <vector>
 
-#include "algo/shape_solver/shape_solver.h"
+#include "algo/shape_solver/shape_solver_common.h"
 
 namespace mss {
 
@@ -403,7 +403,7 @@ struct ShapeSolver::GraphSolver::Layer {
                     nextLayer.index.emplace(hash, id);
                     target = &nextLayer.states.back();
                 }
-                const long double factor = DfsSolver::binom(plan.boxSize, mine);
+                const long double factor = ShapeSolver::binom(plan.boxSize, mine);
                 for (int sourceIndex = state.firstCount; sourceIndex >= 0;
                      sourceIndex = counts[sourceIndex].next) {
                     const Count& source = counts[sourceIndex];

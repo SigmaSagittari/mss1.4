@@ -388,7 +388,7 @@ struct Probability::GraphLayer {
                 }
                 if (!isXBox && adjacent == 0) {
                     const long double factor =
-                        ShapeSolver::DfsSolver::binom(size, mine);
+                        ShapeSolver::binom(size, mine);
                     for (int sourceIndex = state.firstCount;
                          sourceIndex >= 0;
                          sourceIndex = counts[sourceIndex].next) {
@@ -406,9 +406,9 @@ struct Probability::GraphLayer {
                     const int remaining = mine - neighborMines;
                     if (remaining > pool - adjacent) continue;
                     const long double factor =
-                        ShapeSolver::DfsSolver::binom(adjacent,
+                        ShapeSolver::binom(adjacent,
                                                               neighborMines) *
-                        ShapeSolver::DfsSolver::binom(pool - adjacent,
+                        ShapeSolver::binom(pool - adjacent,
                                                               remaining);
                     for (int sourceIndex = state.firstCount;
                          sourceIndex >= 0;

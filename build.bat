@@ -9,13 +9,13 @@ set "OPT=-O3 -flto=auto -fuse-linker-plugin -flto-partition=one -fwhole-program 
 if not exist "%BUILD%" mkdir "%BUILD%"
 
 "%CXX%" -std=gnu++20 %OPT% -Wall -Wextra -pedantic -Isrc src\main.cpp ^
-    -ldbghelp -o "%BUILD%\mss1.3-test.exe"
+    -ldbghelp -o "%BUILD%\mss1.4-test.exe"
 if errorlevel 1 (
     set "MSS_BUILD_STATUS=1"
     goto :finish
 )
 
-"%BUILD%\mss1.3-test.exe"
+"%BUILD%\mss1.4-test.exe"
 set "MSS_BUILD_STATUS=%errorlevel%"
 
 :finish

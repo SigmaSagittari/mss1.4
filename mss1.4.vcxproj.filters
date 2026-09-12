@@ -16,6 +16,9 @@
   <ItemGroup>
     <ClInclude Include="src\algo\basic.h"><Filter>src\algo</Filter></ClInclude>
     <ClInclude Include="src\algo\bruteforce\bruteforce.h"><Filter>src\algo\bruteforce</Filter></ClInclude>
+    <ClInclude Include="src\algo\bruteforce\bruteforce_bitwise.h"><Filter>src\algo\bruteforce</Filter></ClInclude>
+    <ClInclude Include="src\algo\bruteforce\bruteforce_common.h"><Filter>src\algo\bruteforce</Filter></ClInclude>
+    <ClInclude Include="src\algo\bruteforce\bruteforce_normal.h"><Filter>src\algo\bruteforce</Filter></ClInclude>
     <ClInclude Include="src\algo\observed_board.h"><Filter>src\algo</Filter></ClInclude>
     <ClInclude Include="src\algo\probability\global_solver.h"><Filter>src\algo\probability</Filter></ClInclude>
     <ClInclude Include="src\algo\probability\observe.h"><Filter>src\algo\probability</Filter></ClInclude>
@@ -23,6 +26,7 @@
     <ClInclude Include="src\algo\shape_solver\dfs_solver.h"><Filter>src\algo\shape_solver</Filter></ClInclude>
     <ClInclude Include="src\algo\shape_solver\graph_solver.h"><Filter>src\algo\shape_solver</Filter></ClInclude>
     <ClInclude Include="src\algo\shape_solver\shape_solver.h"><Filter>src\algo\shape_solver</Filter></ClInclude>
+    <ClInclude Include="src\algo\shape_solver\shape_solver_common.h"><Filter>src\algo\shape_solver</Filter></ClInclude>
     <ClInclude Include="src\algo\structure.h"><Filter>src\algo</Filter></ClInclude>
     <ClInclude Include="src\core\assert.h"><Filter>src\core</Filter></ClInclude>
     <ClInclude Include="src\core\config.h"><Filter>src\core</Filter></ClInclude>

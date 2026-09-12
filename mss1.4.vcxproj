@@ -13,7 +13,7 @@
   <PropertyGroup Label="Globals">
     <ProjectGuid>{E79C07F5-9B9A-48F6-B733-681BC43DB8F9}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
-    <RootNamespace>mss13</RootNamespace>
+    <RootNamespace>mss14</RootNamespace>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
@@ -41,12 +41,12 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <OutDir>$(ProjectDir)build-vs\Debug\</OutDir>
     <IntDir>$(ProjectDir)build-vs\obj\Debug\</IntDir>
-    <TargetName>mss1.3-test</TargetName>
+    <TargetName>mss1.4-test</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <OutDir>$(ProjectDir)build-vs\Release\</OutDir>
     <IntDir>$(ProjectDir)build-vs\obj\Release\</IntDir>
-    <TargetName>mss1.3-test</TargetName>
+    <TargetName>mss1.4-test</TargetName>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
@@ -95,6 +95,9 @@
   <ItemGroup>
     <ClInclude Include="src\algo\basic.h" />
     <ClInclude Include="src\algo\bruteforce\bruteforce.h" />
+    <ClInclude Include="src\algo\bruteforce\bruteforce_bitwise.h" />
+    <ClInclude Include="src\algo\bruteforce\bruteforce_common.h" />
+    <ClInclude Include="src\algo\bruteforce\bruteforce_normal.h" />
     <ClInclude Include="src\algo\observed_board.h" />
     <ClInclude Include="src\algo\probability\global_solver.h" />
     <ClInclude Include="src\algo\probability\observe.h" />
@@ -102,6 +105,7 @@
     <ClInclude Include="src\algo\shape_solver\dfs_solver.h" />
     <ClInclude Include="src\algo\shape_solver\graph_solver.h" />
     <ClInclude Include="src\algo\shape_solver\shape_solver.h" />
+    <ClInclude Include="src\algo\shape_solver\shape_solver_common.h" />
     <ClInclude Include="src\algo\structure.h" />
     <ClInclude Include="src\core\assert.h" />
     <ClInclude Include="src\core\config.h" />

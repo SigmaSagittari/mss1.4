@@ -4,7 +4,7 @@
 #include <span>
 #include <vector>
 
-#include "algo/shape_solver/shape_solver.h"
+#include "algo/shape_solver/shape_solver_common.h"
 
 namespace mss {
 
@@ -34,8 +34,6 @@ private:
     static AssignmentWorkspace& assignmentWorkspace();
 
 public:
-    static long double binom(int n, int k);
-
     template <typename Callback>
     static void forEachAssignment(const Structure::Shape& shape, Callback&& callback);
 
@@ -50,22 +48,6 @@ inline thread_local ShapeSolver::DfsSolver::AssignmentWorkspace
 inline ShapeSolver::DfsSolver::AssignmentWorkspace&
 ShapeSolver::DfsSolver::assignmentWorkspace() {
     return workspace;
-}
-
-inline long double ShapeSolver::DfsSolver::binom(int n, int k) {
-    constexpr int max = 9;
-    static constexpr std::array<std::array<long double, max + 1>, max + 1>
-        table = [] {
-            std::array<std::array<long double, max + 1>, max + 1> result{};
-            for (int i = 0; i <= max; ++i) {
-                result[i][0] = 1;
-                result[i][i] = 1;
-                for (int j = 1; j < i; ++j)
-                    result[i][j] = result[i - 1][j - 1] + result[i - 1][j];
-            }
-            return result;
-        }();
-    return table[n][k];
 }
 
 template <typename Callback>
@@ -167,7 +149,7 @@ inline void mss::ShapeSolver::DfsSolver::forEachAssignment(
         }
         workspace.frames.push_back(
             {index + 1, 0, index, mine,
-             frame.ways * binom(maxMine, mine)});
+             frame.ways * ShapeSolver::binom(maxMine, mine)});
     }
 }
 
