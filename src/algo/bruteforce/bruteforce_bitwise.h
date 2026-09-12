@@ -16,7 +16,6 @@ struct BruteForce::BitwiseSolver {
 
     struct Layer {
         std::vector<int> deaths;
-        std::vector<int> safeCells;
         std::vector<int> order;
         std::vector<int> suffix;
         std::array<std::vector<ConfigId>, 9> groups;
@@ -95,7 +94,6 @@ BruteForce::BitwiseSolver::Scratch::layer(int depth) {
 inline void BruteForce::BitwiseSolver::Scratch::reset() {
     for (Layer& layer : layers) {
         layer.deaths.clear();
-        layer.safeCells.clear();
         layer.order.clear();
         layer.suffix.clear();
         for (std::vector<ConfigId>& group : layer.groups) group.clear();
@@ -137,12 +135,6 @@ inline int BruteForce::BitwiseSolver::solve(
         result.moves.clear();
         if (need > n) return -n;
         Layer& buf = scratch.layer(depth);
-        const int m = common.candidateCount;
-        std::vector<int>& deaths = buf.deaths;
-        deaths.assign(m, 0);
-        for (ConfigId config : configs)
-            for (int candidate = 0; candidate < m; ++candidate)
-                if (mineAt(s, config, candidate)) ++deaths[candidate];
         int best = 0;
         std::array<std::vector<ConfigId>, 9>& groups = buf.groups;
         for (std::uint64_t unopened = s.unopened; unopened != 0;
@@ -189,26 +181,39 @@ inline int BruteForce::BitwiseSolver::solve(
         Layer& buf = scratch.layer(depth);
         const int m = common.candidateCount;
         std::vector<int>& deaths = buf.deaths;
-        std::vector<int>& safeCells = buf.safeCells;
-        safeCells.clear();
         std::uint64_t safeMask = s.unopened;
         for (ConfigId config : configs) safeMask &= ~s.mineMasks[config];
-        for (std::uint64_t safe = safeMask; safe != 0; safe &= safe - 1)
-            safeCells.push_back(std::countr_zero(safe));
-        if (!safeCells.empty()) {
+        if (safeMask != 0) {
             if constexpr (IsRoot) {
-                result.moves[0].x = common.candidates[safeCells[0]].x;
-                result.moves[0].y = common.candidates[safeCells[0]].y;
+                const ConfigId candidate = std::countr_zero(safeMask);
+                result.moves[0].x = common.candidates[candidate].x;
+                result.moves[0].y = common.candidates[candidate].y;
             }
             s.unopened &= ~safeMask;
             std::vector<U128>& hashes = buf.safeHashes;
             hashes.clear();
-            const std::size_t keyLen = safeCells.size();
+            const std::size_t wordCount =
+                (std::popcount(safeMask) + 15) / 16;
             for (ConfigId config : configs) {
+                std::array<std::uint64_t, 4> packed{};
+                int word = 0;
+                int shift = 0;
+                std::uint64_t safe = safeMask;
+                while (safe != 0) {
+                    const ConfigId candidate = std::countr_zero(safe);
+                    const std::uint64_t value = static_cast<std::uint64_t>(
+                        revealAt(common, s, config, candidate));
+                    packed[word] |= value << shift;
+                    shift += 4;
+                    if (shift == 64) {
+                        ++word;
+                        shift = 0;
+                    }
+                    safe &= safe - 1;
+                }
                 U128Hasher hasher;
-                for (std::size_t i = 0; i < keyLen; ++i)
-                    hasher.mix(static_cast<std::uint64_t>(revealAt(
-                        common, s, config, safeCells[i])) * (keyLen + 1) + i);
+                for (std::size_t i = 0; i < wordCount; ++i)
+                    hasher.mix(packed[i]);
                 hashes.push_back(hasher.finalize());
             }
             std::vector<std::span<ConfigId>>& groupList = buf.safeGroupList;
@@ -247,7 +252,8 @@ inline int BruteForce::BitwiseSolver::solve(
             std::sort(groupList.begin(), groupList.end(),
                       [](auto a, auto b) { return a.size() > b.size(); });
             std::vector<int>& suffix = buf.suffix;
-            suffix.assign(groupList.size() + 1, 0);
+            suffix.resize(groupList.size() + 1);
+            suffix.back() = 0;
             for (int i = static_cast<int>(groupList.size()) - 1; i >= 0; --i)
                 suffix[i] = suffix[i + 1] + static_cast<int>(groupList[i].size());
             int wins = 0;
@@ -281,9 +287,14 @@ inline int BruteForce::BitwiseSolver::solve(
         }
 
         deaths.assign(m, 0);
-        for (ConfigId config : configs)
-            for (int candidate = 0; candidate < m; ++candidate)
-                if (mineAt(s, config, candidate)) ++deaths[candidate];
+        for (std::uint64_t unopened = s.unopened; unopened != 0;
+             unopened &= unopened - 1) {
+            const ConfigId candidate = std::countr_zero(unopened);
+            const std::uint64_t bit = 1ULL << candidate;
+            int& death = deaths[candidate];
+            for (ConfigId config : configs)
+                death += (s.mineMasks[config] & bit) != 0;
+        }
         std::vector<int>& order = buf.order;
         order.clear();
         for (std::uint64_t unopened = s.unopened; unopened != 0;
@@ -321,7 +332,8 @@ inline int BruteForce::BitwiseSolver::solve(
                           return a.second > b.second;
                       });
             std::vector<int>& suffix = buf.suffix;
-            suffix.assign(groupList.size() + 1, 0);
+            suffix.resize(groupList.size() + 1);
+            suffix.back() = 0;
             for (int i = static_cast<int>(groupList.size()) - 1; i >= 0; --i)
                 suffix[i] = suffix[i + 1] + groupList[i].second;
             s.unopened &= ~(1ULL << candidate);

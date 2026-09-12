@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>扫雷</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="menurow">
+    <button class="mode active" data-mode="beg">初级</button>
+    <button class="mode" data-mode="int">中级</button>
+    <button class="mode" data-mode="exp">专家</button>
+    <button class="mode" data-mode="cus">自定义</button>
+    <span id="custom-fields" hidden>
+      <label>行 <input id="cus-rows" type="number" min="2" max="100" value="10"></label>
+      <label>列 <input id="cus-cols" type="number" min="2" max="100" value="12"></label>
+      <label>雷 <input id="cus-mines" type="number" min="1" value="15"></label>
+      <button id="cus-start">开始</button>
+    </span>
+    <span class="spacer"></span>
+    <button id="analyzer-btn">分析</button>
+    <button id="export-btn" title="把当前盘面导出为文本（分析与实战均可）">导出</button>
+    <button id="import-btn" hidden title="粘贴文本导入盘面（仅分析模式）">导入</button>
+    <button id="settings-btn">设置 ▾</button>
+    <div id="settings-menu" hidden>
+      <div class="settings-groups">
+        <button class="sub-btn active" id="sub-ui" type="button">界面 ▸</button>
+        <button class="sub-btn" id="sub-adv" type="button">高级 ▸</button>
+      </div>
+      <div class="submenu" id="sub-ui-panel">
+        <label><input type="checkbox" id="opt-prob"> 显示概率</label>
+        <label>格子大小 <input id="opt-cell" type="number" min="8" max="80" value="40"> px</label>
+        <label>棋盘展示 <input id="opt-view" type="number" min="10" max="100" value="30"> 格</label>
+      </div>
+      <div class="submenu" id="sub-adv-panel" hidden>
+        <div class="settings-label">分布算法</div>
+        <label title="小盘面用 DFS，大盘面用图分解（推荐）"><input type="radio" name="dist-mode" value="auto" checked> 自动</label>
+        <label title="全量旧 DFS：最快但极端盘面最不稳"><input type="radio" name="dist-mode" value="old"> 旧版 DFS</label>
+        <label title="全量图分解：最抗操但小盘面固定开销最高"><input type="radio" name="dist-mode" value="graph"> 图分解</label>
+        <label>随机种子 <input id="opt-seed" type="number" min="0" value="0"></label>
+        <button id="seed-start" type="button">用此种子开局</button>
+      </div>
+    </div>
+  </div>
+  <div class="statusbar">
+    <div class="led" id="mines-left">10</div>
+    <button class="face" id="face" title="重新开始">🙂</button>
+    <div class="led" id="timer">0:00</div>
+  </div>
+  <div class="main">
+    <div class="boardwrap"><canvas id="main-canvas"></canvas></div>
+    <div class="detail-panel">
+      <div class="panel-title">详细信息</div>
+      <button id="autoplay-btn" type="button" title="自动打开所有雷概率 0 的格、标旗所有雷概率 100 的格，直到没有确定性动作">自动打开</button>
+      <button id="calc-prob-btn" type="button" hidden>计算概率</button>
+      <button id="java-evaluate-btn" type="button" hidden>Java 分析</button>
+      <pre id="detail-text">悬停在格子上查看</pre>
+    </div>
+  </div>
+
+  <!-- 导出盘面弹窗 -->
+  <div id="export-modal" class="modal" hidden>
+    <div class="modal-box">
+      <div class="modal-title">导出盘面（首行 行x列/雷数，每行一列 0-8/H/F）</div>
+      <textarea id="export-text" readonly spellcheck="false"></textarea>
+      <div class="modal-actions">
+        <button id="export-copy" type="button">复制</button>
+        <button id="export-close" type="button">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 导入盘面弹窗（仅分析模式） -->
+  <div id="import-modal" class="modal" hidden>
+    <div class="modal-box">
+      <div class="modal-title">导入盘面（仅分析模式；H=未开，F=标旗/雷）</div>
+      <textarea id="import-text" spellcheck="false" placeholder="30x30/225&#10;123456780HF&#10;..."></textarea>
+      <div id="import-error" class="import-error" hidden></div>
+      <div class="modal-actions">
+        <button id="import-confirm" type="button">导入</button>
+        <button id="import-cancel" type="button">取消</button>
+      </div>
+    </div>
+  </div>
+<script src="main.js?v=5"></script>
+<script src="analyzer.js?v=5"></script>
+</body>
+</html>
