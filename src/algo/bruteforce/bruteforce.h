@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <cstdio>
 #include <deque>
 #include <span>
 #include <utility>
@@ -96,6 +97,18 @@ struct BruteForce::Session {
     std::vector<CandidateId> mineCells;
     DynamicBitset unopened;
     long long nodes = 0;
+    long long smallEntries = 0;
+    long long smallNodes = 0;
+    long long smallHashRequests = 0;
+    long long smallHashedConfigs = 0;
+    long long smallEntryConfigTotal = 0;
+    long long smallEntryMaskWork = 0;
+    long long smallCandidateEvals = 0;
+    long long smallCandidateConfigChecks = 0;
+    long long smallSafeCells = 0;
+    long long smallSafeCellConfigChecks = 0;
+    std::array<long long, 32> cacheQueries{};
+    std::array<long long, 32> cacheHits{};
 };
 
 struct BruteForce::ScratchBuffers {
@@ -332,6 +345,13 @@ inline int BruteForce::solve(
             s.unopened.reset(j);
             int wins = 0;
             for (int r = 0; r < 9; ++r) if (!groups[r].empty()) {
+                if (configs.size() >= 32 && groups[r].size() < 32)
+                {
+                    ++s.smallEntries;
+                    s.smallEntryConfigTotal += groups[r].size();
+                    s.smallEntryMaskWork +=
+                        static_cast<long long>(groups[r].size()) * s.candidateCount;
+                }
                 const int value = solve<false, false>(s, groups[r], 1, depth + 1,
                                                       table, result);
                 if (value > 0) wins += value;
@@ -344,6 +364,7 @@ inline int BruteForce::solve(
     } else {
         ++s.nodes;
         const int n = (int)configs.size();
+        if (n < 32) ++s.smallNodes;
         if (n <= 1) {
             if (need > n) return -n;
             if constexpr (IsRoot) if (n == 1)
@@ -356,8 +377,14 @@ inline int BruteForce::solve(
             return n;
         }
         if (need > n) return -n;
+        if (n < 32) {
+            ++s.smallHashRequests;
+            s.smallHashedConfigs += n;
+        }
         const U128 key = hashConfigs(configs);
+        if (n < 32) ++s.cacheQueries[n];
         if (const int* cached = table.find(key)) {
+            if (n < 32) ++s.cacheHits[n];
             if (*cached >= 0) return *cached >= need ? *cached : -*cached;
             if (-*cached < need) return *cached;
         }
@@ -373,6 +400,11 @@ inline int BruteForce::solve(
         s.unopened.for_each([&](std::size_t j) {
             if (deaths[j] == 0) safeCells.push_back((int)j);
         });
+        if (n < 32) {
+            s.smallSafeCells += safeCells.size();
+            s.smallSafeCellConfigChecks +=
+                static_cast<long long>(n) * safeCells.size();
+        }
         if (!safeCells.empty()) {
             if constexpr (IsRoot) {
                 result.moves[0].x = s.candidates[safeCells[0]].x;
@@ -437,6 +469,13 @@ inline int BruteForce::solve(
                     bailed = true;
                     break;
                 }
+                if (configs.size() >= 32 && groupList[i].size() < 32)
+                {
+                    ++s.smallEntries;
+                    s.smallEntryConfigTotal += groupList[i].size();
+                    s.smallEntryMaskWork +=
+                        static_cast<long long>(groupList[i].size()) * s.candidateCount;
+                }
                 const int value = solve<false, false>(
                     s, groupList[i], (std::max)(1, need - wins - suffix[i + 1]),
                     depth + 1, table, result);
@@ -464,6 +503,10 @@ inline int BruteForce::solve(
         int best = 0;
         int upper = 0;
         for (int j : order) {
+            if (n < 32) {
+                ++s.smallCandidateEvals;
+                s.smallCandidateConfigChecks += n;
+            }
             const int target = (std::max)(best + 1, need);
             if (n - deaths[j] < target) {
                 upper = (std::max)(upper, n - deaths[j]);
@@ -501,6 +544,13 @@ inline int BruteForce::solve(
                     moveUpper = wins + groupList[i].second + suffix[i + 1];
                     bailed = true;
                     break;
+                }
+                if (configs.size() >= 32 && groupList[i].second < 32)
+                {
+                    ++s.smallEntries;
+                    s.smallEntryConfigTotal += groupList[i].second;
+                    s.smallEntryMaskWork +=
+                        static_cast<long long>(groupList[i].second) * s.candidateCount;
                 }
                 const int value = solve<false, false>(
                     s, group, (std::max)(1, target - wins - suffix[i + 1]),
@@ -566,6 +616,29 @@ inline BruteForce::Result BruteForce::solve(
         else result.moves.clear();
     }
     result.nodes = session.nodes;
+    if (session.possibilityCount < 32) {
+        ++session.smallEntries;
+        session.smallEntryConfigTotal += session.possibilityCount;
+        session.smallEntryMaskWork =
+            static_cast<long long>(session.possibilityCount) * session.candidateCount;
+    }
+    std::fprintf(stderr,
+                 "bruteforce stats: smallEntries=%lld smallNodes=%lld "
+                 "smallHashRequests=%lld smallHashedConfigs=%lld "
+                 "entryConfigs=%lld entryMaskWork=%lld\n",
+                 session.smallEntries, session.smallNodes,
+                 session.smallHashRequests, session.smallHashedConfigs,
+                 session.smallEntryConfigTotal, session.smallEntryMaskWork);
+    std::fprintf(stderr,
+                 "small grouping: candidateEvals=%lld candidateConfigChecks=%lld "
+                 "safeCells=%lld safeCellConfigChecks=%lld\n",
+                 session.smallCandidateEvals, session.smallCandidateConfigChecks,
+                 session.smallSafeCells, session.smallSafeCellConfigChecks);
+    std::fprintf(stderr, "small cache hits/queries:");
+    for (int n = 2; n <= 8; ++n)
+        std::fprintf(stderr, " n%d=%lld/%lld", n,
+                     session.cacheHits[n], session.cacheQueries[n]);
+    std::fputc('\n', stderr);
     cache.clear();
     return result;
 }

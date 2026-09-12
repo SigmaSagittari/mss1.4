@@ -431,6 +431,7 @@ struct ShapeSolver::GraphSolver::Layer {
 
 inline ShapeSolver::Distribution::Result
 ShapeSolver::GraphSolver::materialize(const Layer& layer, int boxCount) {
+    if (layer.states.empty()) return {0, boxCount, {}, {}};
     std::vector<int> countIds;
     int start = 0;
     int end = 0;

@@ -125,6 +125,11 @@ inline void Probability::analyze(
     long double tCellProbability;
     if (componentCount == 0) {
         candidates = denominator(ws.identity, totalMines, tSum);
+        if (candidates == 0.0L) {
+            result.tCellProbability_ = 0.0L;
+            result.candidates_ = 0.0L;
+            return;
+        }
         tCellProbability = unknownMineProbability(
             ws.identity, totalMines, tSum, candidates);
         result.tCellProbability_ = limitProbability(tCellProbability);
@@ -152,8 +157,11 @@ inline void Probability::analyze(
     }
 
     candidates = denominator(ws.tree[1], totalMines, tSum);
-    assert_(candidates > 0.0L,
-            "Probability::analyze: 当前盘面不存在全局可行方案");
+    if (candidates == 0.0L) {
+        result.tCellProbability_ = 0.0L;
+        result.candidates_ = 0.0L;
+        return;
+    }
     tCellProbability = unknownMineProbability(
         ws.tree[1], totalMines, tSum, candidates);
     tCellProbability = limitProbability(tCellProbability);
