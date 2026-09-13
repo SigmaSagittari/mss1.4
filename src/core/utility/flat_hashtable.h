@@ -23,6 +23,12 @@ struct SplitMix64Hash {
 // Hash 必须提供 const 的 operator()(const Key&)；默认使用 SplitMix64Hash。
 template <typename Key, typename Value, typename Hash = SplitMix64Hash>
 class FlatHashTable {
+    struct Slot {
+        Key key{};
+        Value value{};
+        unsigned char used = 0;
+    };
+
 public:
     static constexpr double kMaxLoadFactor = 0.5;
 
@@ -45,43 +51,42 @@ public:
     }
 
     // 查找：命中返回指向值的指针，未命中返回 nullptr
-    Value* find(const Key& key) { return valueAt(values_, findIndex(key)); }
-    const Value* find(const Key& key) const { return valueAt(values_, findIndex(key)); }
+    Value* find(const Key& key) { return valueAt(findIndex(key)); }
+    const Value* find(const Key& key) const { return valueAt(findIndex(key)); }
 
     // 查找，不存在则插入默认值并返回引用（与 std::unordered_map::operator[] 一致）
     Value& operator[](const Key& key) {
         const auto i = insertionIndex(key);
-        if (insertKey(i, key)) values_[i] = Value{};
-        return values_[i];
+        if (insertKey(i, key)) slots_[i].value = Value{};
+        return slots_[i].value;
     }
 
     // 仅当键不存在时插入（与 std::unordered_map::emplace 一致）
     void emplace(const Key& key, const Value& value) {
         const auto i = insertionIndex(key);
-        if (insertKey(i, key)) values_[i] = value;
+        if (insertKey(i, key)) slots_[i].value = value;
     }
 
 private:
     std::size_t capacity() const { return activeCapacity_; }
 
     void activate(std::size_t newCap) {
-        if (newCap > keys_.size()) {
-            keys_.resize(newCap);
-            values_.resize(newCap);
-            used_.resize(newCap, 0);
-        }
-        for (std::size_t i = 0; i < newCap; ++i) used_[i] = 0;
+        if (newCap > slots_.size()) slots_.resize(newCap);
+        for (std::size_t i = 0; i < newCap; ++i) slots_[i].used = 0;
         activeCapacity_ = newCap;
     }
 
-    template <typename Values>
-    auto valueAt(Values& values, std::size_t i) const -> decltype(&values[i]) {
-        return i == activeCapacity_ ? nullptr : &values[i];
+    Value* valueAt(std::size_t i) {
+        return i == activeCapacity_ ? nullptr : &slots_[i].value;
+    }
+
+    const Value* valueAt(std::size_t i) const {
+        return i == activeCapacity_ ? nullptr : &slots_[i].value;
     }
 
     bool insertKey(std::size_t i, const Key& key) {
-        if (used_[i]) return false;
-        used_[i] = 1; keys_[i] = key; ++size_;
+        if (slots_[i].used) return false;
+        slots_[i].used = 1; slots_[i].key = key; ++size_;
         return true;
     }
 
@@ -91,8 +96,8 @@ private:
         const auto mask = activeCapacity_ - 1;
         auto i = hash_(key) & mask;
         for (;;) {
-            if (!used_[i]) return activeCapacity_;
-            if (keys_[i] == key) return i;
+            if (!slots_[i].used) return activeCapacity_;
+            if (slots_[i].key == key) return i;
             i = (i + 1) & mask;
         }
     }
@@ -102,7 +107,7 @@ private:
         const auto mask = activeCapacity_ - 1;
         auto i = hash_(key) & mask;
         for (;;) {
-            if (!used_[i] || keys_[i] == key) return i;
+            if (!slots_[i].used || slots_[i].key == key) return i;
             i = (i + 1) & mask;
         }
     }
@@ -115,33 +120,27 @@ private:
 
     void grow() {
         if (activeCapacity_ == 0)
-            activate(keys_.empty() ? 4 : keys_.size());
+            activate(slots_.empty() ? 4 : slots_.size());
         else rehash(activeCapacity_ * 2);
     }
 
     void rehash(std::size_t newCap) {
-        std::vector<Key> newKeys(newCap);
-        std::vector<Value> newValues(newCap);
-        std::vector<unsigned char> newUsed(newCap, 0);
+        std::vector<Slot> newSlots(newCap);
         const auto mask = newCap - 1;
         for (auto i = std::size_t{}; i < activeCapacity_; ++i) {
-            if (!used_[i]) continue;
-            auto j = hash_(keys_[i]) & mask;
-            while (newUsed[j]) j = (j + 1) & mask;
-            newUsed[j] = 1;
-            newKeys[j] = keys_[i];
-            newValues[j] = values_[i];
+            if (!slots_[i].used) continue;
+            auto j = hash_(slots_[i].key) & mask;
+            while (newSlots[j].used) j = (j + 1) & mask;
+            newSlots[j].used = 1;
+            newSlots[j].key = slots_[i].key;
+            newSlots[j].value = slots_[i].value;
         }
-        keys_ = std::move(newKeys);
-        values_ = std::move(newValues);
-        used_ = std::move(newUsed);
+        slots_ = std::move(newSlots);
         activeCapacity_ = newCap;
     }
 
     Hash hash_;
-    std::vector<Key> keys_;
-    std::vector<Value> values_;
-    std::vector<unsigned char> used_;
+    std::vector<Slot> slots_;
     std::size_t size_ = 0;
     std::size_t activeCapacity_ = 0;
 };

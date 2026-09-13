@@ -35,9 +35,13 @@
  * - 默认一次只改一个文件；只修用户指出的问题，保持无关改动不变；禁止擅自添加胶水代码。
  */
 
+#include <windows.h>
+
 #include "test/harness.h"
 
 int main() {
+    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX |
+                 SEM_NOOPENFILEERRORBOX);
     test::harness();
     return 0;
 }

@@ -4,7 +4,7 @@ setlocal
 cd /d "%~dp0"
 set "CXX=D:\codeenvset\mingw64\bin\g++.exe"
 set "BUILD=build-mingw"
-set "OPT=-O3 -flto=auto -fuse-linker-plugin -flto-partition=one -fwhole-program -march=native -mtune=native -fomit-frame-pointer"
+set "OPT=-O3 -march=native -mtune=native -fomit-frame-pointer"
 
 if not exist "%BUILD%" mkdir "%BUILD%"
 
