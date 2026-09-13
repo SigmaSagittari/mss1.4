@@ -26,6 +26,7 @@ inline void BruteForce::saveFail(
         table[key] = -upper;
         return;
     }
+    // 负值编码上界；对负数取 max 等价于保留更小的正上界。
     if (*old < 0) *old = (std::max)(*old, -upper);
 }
 

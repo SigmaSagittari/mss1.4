@@ -324,7 +324,8 @@ inline int BruteForce::BitwiseSolver::solve(
                 groups[reveal].push_back(config);
             }
             if (groupCount <= 1) {
-                upper = (std::max)(upper, n - deaths[candidate]);
+                // 不分裂的候选不产生失败上界；保持 upper 为 0，供末尾判断
+                // “所有候选都不分裂”，此时返回值精确为 1。
                 continue;
             }
             std::vector<std::pair<int, int>>& groupList = buf.groupList;
@@ -378,7 +379,11 @@ inline int BruteForce::BitwiseSolver::solve(
             table[key] = best;
             return best;
         }
-        if (best == 0 && need <= 1) {
+        // upper == 0 证明没有可分裂候选进入失败路径；need 只是阈值，
+        // 不能用来判断这个终局。
+        if (best == 0 && upper == 0) {
+            // 这里是精确结果，可供任意 need 直接复用。
+            table[key] = 1;
             if constexpr (IsRoot)
                 for (int candidate = 0; candidate < m; ++candidate)
                     if (!mineAt(s, configs[0], candidate)) {

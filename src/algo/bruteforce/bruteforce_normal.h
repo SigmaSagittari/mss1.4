@@ -283,7 +283,8 @@ inline int BruteForce::solve(
                 groups[r].push_back(ci);
             }
             if (groupCount <= 1) {
-                upper = (std::max)(upper, n - deaths[j]);
+                // 不分裂的候选不产生失败上界；保持 upper 为 0，供末尾判断
+                // “所有候选都不分裂”，此时返回值精确为 1。
                 continue;
             }
             std::vector<std::pair<int, int>>& groupList = buf.groupList;
@@ -335,7 +336,9 @@ inline int BruteForce::solve(
             table[key] = best;
             return best;
         }
-        if (best == 0 && need <= 1) {
+        // upper == 0 证明没有可分裂候选进入失败路径；need 只是阈值，
+        // 不能用来判断这个终局。
+        if (best == 0 && upper == 0) {
             if constexpr (IsRoot)
                 for (int j = 0; j < m; ++j)
                     if (!mineAt(common, s, configs[0], j)) {
