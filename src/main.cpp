@@ -36,26 +36,9 @@
  * - 默认一次只改一个文件；只修用户指出的问题，保持无关改动不变；禁止擅自添加胶水代码。
  */
 
-#include <chrono>
-#include <iostream>
-
-#include "algo/bruteforce/bruteforce.h"
-#include "algo/observed_board.h"
+#include "test/harness.h"
 
 int main() {
-    auto board = mss::ObservedBoard::analyze(5, 5, 4);
-    const auto basic = mss::Basic::analyze(board);
-    mss::Structure::ShapePool shapes;
-    const auto structure = mss::Structure::analyze(board, basic, shapes);
-    const mss::BruteForce::Config config{false, 1};
-    const auto start = std::chrono::steady_clock::now();
-    const auto result = mss::BruteForce::solve(
-        board, basic, structure, shapes, config);
-    const double milliseconds = std::chrono::duration<double, std::milli>(
-        std::chrono::steady_clock::now() - start).count();
-    std::cout << "5x5/4 possibilities=" << result.possibilities
-              << " wins=" << result.moves[0].wins
-              << " nodes=" << result.nodes
-              << " time_ms=" << milliseconds << '\n';
+    test::harness();
     return 0;
 }
