@@ -37,7 +37,7 @@ struct BruteForce {
     static Result solve(const ObservedBoard::Result& board,
                         const Basic::Result& basic,
                         const Structure::Result& structure,
-                        const Structure::ShapePool& shapes,
+                        const Structure::Pool& shapes,
                         const Config& config);
 
 private:
@@ -66,7 +66,7 @@ private:
                          FlatHashTable<U128, int, U128Hash>& table);
     static CommonSession buildCommonSession(
         const ObservedBoard::Result& board, const Basic::Result& basic,
-        const Structure::Result& structure, const Structure::ShapePool& shapes);
+        const Structure::Result& structure, const Structure::Pool& shapes);
     static Session buildSession(const CommonSession& common);
     static BitwiseSession buildBitwiseSession(const CommonSession& common);
     template <bool CheckAllMoves, bool IsRoot>

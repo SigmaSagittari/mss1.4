@@ -49,6 +49,7 @@ public:
         template <typename Callback>
         void frontierCells(const ObservedBoard::Result& board,
                            const Structure::Result& structure,
+                           const Structure::Pool& shapes,
                            Callback&& callback) const;
 
     private:
@@ -100,12 +101,12 @@ public:
     static Result analyze(const ObservedBoard::Result& board,
                           const Basic::Result& basic,
                           const Structure::Result& structure,
-                          const Structure::ShapePool& shapes,
+                          const Structure::Pool& shapes,
                           ShapeSolver::Distribution::Pool& distributions);
     static void analyze(const ObservedBoard::Result& board,
                         const Basic::Result& basic,
                         const Structure::Result& structure,
-                        const Structure::ShapePool& shapes,
+                        const Structure::Pool& shapes,
                         ShapeSolver::Distribution::Pool& distributions,
                         Result& result);
 
@@ -114,7 +115,7 @@ public:
         int xBox, std::vector<ObserveTransfer>& out);
     static ObserveResult observe(
         const ObservedBoard::Result& board, const Basic::Result& basic,
-        const Structure::Result& structure, const Structure::ShapePool& shapes,
+        const Structure::Result& structure, const Structure::Pool& shapes,
         const Result& probability,
         ShapeSolver::Distribution::Pool& distributions, CellId cell);
 };
@@ -162,10 +163,12 @@ inline long double Probability::Result::mineProbability(
 template <typename Callback>
 inline void mss::Probability::Result::frontierCells(
     const mss::ObservedBoard::Result& board,
-    const mss::Structure::Result& structure, Callback&& callback) const {
+    const mss::Structure::Result& structure,
+    const mss::Structure::Pool& shapes, Callback&& callback) const {
     for (std::size_t cid = 0; cid < components_.size(); ++cid) {
         const Component& component = components_[cid];
-        const Structure::Instance& instance = structure.components[cid];
+        const Structure::Instance& instance = shapes.getInstance(
+            structure.components[cid]);
         for (std::size_t box = 0; box < component.boxProbabilities.size(); ++box) {
             const long double probability = component.boxProbabilities[box];
             for (std::size_t i = instance.boxes.boxOf[box];

@@ -182,7 +182,10 @@ inline int BruteForce::BitwiseSolver::solve(
         const int m = common.candidateCount;
         std::vector<int>& deaths = buf.deaths;
         std::uint64_t safeMask = s.unopened;
-        for (ConfigId config : configs) safeMask &= ~s.mineMasks[config];
+        for (ConfigId config : configs) {
+            safeMask &= ~s.mineMasks[config];
+            if (safeMask == 0) break;
+        }
         if (safeMask != 0) {
             if constexpr (IsRoot) {
                 const ConfigId candidate = std::countr_zero(safeMask);
@@ -250,7 +253,10 @@ inline int BruteForce::BitwiseSolver::solve(
                 groupList.emplace_back(groupedConfigs.data() + groupOffsets[i],
                                        groupOffsets[i + 1] - groupOffsets[i]);
             std::sort(groupList.begin(), groupList.end(),
-                      [](auto a, auto b) { return a.size() > b.size(); });
+                      [](auto a, auto b) {
+                          if (a.size() != b.size()) return a.size() > b.size();
+                          return a.data() < b.data();
+                      });
             std::vector<int>& suffix = buf.suffix;
             suffix.resize(groupList.size() + 1);
             suffix.back() = 0;
@@ -287,21 +293,20 @@ inline int BruteForce::BitwiseSolver::solve(
         }
 
         deaths.assign(m, 0);
-        for (std::uint64_t unopened = s.unopened; unopened != 0;
-             unopened &= unopened - 1) {
-            const ConfigId candidate = std::countr_zero(unopened);
-            const std::uint64_t bit = 1ULL << candidate;
-            int& death = deaths[candidate];
-            for (ConfigId config : configs)
-                death += (s.mineMasks[config] & bit) != 0;
-        }
+        for (ConfigId config : configs)
+            for (std::uint32_t i = common.mineOffsets[config];
+                 i < common.mineOffsets[config + 1]; ++i)
+                ++deaths[common.mineCells[i]];
         std::vector<int>& order = buf.order;
         order.clear();
         for (std::uint64_t unopened = s.unopened; unopened != 0;
              unopened &= unopened - 1)
             order.push_back(std::countr_zero(unopened));
         std::sort(order.begin(), order.end(),
-                  [&](int a, int b) { return deaths[a] < deaths[b]; });
+                  [&](int a, int b) {
+                      if (deaths[a] != deaths[b]) return deaths[a] < deaths[b];
+                      return a < b;
+                  });
         int best = 0;
         int upper = 0;
         for (int candidate : order) {
@@ -329,7 +334,8 @@ inline int BruteForce::BitwiseSolver::solve(
                     groupList.push_back({reveal, static_cast<int>(groups[reveal].size())});
             std::sort(groupList.begin(), groupList.end(),
                       [](const auto& a, const auto& b) {
-                          return a.second > b.second;
+                          if (a.second != b.second) return a.second > b.second;
+                          return a.first < b.first;
                       });
             std::vector<int>& suffix = buf.suffix;
             suffix.resize(groupList.size() + 1);

@@ -97,7 +97,7 @@ inline void Probability::buildObserveTable(
 
 inline Probability::ObserveResult Probability::observe(
     const ObservedBoard::Result& board, const Basic::Result& basic,
-    const Structure::Result& structure, const Structure::ShapePool& shapes,
+    const Structure::Result& structure, const Structure::Pool& shapes,
     const Result& probability, ShapeSolver::Distribution::Pool& distributions,
     CellId cell) {
     using Mark = Basic::Mark;
@@ -141,7 +141,8 @@ inline Probability::ObserveResult Probability::observe(
 
     int maxCapturedMines = unknownNeighbors;
     for (const ComponentId component : ws.captured) {
-        const Structure::Instance& instance = structure.components[component];
+        const Structure::Instance& instance = shapes.getInstance(
+            structure.components[component]);
         const Structure::Shape& shape = shapes.get(instance.shape);
         for (const Structure::Shape::Box& box : shape.boxes)
             maxCapturedMines += box.size;
@@ -165,7 +166,8 @@ inline Probability::ObserveResult Probability::observe(
     };
 
     for (const ComponentId component : ws.captured) {
-        const Structure::Instance& instance = structure.components[component];
+        const Structure::Instance& instance = shapes.getInstance(
+            structure.components[component]);
         const Structure::Shape& shape = shapes.get(instance.shape);
         ws.adjacentBoxCells.assign(shape.boxes.size(), 0);
         for (std::size_t box = 0; box < shape.boxes.size(); ++box)
@@ -201,7 +203,8 @@ inline Probability::ObserveResult Probability::observe(
          ++component) {
         if (ws.seen[component]) continue;
         const DistributionId id = ShapeSolver::analyze(
-            shapes.get(structure.components[component].shape), distributions);
+            shapes.get(shapes.getInstance(structure.components[component]).shape),
+            distributions);
         const auto& distribution = distributions.get(id);
         observePolyMultiplyInto(ws.rest, distribution.start(),
                                 distribution.ways(), ws.mult);
@@ -235,7 +238,8 @@ inline Probability::ObserveResult Probability::observe(
     ws.all.start = ws.rest.start;
     for (const ComponentId component : ws.captured) {
         const DistributionId id = ShapeSolver::analyze(
-            shapes.get(structure.components[component].shape), distributions);
+            shapes.get(shapes.getInstance(structure.components[component]).shape),
+            distributions);
         const auto& distribution = distributions.get(id);
         observePolyMultiplyInto(ws.all, distribution.start(),
                                 distribution.ways(), ws.mult);

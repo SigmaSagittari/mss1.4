@@ -101,6 +101,11 @@ constexpr bool kCheckDeadLocations = false;
 
 // ── 小工具 ──
 
+bool isNumberState(ObservedBoard::CellState state) {
+    return static_cast<int>(state) <=
+           static_cast<int>(ObservedBoard::CellState::Num8);
+}
+
 bool evaluateContains(std::span<const CellId> cells, CellId cell) {
     return std::find(cells.begin(), cells.end(), cell) != cells.end();
 }
@@ -193,11 +198,13 @@ ForcedView analyzeForced(const ObservedBoard::Result& board, const Basic::Result
         updates.changes.push_back({cell, ObservedBoard::CellState::ForcedMine});
     for (CellId cell : safes)
         updates.changes.push_back({cell, ObservedBoard::CellState::ForcedSafe});
-    const ObservedBoard::Delta boardDelta = ObservedBoard::update(out.board, updates);
-    const Basic::Delta basicDelta = Basic::update(out.board, out.basic, boardDelta, {});
+    ObservedBoard::update(out.board, updates);
+    Basic::Delta basicDelta;
+    Basic::update(out.basic, basicDelta, out.board, updates);
     if (!out.basic.valid) return out;
-    const Structure::Delta structureDelta =
-        Structure::update(out.board, out.basic, out.structure, shapes, boardDelta);
+    Structure::Delta structureDelta;
+    Structure::update(out.structure, structureDelta, out.board, out.basic, shapes,
+                      updates);
     out.probability = Probability::analyze(out.board, out.basic, out.structure, shapes, distributions);
     out.valid = true;
     return out;
@@ -212,12 +219,12 @@ struct ForcedInfo {
 };
 
 ForcedInfo inspectForced(const ForcedView& forced, CellId exclude,
-                         const ObservedBoard::Result& board) {
+                         const Structure::ShapePool& shapes) {
     ForcedInfo info;
     const auto& fs = forced.structure;
     const auto& fp = forced.probability;
     for (std::size_t cid = 0; cid < fp.components().size(); ++cid) {
-        const Structure::Instance& inst = fs.components[cid];
+        const Structure::Instance& inst = shapes.getInstance(fs.components[cid]);
         for (std::size_t bid = 0; bid < inst.boxes.count(); ++bid) {
             if (fp.components()[cid].boxProbabilities[bid] != 0.0L) continue;  // tally-0 = 全安全
             std::vector<CellId> cells;
@@ -252,7 +259,7 @@ struct BoardSummary {
 BoardSummary summarizeBoard(const ObservedBoard::Result& board, const Basic::Result& basic,
                             const Structure::Result& structure,
                             const Probability::Result& probability,
-                            ShapeSolver::Distribution::Pool& distributions,
+                             const Structure::ShapePool& shapes,
                             const JavaEvaluate::Config& cfg) {
     BoardSummary out;
     long double best = 1.0L - probability.tCellProbability();
@@ -304,7 +311,7 @@ BoardSummary summarizeBoard(const ObservedBoard::Result& board, const Basic::Res
             if (board.board[x][y] == ObservedBoard::CellState::Hidden &&
                 basic.marks[x][y] == Basic::Mark::Safe)
                 addItem({1.0L, board.id(x, y), order++}, true);
-    probability.frontierCells(board, structure, [&](int x, int y, long double mine) {
+    probability.frontierCells(board, structure, shapes, [&](int x, int y, long double mine) {
         addItem({1.0L - mine, board.id(x, y), order++}, mine == 0.0L);
     });
     if (haveBestItem && bestItem.safety > best) {
@@ -321,7 +328,7 @@ BoardSummary summarizeBoard(const ObservedBoard::Result& board, const Basic::Res
 
     // tally-0 盒格集（盒级，直接读 boxProbs）。
     for (std::size_t cid = 0; cid < probability.components().size(); ++cid) {
-        const Structure::Instance& inst = structure.components[cid];
+        const Structure::Instance& inst = shapes.getInstance(structure.components[cid]);
         for (std::size_t bid = 0; bid < inst.boxes.count(); ++bid) {
             if (probability.components()[cid].boxProbabilities[bid] != 0.0L) continue;
             std::vector<CellId> cells;
@@ -358,7 +365,6 @@ Eval evaluate(ObservedBoard::Result& board, Basic::Result& basic, Structure::Res
               ShapeSolver::Distribution::Pool& distributions, const LongTermRiskReference::Influence& risk,
               long double baseHotspot, const Probability::ObserveResult& observation, CellId cell,
               const Eval& best, const JavaEvaluate::Config& cfg) {
-    const auto [x, y] = board.pos(cell);
     Eval out;
     out.cell = cell;
     out.safety = 1.0L - observation.probability[9];
@@ -384,7 +390,7 @@ Eval evaluate(ObservedBoard::Result& board, Basic::Result& basic, Structure::Res
     ForcedView dominatedView =
         analyzeForced(board, basic, structure, shapes, distributions, std::span<const CellId>{},
                       selfCell);
-    const ForcedInfo dominatedInfo = inspectForced(dominatedView, cell, board);
+    const ForcedInfo dominatedInfo = inspectForced(dominatedView, cell, shapes);
     const long double linkedTilesCount = dominatedInfo.livingClears;
     if (dominatedInfo.dominated) {
         out.weight = out.safety * (1.0L + out.safety * cfg.progressContribution);
@@ -403,7 +409,6 @@ Eval evaluate(ObservedBoard::Result& board, Basic::Result& basic, Structure::Res
     CellId singleSafestTile = -1;
     bool sameSingleSafestTile = true;
     int validValues = 0;
-    bool anyOutcome = false;
     // 全结局共有的安全盒（Java commonClears 的逐结局交集）。
     std::vector<std::vector<CellId>> commonBoxes;
     bool haveCommon = false;
@@ -431,19 +436,18 @@ for (int value = 0; value <= 8; ++value) {
 
         // 临时揭示本格为 value，随后回滚。
         updates.changes[0].next = static_cast<ObservedBoard::CellState>(value);
-        const ObservedBoard::Delta boardDelta = ObservedBoard::update(board, updates);
-        const Basic::Delta basicDelta = Basic::update(board, basic, boardDelta, {});
-        const Structure::Delta structureDelta =
-            Structure::update(board, basic, structure, shapes, boardDelta);
+        ObservedBoard::update(board, updates);
+        Basic::Delta basicDelta;
+        Basic::update(basic, basicDelta, board, updates);
+        Structure::Delta structureDelta;
+        Structure::update(structure, structureDelta, board, basic, shapes, updates);
         const Probability::Result next = Probability::analyze(board, basic, structure, shapes, distributions);
 
         if (next.candidates() != 0.0L) {
             ++validValues;
             const long double prob = probV;
-            anyOutcome = true;
-
             const BoardSummary summary =
-                summarizeBoard(board, basic, structure, next, distributions, cfg);
+                summarizeBoard(board, basic, structure, next, shapes, cfg);
             const long double clears = summary.clears;
             const long double nextMoveSafety = summary.blendedSafety;
             const long double nextHotspot =
@@ -474,9 +478,9 @@ for (int value = 0; value <= 8; ++value) {
             safetyThisTileLeft -= prob;
         }
 
-        Structure::applyDelta(structure, structureDelta, true);
+        Structure::applyDelta(structure, shapes, structureDelta, true);
         Basic::applyDelta(basic, basicDelta, true);
-        ObservedBoard::applyDelta(board, boardDelta, true);
+        ObservedBoard::applyDelta(board, updates, true);
     }
 
     out.weight = secondarySafety * (1.0L + progressProb * cfg.progressContribution);
@@ -514,7 +518,7 @@ bool meetsSpaceThreshold(int startX, int startY, const ObservedBoard::Result& bo
                 stack.emplace_back(nx, ny);
                 return;
             }
-            if (isNumber(board.board[nx][ny])) {  // 已揭示 → 可跳过继续找连通区
+            if (isNumberState(board.board[nx][ny])) {  // 已揭示 → 可跳过继续找连通区
                 visited[nx][ny] = 1;
                 forEachAdjacent(nx, ny, board.rows, board.cols, [&](int nx2, int ny2) {
                     if (!visited[nx2][ny2] && board.board[nx2][ny2] == ObservedBoard::CellState::Hidden &&
@@ -551,6 +555,17 @@ JavaEvaluate::Result JavaEvaluate::solve(
     std::span<const CellId> dead, const Config& cfg) {
     // 无解盘面（方案数 0）：引擎会产出 NaN/Inf，直接返回空结果，避免污染前端。
     if (probability.candidates() == 0.0L) return Result{};
+    for (int x = 1; x <= board.rows; ++x)
+        for (int y = 1; y <= board.cols; ++y)
+            if (board.board[x][y] == ObservedBoard::CellState::Hidden &&
+                basic.marks[x][y] == Basic::Mark::Safe) {
+                Result result;
+                result.x = x;
+                result.y = y;
+                result.weight = 1.0L;
+                result.candidates.push_back({x, y, 1.0L, 0.0L, 0.0L, 1.0L, 1.0L, false});
+                return result;
+            }
     const int cellCount = (board.rows + 1) * (board.cols + 1);
 
     // 观测缓存（observe 一次，供死格判定与评估复用）。
@@ -647,7 +662,7 @@ JavaEvaluate::Result JavaEvaluate::solve(
     };
     std::vector<FrontierBox> boxes;
     for (std::size_t cid = 0; cid < structure.components.size(); ++cid) {
-        const Structure::Instance& instance = structure.components[cid];
+        const Structure::Instance& instance = shapes.getInstance(structure.components[cid]);
         for (std::size_t bid = 0; bid < instance.boxes.count(); ++bid) {
             FrontierBox box;
             box.safety = 1.0L - probability.components()[cid].boxProbabilities[bid];
@@ -757,7 +772,7 @@ JavaEvaluate::Result JavaEvaluate::solve(
             };
             for (int x = 1; x <= board.rows; ++x)
                 for (int y = 1; y <= board.cols; ++y) {
-                    if (!isNumber(board.board[x][y])) continue;  // Java 原始 witness
+                    if (!isNumberState(board.board[x][y])) continue;  // Java 原始 witness
                     for (const auto [dx, dy] : offsets) addOffEdge(x + dx, y + dy);
                 }
             for (CellId cell : offEdge) {

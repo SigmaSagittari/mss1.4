@@ -31,7 +31,7 @@ inline void BruteForce::saveFail(
 
 inline BruteForce::CommonSession BruteForce::buildCommonSession(
     const ObservedBoard::Result& board, const Basic::Result& basic,
-    const Structure::Result& structure, const Structure::ShapePool& shapes) {
+    const Structure::Result& structure, const Structure::Pool& shapes) {
     CommonSession session;
     const int cellCount = (board.rows + 1) * (board.cols + 1);
     std::vector<int> candidateAt(cellCount, -1);
@@ -72,7 +72,8 @@ inline BruteForce::CommonSession BruteForce::buildCommonSession(
     std::vector<char> assignments;
     for (int component = 0; component < componentCount; ++component) {
         assignmentOffsets[component] = static_cast<std::uint32_t>(assignments.size());
-        const Structure::Instance& instance = structure.components[component];
+        const Structure::Instance& instance = shapes.getInstance(
+            structure.components[component]);
         const Structure::Shape& shape = shapes.get(instance.shape);
         const int boxCount = static_cast<int>(instance.boxes.count());
         ShapeSolver::DfsSolver::forEachAssignment(
@@ -106,7 +107,8 @@ inline BruteForce::CommonSession BruteForce::buildCommonSession(
             chooseT(chooseT, 0, left);
             return;
         }
-        const Structure::Instance& instance = structure.components[component];
+        const Structure::Instance& instance = shapes.getInstance(
+            structure.components[component]);
         const int boxCount = static_cast<int>(instance.boxes.count());
         const std::uint32_t assignmentOffset = assignmentOffsets[component];
         for (std::uint32_t index = 0; index < assignmentCounts[component]; ++index) {
@@ -146,7 +148,7 @@ inline BruteForce::CommonSession BruteForce::buildCommonSession(
 
 inline BruteForce::Result BruteForce::solve(
     const ObservedBoard::Result& board, const Basic::Result& basic,
-    const Structure::Result& structure, const Structure::ShapePool& shapes,
+    const Structure::Result& structure, const Structure::Pool& shapes,
     const Config& config) {
     CommonSession common = buildCommonSession(board, basic, structure, shapes);
     Result result;

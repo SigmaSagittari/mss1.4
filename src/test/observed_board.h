@@ -2,7 +2,6 @@
 
 #include <cstdint>
 #include <iostream>
-#include <utility>
 
 #include "algo/observed_board.h"
 #include "test/common.h"
@@ -17,7 +16,7 @@ inline void observedBoard() {
     delta.changes.push_back({board.id(1, 1), State::Num1});
     delta.changes.push_back({board.id(1, 2), State::ForcedMine});
     const auto capacity = delta.changes.capacity();
-    delta = mss::ObservedBoard::update(board, std::move(delta));
+    mss::ObservedBoard::update(board, delta);
     check(board.board[1][1] == State::Num1, "revealed state was not applied");
     check(board.board[1][2] == State::ForcedMine, "forced state was not applied");
     check(delta.changes[0].previous == State::Hidden, "previous state was not recorded");
@@ -30,7 +29,7 @@ inline void observedBoard() {
     delta.clear();
     check(delta.changes.capacity() == capacity, "Delta capacity was discarded by clear");
     delta.changes.push_back({board.id(2, 2), State::Num0});
-    delta = mss::ObservedBoard::update(board, std::move(delta));
+    mss::ObservedBoard::update(board, delta);
     check(board.board[2][2] == State::Num0, "reused Delta was not applied");
     std::cout << "test/observed_board: packed state, external Delta and reuse passed\n";
 }

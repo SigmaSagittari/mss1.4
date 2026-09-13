@@ -220,7 +220,10 @@ inline int BruteForce::solve(
                 groupList.emplace_back(groupedConfigs.data() + groupOffsets[i],
                                        groupOffsets[i + 1] - groupOffsets[i]);
             std::sort(groupList.begin(), groupList.end(),
-                      [](auto a, auto b) { return a.size() > b.size(); });
+                      [](auto a, auto b) {
+                          if (a.size() != b.size()) return a.size() > b.size();
+                          return a.data() < b.data();
+                      });
             std::vector<int>& suffix = buf.suffix;
             suffix.assign(groupList.size() + 1, 0);
             for (int i = static_cast<int>(groupList.size()) - 1; i >= 0; --i)
@@ -259,7 +262,10 @@ inline int BruteForce::solve(
         order.clear();
         s.unopened.for_each([&](std::size_t j) { order.push_back((int)j); });
         std::sort(order.begin(), order.end(),
-                  [&](int a, int b) { return deaths[a] < deaths[b]; });
+                  [&](int a, int b) {
+                      if (deaths[a] != deaths[b]) return deaths[a] < deaths[b];
+                      return a < b;
+                  });
         int best = 0;
         int upper = 0;
         for (int j : order) {
@@ -285,7 +291,10 @@ inline int BruteForce::solve(
             for (int r = 0; r < 9; ++r)
                 if (!groups[r].empty()) groupList.push_back({r, (int)groups[r].size()});
             std::sort(groupList.begin(), groupList.end(),
-                      [](const auto& a, const auto& b) { return a.second > b.second; });
+                      [](const auto& a, const auto& b) {
+                          if (a.second != b.second) return a.second > b.second;
+                          return a.first < b.first;
+                      });
             std::vector<int>& suffix = buf.suffix;
             suffix.assign(groupList.size() + 1, 0);
             for (int i = static_cast<int>(groupList.size()) - 1; i >= 0; --i)

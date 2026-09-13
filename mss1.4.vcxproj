@@ -123,7 +123,9 @@
     <ClInclude Include="src\test\flat_hashtable.h" />
     <ClInclude Include="src\test\harness.h" />
     <ClInclude Include="src\test\observed_board.h" />
+    <ClInclude Include="src\test\performance.h" />
     <ClInclude Include="src\test\radix_sort.h" />
+    <ClInclude Include="src\test\real_endgame_performance.h" />
     <ClInclude Include="src\test\structure.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

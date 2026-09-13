@@ -8,7 +8,6 @@
  * - 生产代码放 mss，测试代码放 test；类型 PascalCase，函数/局部变量 camelCase，常量 kCamelCase。
  *   私有成员用 trailing underscore；radix_sort 是既有的算法命名例外。
  * - 对外接口优先使用 struct + 嵌套 Result/Delta/Pool；实现按声明后 //============================================================================== 分段。
- * - 4 空格缩进、K&R 大括号；短的单语句分支可省略大括号，但嵌套逻辑必须保持清楚。
  *
  * 数据与不变量
  * - Grid 使用 1-based 坐标和一行一列 padding；CellId 是 x*(cols+1)+y 的稠密 int 句柄。

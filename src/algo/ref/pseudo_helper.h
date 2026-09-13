@@ -189,7 +189,8 @@ std::vector<CellId> PseudoReference::findPseudo5050(
     std::vector<std::vector<CellId>> pseudoWitnesses;
 
     // 遍历全部"还差一雷"的 witness（约束 sum == 1）。
-    for (const Structure::Instance& instance : structure.components) {
+    for (const InstanceId instanceId : structure.components) {
+        const Structure::Instance& instance = shapes.getInstance(instanceId);
         const Structure::Shape& shape = shapes.get(instance.shape);
         for (std::size_t i = 0; i < shape.constraintCount(); ++i) {
             const auto constraint = shape.constraint(i);

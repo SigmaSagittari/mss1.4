@@ -47,6 +47,7 @@ struct Structure {
     };
 
     struct Instance {
+        ShapeId shape = -1;
         struct Boxes {
             std::vector<CellId> cells;
             // 累计偏移使用 16 位；极端组件超过 65535 个格子时布局无法表示。
@@ -58,32 +59,42 @@ struct Structure {
             }
         };
 
-        ShapeId shape = -1;
         Boxes boxes;
         std::vector<CellId> constraintCells;
     };
 
     struct Result {
-        std::vector<Instance> components;
+        std::vector<InstanceId> components;
         std::vector<CellLocation> cellLoc;
     };
 
     struct Delta {
         std::vector<ComponentId> removed;
-        std::vector<Instance> removedData;
+        std::vector<InstanceId> removedData;
         std::vector<ComponentId> added;
-        std::vector<Instance> addedData;
+        std::vector<InstanceId> addedData;
     };
 
-    struct ShapePool {
-        ShapeId intern(Shape shape);
-        const Shape& get(ShapeId id) const { return shapes_[id]; }
+    struct Pool {
+        ShapeId internShape(Shape shape);
+        InstanceId internInstance(Instance instance);
+        const Shape& getShape(ShapeId id) const { return shapes_[id]; }
+        const Shape& get(ShapeId id) const { return getShape(id); }
+        const Instance& getInstance(InstanceId id) const {
+            return instances_[id];
+        }
         std::size_t size() const { return shapes_.size(); }
 
     private:
+        static U128 computeInstanceHash(const Instance& instance);
+
         std::vector<Shape> shapes_;
-        FlatHashTable<U128, ShapeId, U128Hash> index_;
+        FlatHashTable<U128, ShapeId, U128Hash> shapeIndex_;
+        std::vector<Instance> instances_;
+        FlatHashTable<U128, InstanceId, U128Hash> instanceIndex_;
     };
+
+    using ShapePool = Pool;
 
     struct Workspace {
         struct Analyze {
@@ -99,7 +110,7 @@ struct Structure {
             Grid<char> dirty;
             std::vector<CellId> dirtyCells;
             std::vector<char> removed;
-            std::vector<Instance> staged;
+            std::vector<InstanceId> staged;
         } update;
 
         FlatHashTable<U128, BoxId, U128Hash> hashBox;
@@ -119,29 +130,33 @@ private:
     static std::uint64_t positionSeed(int x, int y, int rows, int cols);
     static U128 cellSignature(int x, int y,
                               const ObservedBoard::Result& board);
-    static void remapInstance(const Instance& instance, ComponentId component,
+    static void remapInstance(InstanceId instance, ComponentId component,
+                              const Pool& pool,
                               std::vector<CellLocation>& cellLoc);
-    static void clearInstance(const Instance& instance,
+    static void clearInstance(InstanceId instance,
+                              const Pool& pool,
                               std::vector<CellLocation>& cellLoc);
 
     static void collectComponent(CellId start, const ObservedBoard::Result& board,
                                  const Basic::Result& basic, Grid<char>& visited,
                                  std::vector<CellId>& cells);
-    static Instance buildComponent(const std::vector<CellId>& cells,
+    static InstanceId buildComponent(const std::vector<CellId>& cells,
                                    const ObservedBoard::Result& board,
                                    const Basic::Result& basic, Grid<U128>& cellHash,
-                                   ShapePool& pool);
+                                   Pool& pool);
     static U128 computeHash(const Shape& shape);
 
 public:
     static Result analyze(const ObservedBoard::Result& board,
-                          const Basic::Result& basic, ShapePool& pool);
+                          const Basic::Result& basic, Pool& pool);
 
-    static Delta update(const ObservedBoard::Result& board,
-                        const Basic::Result& basic, Result& result,
-                        ShapePool& pool, const ObservedBoard::Delta& updates);
+    static void update(Result& result, Delta& delta,
+                       const ObservedBoard::Result& board,
+                       const Basic::Result& basic, Pool& pool,
+                       const ObservedBoard::Delta& updates);
 
-    static void applyDelta(Result& result, const Delta& delta, bool reverse = true);
+    static void applyDelta(Result& result, const Pool& pool, const Delta& delta,
+                           bool reverse = true);
 
 };
 
@@ -175,43 +190,63 @@ inline U128 Structure::cellSignature(int x, int y,
     return hash;
 }
 
-inline void Structure::remapInstance(const Structure::Instance& instance,
+inline void Structure::remapInstance(InstanceId instance,
                                      ComponentId component,
+                                     const Structure::Pool& pool,
                                      std::vector<CellLocation>& cellLoc) {
-    for (std::size_t box = 0; box < instance.boxes.count(); ++box)
-        for (std::size_t i = instance.boxes.boxOf[box];
-             i < instance.boxes.boxOf[box + 1]; ++i)
-            cellLoc[instance.boxes.cells[i]] =
+    const Instance& data = pool.getInstance(instance);
+    for (std::size_t box = 0; box < data.boxes.count(); ++box)
+        for (std::size_t i = data.boxes.boxOf[box];
+             i < data.boxes.boxOf[box + 1]; ++i)
+            cellLoc[data.boxes.cells[i]] =
                 CellLocation{component, static_cast<BoxId>(box)};
-    for (CellId cell : instance.constraintCells)
+    for (CellId cell : data.constraintCells)
         cellLoc[cell] = CellLocation{component, -1};
 }
 
-inline void Structure::clearInstance(const Structure::Instance& instance,
+inline void Structure::clearInstance(InstanceId instance,
+                                     const Structure::Pool& pool,
                                      std::vector<CellLocation>& cellLoc) {
-    for (CellId cell : instance.boxes.cells) cellLoc[cell] = CellLocation{};
-    for (CellId cell : instance.constraintCells) cellLoc[cell] = CellLocation{};
+    const Instance& data = pool.getInstance(instance);
+    for (CellId cell : data.boxes.cells) cellLoc[cell] = CellLocation{};
+    for (CellId cell : data.constraintCells) cellLoc[cell] = CellLocation{};
 }
 
 inline thread_local Structure::Workspace Structure::workspace;
 
-inline bool isNumber(ObservedBoard::CellState state) {
-    return static_cast<int>(state) <=
-           static_cast<int>(ObservedBoard::CellState::Num8);
-}
-
-inline ShapeId Structure::ShapePool::intern(Shape shape) {
+inline ShapeId Structure::Pool::internShape(Shape shape) {
     shape.hash = Structure::computeHash(shape);
-    if (const ShapeId* found = index_.find(shape.hash)) return *found;
+    if (const ShapeId* found = shapeIndex_.find(shape.hash)) return *found;
     const ShapeId id = static_cast<ShapeId>(shapes_.size());
     shapes_.push_back(std::move(shape));
-    index_.emplace(shapes_[id].hash, id);
+    shapeIndex_.emplace(shapes_[id].hash, id);
     return id;
 }
 
+inline InstanceId Structure::Pool::internInstance(Instance data) {
+    const U128 hash = Structure::Pool::computeInstanceHash(data);
+    if (const InstanceId* found = instanceIndex_.find(hash)) return *found;
+    const InstanceId id = static_cast<InstanceId>(instances_.size());
+    instances_.push_back(std::move(data));
+    instanceIndex_.emplace(hash, id);
+    return id;
+}
+
+inline U128 Structure::Pool::computeInstanceHash(const Instance& data) {
+    U128Hasher hasher;
+    hasher.mix(static_cast<std::uint64_t>(data.shape));
+    hasher.mix(static_cast<std::uint64_t>(data.boxes.cells.size()));
+    for (CellId cell : data.boxes.cells) hasher.mix(cell);
+    hasher.mix(static_cast<std::uint64_t>(data.boxes.boxOf.size()));
+    for (std::uint16_t offset : data.boxes.boxOf)
+        hasher.mix(static_cast<std::uint64_t>(offset));
+    hasher.mix(static_cast<std::uint64_t>(data.constraintCells.size()));
+    for (CellId cell : data.constraintCells) hasher.mix(cell);
+    return hasher.finalize();
+}
+
 inline Structure::Result Structure::analyze(
-    const ObservedBoard::Result& board, const Basic::Result& basic,
-    ShapePool& pool) {
+    const ObservedBoard::Result& board, const Basic::Result& basic, Pool& pool) {
     const int rows = board.rows;
     const int cols = board.cols;
     Result result;
@@ -250,7 +285,7 @@ inline Structure::Result Structure::analyze(
             }
     for (ComponentId component = 0;
          component < static_cast<ComponentId>(result.components.size()); ++component)
-        Structure::remapInstance(result.components[component], component,
+        Structure::remapInstance(result.components[component], component, pool,
                                  result.cellLoc);
     return result;
 }
@@ -282,9 +317,9 @@ inline void Structure::collectComponent(CellId start,
     }
 }
 
-inline Structure::Instance Structure::buildComponent(
+inline InstanceId Structure::buildComponent(
     const std::vector<CellId>& cells, const ObservedBoard::Result& board,
-    const Basic::Result& basic, Grid<U128>& cellHash, ShapePool& pool) {
+    const Basic::Result& basic, Grid<U128>& cellHash, Pool& pool) {
     Structure::workspace.hashBox.clear();
     Structure::workspace.boxOfCells.assign(cells.size(), -1);
     Shape shape;
@@ -356,8 +391,8 @@ inline Structure::Instance Structure::buildComponent(
     }
     shape.boxIds_.insert(shape.boxIds_.end(), Structure::workspace.allBoxIds.begin(),
                          Structure::workspace.allBoxIds.end());
-    instance.shape = pool.intern(std::move(shape));
-    return instance;
+    instance.shape = pool.internShape(std::move(shape));
+    return pool.internInstance(std::move(instance));
 }
 
 inline U128 Structure::computeHash(const Shape& shape) {
@@ -374,9 +409,10 @@ inline U128 Structure::computeHash(const Shape& shape) {
     return hasher.finalize();
 }
 
-inline Structure::Delta Structure::update(
-    const ObservedBoard::Result& board, const Basic::Result& basic,
-    Result& result, ShapePool& pool, const ObservedBoard::Delta& updates) {
+inline void Structure::update(
+    Result& result, Delta& delta, const ObservedBoard::Result& board,
+    const Basic::Result& basic, Pool& pool,
+    const ObservedBoard::Delta& updates) {
     const int rows = board.rows;
     const int cols = board.cols;
     auto& scratch = Structure::workspace.update;
@@ -396,7 +432,7 @@ inline Structure::Delta Structure::update(
     };
     auto invalidate = [&](ComponentId component) {
         scratch.removed[component] = 1;
-        const Instance& instance = result.components[component];
+        const Instance& instance = pool.getInstance(result.components[component]);
         for (CellId cell : instance.boxes.cells) {
             const auto [x, y] = board.pos(cell);
             markDirty(x, y);
@@ -435,7 +471,10 @@ inline Structure::Delta Structure::update(
         scratch.staged.push_back(Structure::buildComponent(
             scratch.cells, board, basic, scratch.cellHash, pool));
     }
-    Delta delta;
+    delta.removed.clear();
+    delta.removedData.clear();
+    delta.added.clear();
+    delta.addedData.clear();
     for (int i = static_cast<int>(result.components.size()) - 1; i >= 0; --i) {
         if (!scratch.removed[i]) continue;
         delta.removed.push_back(i);
@@ -444,16 +483,17 @@ inline Structure::Delta Structure::update(
         if (i != last) {
             result.components[i] = std::move(result.components[last]);
             scratch.removed[i] = scratch.removed[last];
-            Structure::remapInstance(result.components[i], i, result.cellLoc);
+            Structure::remapInstance(result.components[i], i, pool, result.cellLoc);
         }
         result.components.pop_back();
     }
-    for (Instance& instance : scratch.staged) {
+    for (InstanceId instance : scratch.staged) {
         const ComponentId component = static_cast<ComponentId>(result.components.size());
         result.components.push_back(std::move(instance));
         delta.added.push_back(component);
         delta.addedData.push_back(result.components.back());
-        Structure::remapInstance(result.components.back(), component, result.cellLoc);
+        Structure::remapInstance(result.components.back(), component, pool,
+                                 result.cellLoc);
     }
     for (CellId cell : scratch.dirtyCells) {
         const auto [x, y] = board.pos(cell);
@@ -461,13 +501,13 @@ inline Structure::Delta Structure::update(
         scratch.visited[x][y] = 0;
         scratch.cellHash[x][y] = U128{};
     }
-    return delta;
 }
 
-inline void Structure::applyDelta(Result& result, const Delta& delta, bool reverse) {
+inline void Structure::applyDelta(Result& result, const Pool& pool,
+                                  const Delta& delta, bool reverse) {
     if (reverse) {
         for (std::size_t i = delta.addedData.size(); i-- > 0;) {
-            Structure::clearInstance(result.components.back(), result.cellLoc);
+            Structure::clearInstance(result.components.back(), pool, result.cellLoc);
             result.components.pop_back();
         }
         for (std::size_t i = delta.removed.size(); i-- > 0;) {
@@ -475,29 +515,31 @@ inline void Structure::applyDelta(Result& result, const Delta& delta, bool rever
             const ComponentId tail = static_cast<ComponentId>(result.components.size());
             if (component != tail) {
                 result.components.push_back(std::move(result.components[component]));
-                Structure::remapInstance(result.components.back(), tail, result.cellLoc);
+                Structure::remapInstance(result.components.back(), tail, pool,
+                                         result.cellLoc);
             }
             if (component == tail) result.components.push_back(delta.removedData[i]);
             else result.components[component] = delta.removedData[i];
-            Structure::remapInstance(result.components[component], component,
+            Structure::remapInstance(result.components[component], component, pool,
                                      result.cellLoc);
         }
         return;
     }
     for (ComponentId component : delta.removed) {
-        Structure::clearInstance(result.components[component], result.cellLoc);
+        Structure::clearInstance(result.components[component], pool, result.cellLoc);
         const ComponentId last = static_cast<ComponentId>(result.components.size()) - 1;
         if (component != last) {
             result.components[component] = std::move(result.components[last]);
-            Structure::remapInstance(result.components[component], component,
+            Structure::remapInstance(result.components[component], component, pool,
                                      result.cellLoc);
         }
         result.components.pop_back();
     }
-    for (const Instance& instance : delta.addedData) {
+    for (InstanceId instance : delta.addedData) {
         const ComponentId component = static_cast<ComponentId>(result.components.size());
         result.components.push_back(instance);
-        Structure::remapInstance(result.components.back(), component, result.cellLoc);
+        Structure::remapInstance(result.components.back(), component, pool,
+                                 result.cellLoc);
     }
 }
 

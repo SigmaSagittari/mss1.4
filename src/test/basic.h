@@ -1,7 +1,6 @@
 #pragma once
 
 #include <iostream>
-#include <utility>
 
 #include "algo/basic.h"
 #include "test/common.h"
@@ -15,7 +14,7 @@ inline void basic() {
     mss::ObservedBoard::Delta boardDelta;
     boardDelta.changes.push_back({board.id(2, 2), State::Num1});
     boardDelta.changes.push_back({board.id(1, 1), State::ForcedMine});
-    boardDelta = mss::ObservedBoard::update(board, std::move(boardDelta));
+    mss::ObservedBoard::update(board, boardDelta);
     auto result = mss::Basic::analyze(board);
     check(result.valid, "deterministic board was marked invalid");
     check(result.marks[1][1] == Mark::F, "forced mine was not marked F");
@@ -27,7 +26,7 @@ inline void basic() {
     auto emptyBoard = mss::ObservedBoard::analyze(3, 3, 1);
     auto emptyResult = mss::Basic::analyze(emptyBoard);
     mss::Basic::Delta delta;
-    delta = mss::Basic::update(board, emptyResult, boardDelta, std::move(delta));
+    mss::Basic::update(emptyResult, delta, board, boardDelta);
     check(emptyResult.marks[1][1] == Mark::F && emptyResult.marks[1][2] == Mark::S,
           "incremental propagation disagrees with full analysis");
     check(emptyResult.safeCount == 8 && emptyResult.mineSum == 1,

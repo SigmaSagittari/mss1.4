@@ -60,8 +60,9 @@ private:
 
 public:
     static Result analyze(const ObservedBoard::Result& state);
-    static Delta update(const ObservedBoard::Result& board, Result& result,
-                        const ObservedBoard::Delta& updates, Delta delta);
+    static void update(Result& result, Delta& delta,
+                       const ObservedBoard::Result& board,
+                       const ObservedBoard::Delta& updates);
     static void applyDelta(Result& result, const Delta& delta,
                            bool reverse = true);
 };
@@ -175,10 +176,9 @@ inline Basic::Result Basic::analyze(const ObservedBoard::Result& state) {
         return result;
     }
 
-inline Basic::Delta Basic::update(const ObservedBoard::Result& board,
-                                  Result& result,
-                                  const ObservedBoard::Delta& updates,
-                                  Delta delta) {
+inline void Basic::update(Result& result, Delta& delta,
+                          const ObservedBoard::Result& board,
+                          const ObservedBoard::Delta& updates) {
         delta.changes.clear();
         delta.oldUnknownSum = result.unknownSum;
         delta.oldMineSum = result.mineSum;
@@ -283,7 +283,7 @@ inline Basic::Delta Basic::update(const ObservedBoard::Result& board,
         delta.mineSum = result.mineSum;
         delta.safeCount = result.safeCount;
         delta.valid = result.valid;
-        return delta;
+        return;
     }
 
 inline void Basic::applyDelta(Result& result, const Delta& delta, bool reverse) {

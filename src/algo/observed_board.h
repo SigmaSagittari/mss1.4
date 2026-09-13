@@ -6,6 +6,7 @@
 
 #include "core/assert.h"
 #include "core/types.h"
+#include "core/utility/grid.h"
 
 namespace mss {
 
@@ -50,7 +51,7 @@ struct ObservedBoard {
     };
 
     static Result analyze(int rows, int cols, int mines);
-    static Delta update(Result& board, Delta delta);
+    static void update(Result& board, Delta& delta);
     static void applyDelta(Result& board, const Delta& delta, bool reverse = true);
 };
 
@@ -78,7 +79,7 @@ inline ObservedBoard::Result ObservedBoard::analyze(int rows, int cols,
     return Result(rows, cols, mines);
 }
 
-inline ObservedBoard::Delta ObservedBoard::update(Result& board, Delta delta) {
+inline void ObservedBoard::update(Result& board, Delta& delta) {
     for (Change& change : delta.changes) {
         assert_(change.next != CellState::Hidden,
                 "ObservedBoard::update: next state must not be Hidden");
@@ -88,7 +89,6 @@ inline ObservedBoard::Delta ObservedBoard::update(Result& board, Delta delta) {
         change.previous = board.board[x][y];
         board.board[x][y] = change.next;
     }
-    return delta;
 }
 
 inline void ObservedBoard::applyDelta(Result& board, const Delta& delta,

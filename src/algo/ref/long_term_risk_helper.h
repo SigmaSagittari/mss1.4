@@ -296,19 +296,21 @@ long double LongTermRiskReference::countWithForces(
         boardDelta.changes.push_back({cell, ObservedBoard::CellState::ForcedMine});
     for (CellId cell : safes)
         boardDelta.changes.push_back({cell, ObservedBoard::CellState::ForcedSafe});
-    boardDelta = ObservedBoard::update(forced, std::move(boardDelta));
-    const Basic::Delta basicDelta = Basic::update(forced, forcedBasic, boardDelta, {});
+    ObservedBoard::update(forced, boardDelta);
+    Basic::Delta basicDelta;
+    Basic::update(forcedBasic, basicDelta, forced, boardDelta);
     if (!forcedBasic.valid) {
         Basic::applyDelta(forcedBasic, basicDelta, true);
         ObservedBoard::applyDelta(forced, boardDelta, true);
         return 0.0L;
     }
-    const Structure::Delta structureDelta =
-        Structure::update(forced, forcedBasic, forcedStructure, shapes, boardDelta);
+    Structure::Delta structureDelta;
+    Structure::update(forcedStructure, structureDelta, forced, forcedBasic, shapes,
+                      boardDelta);
     Probability::analyze(forced, forcedBasic, forcedStructure, shapes, distributions,
                          forcedProbability);
     const long double candidates = forcedProbability.candidates();
-    Structure::applyDelta(forcedStructure, structureDelta, true);
+    Structure::applyDelta(forcedStructure, shapes, structureDelta, true);
     Basic::applyDelta(forcedBasic, basicDelta, true);
     ObservedBoard::applyDelta(forced, boardDelta, true);
     return candidates;
@@ -551,4 +553,3 @@ std::vector<CellId> LongTermRiskReference::Influence::influencedTiles(
 }
 
 }  // namespace mss
-

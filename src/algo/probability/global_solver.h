@@ -86,7 +86,7 @@ inline long double Probability::unknownMineProbability(
 
 inline Probability::Result Probability::analyze(
     const ObservedBoard::Result& board, const Basic::Result& basic,
-    const Structure::Result& structure, const Structure::ShapePool& shapes,
+    const Structure::Result& structure, const Structure::Pool& shapes,
     ShapeSolver::Distribution::Pool& distributions) {
     Result result;
     analyze(board, basic, structure, shapes, distributions, result);
@@ -95,13 +95,15 @@ inline Probability::Result Probability::analyze(
 
 inline void Probability::analyze(
     const ObservedBoard::Result& board, const Basic::Result& basic,
-    const Structure::Result& structure, const Structure::ShapePool& shapes,
+    const Structure::Result& structure, const Structure::Pool& shapes,
     ShapeSolver::Distribution::Pool& distributions, Result& result) {
     Workspace& ws = globalWorkspace;
     ws.distributions.clear();
-    for (const Structure::Instance& instance : structure.components)
+    for (InstanceId instanceId : structure.components) {
+        const Structure::Instance& instance = shapes.getInstance(instanceId);
         ws.distributions.push_back(ShapeSolver::analyze(
             shapes.get(instance.shape), distributions));
+    }
     for (const DistributionId id : ws.distributions)
         if (distributions.get(id).ways().empty()) {
             result.reset({});
@@ -118,7 +120,8 @@ inline void Probability::analyze(
     ws.componentBoxCounts.resize(componentCount);
     for (std::size_t i = 0; i < componentCount; ++i)
         ws.componentBoxCounts[i] =
-            shapes.get(structure.components[i].shape).boxes.size();
+            shapes.get(shapes.getInstance(structure.components[i]).shape)
+                .boxes.size();
     result.reset(ws.componentBoxCounts);
 
     long double candidates;
@@ -193,7 +196,7 @@ inline void Probability::analyze(
             ws.entryProbabilities[i] = ways[i] * numerator / candidates;
         }
         const Structure::Shape& shape =
-            shapes.get(structure.components[cid].shape);
+            shapes.get(shapes.getInstance(structure.components[cid]).shape);
         for (std::size_t box = 0; box < shape.boxes.size(); ++box) {
             long double probability = 0.0L;
             for (std::size_t i = 0; i < ways.size(); ++i)
