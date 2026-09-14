@@ -22,7 +22,8 @@ struct Probability {
 
 public:
 
-    // 将浮点概率尾差收敛到精确的一。
+    // 逻辑确定的雷/安全格必须输出浮点精确的 1.0L/0.0L；只有未确定格
+    // 才允许保留 (0, 1) 内的概率，尾差只向精确的一收敛。
     inline static long double limitProbability(long double probability) {
         return probability >= 1.0L - 1e-10L ? 1.0L : probability;
     }
@@ -171,7 +172,8 @@ inline void Probability::Result::reset(
 inline long double Probability::Result::mineProbability(
     CellId cell, const ObservedBoard::Result& board, const Basic::Result& basic,
     const Structure::Result& structure) const {
-    // 按格子的分析归属返回 Mine、Unknown、Safe 或前沿 Box 的概率。
+    // 按格子的分析归属返回 Mine、Unknown、Safe 或前沿 Box 的概率；逻辑推出
+    // 的确定雷/安全格在这里分别表现为浮点精确的 1.0L/0.0L。
     const auto [x, y] = board.pos(cell);
     const CellLocation loc = structure.cellLoc[cell];
     if (loc.component == -1) {

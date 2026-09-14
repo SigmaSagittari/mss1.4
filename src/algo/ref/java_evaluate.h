@@ -67,6 +67,7 @@ struct JavaEvaluate {
         int x = 0;
         int y = 0;
         long double weight = 0;
+        bool pseudo5050 = false;          // 是否进入 Java 的 pseudo 50/50 分支
         std::vector<Candidate> candidates;  // 全候选，按权重降序
         // 计算过程中由 observe 判定为死格（单结局）的格，供 UI 标记。只含
         // "被观察到"的格；没参与评估的死格不在此列。
@@ -567,6 +568,7 @@ JavaEvaluate::Result JavaEvaluate::solve(
                 return result;
             }
     const int cellCount = (board.rows + 1) * (board.cols + 1);
+    bool hasPseudo5050 = false;
 
     // 观测缓存（observe 一次，供死格判定与评估复用）。
     std::vector<Probability::ObserveResult> observations(cellCount);
@@ -585,6 +587,7 @@ JavaEvaluate::Result JavaEvaluate::solve(
     // 评估集 → 报告：defer 垫底排序 + 简单支配替换 + 复杂支配交换 + 输出候选。
     auto finish = [&](std::vector<Eval>& evaluated) -> Result {
         Result r;
+        r.pseudo5050 = hasPseudo5050;
         r.deadCells = javaDead;
         if (!evaluated.empty()) {
             std::sort(evaluated.begin(), evaluated.end(), evalLess);
@@ -630,6 +633,7 @@ JavaEvaluate::Result JavaEvaluate::solve(
     std::vector<CellId> pseudos = risk.pseudos;
     if (pseudos.empty())
         pseudos = PseudoReference::findPseudo5050(board, basic, structure, shapes, probability, dead);
+    hasPseudo5050 = !pseudos.empty();
     if (!pseudos.empty()) {
         const long double baseHotspot =
             hotspotSafety(risk, -1, board, basic, structure, probability);

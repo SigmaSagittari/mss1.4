@@ -29,12 +29,14 @@ inline int bruteForceCandidateCount(const Game& game, const Analysis& analysis) 
     return count;
 }
 
-inline bool hasHiddenSafeCell(const Game& game, const Analysis& analysis) {
-    // 判断当前局面是否还存在已被分析层确定安全的隐藏格。
+inline bool hasZeroProbabilityCell(const Game& game, const Analysis& analysis) {
+    // 只按全局概率判断确定安全格；Basic 的局部传播不能覆盖完整逻辑推导。
     for (int x = 1; x <= game.board.rows; ++x)
         for (int y = 1; y <= game.board.cols; ++y)
             if (game.board.board[x][y] == mss::ObservedBoard::CellState::Hidden &&
-                analysis.basic.marks[x][y] == mss::Basic::Mark::Safe)
+                analysis.probability.mineProbability(
+                    game.board.id(x, y), game.board, analysis.basic,
+                    analysis.structure) == 0.0L)
                 return true;
     return false;
 }
@@ -136,14 +138,13 @@ inline void real_endgame_performance(const int l, const int r,
                     analysis.probability, analysis.shapes, analysis.distributions,
                     {}, riskConfig);
             const int candidates = bruteForceCandidateCount(game, analysis);
-            const bool noSafe = !hasHiddenSafeCell(game, analysis);
-            const bool noFiftyFifty =
-                risk.pseudos.empty() && risk.hotspots.empty() && risk.possible.empty();
             const mss::JavaEvaluate::Config evaluateConfig{};
             const mss::JavaEvaluate::Result java = mss::JavaEvaluate::solve(
                 game.board, analysis.basic, analysis.structure, analysis.probability,
                 analysis.shapes, analysis.distributions, risk, {}, evaluateConfig);
             if (java.x == 0 || java.y == 0) std::abort();
+            const bool noSafe = !hasZeroProbabilityCell(game, analysis);
+            const bool noFiftyFifty = !java.pseudo5050;
             const Move next = {java.x, java.y,
                                1.0L - analysis.probability.mineProbability(
                                    game.board.id(java.x, java.y), game.board,

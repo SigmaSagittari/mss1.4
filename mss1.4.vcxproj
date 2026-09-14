@@ -124,6 +124,7 @@
     <ClInclude Include="src\test\harness.h" />
     <ClInclude Include="src\test\observed_board.h" />
     <ClInclude Include="src\test\performance.h" />
+    <ClInclude Include="src\test\probability_case.h" />
     <ClInclude Include="src\test\radix_sort.h" />
     <ClInclude Include="src\test\real_endgame_performance.h" />
     <ClInclude Include="src\test\structure.h" />

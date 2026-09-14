@@ -131,6 +131,9 @@
     <ClInclude Include="src\test\performance.h">
       <Filter>src\test</Filter>
     </ClInclude>
+    <ClInclude Include="src\test\probability_case.h">
+      <Filter>src\test</Filter>
+    </ClInclude>
     <ClInclude Include="src\test\real_endgame_performance.h">
       <Filter>src\test</Filter>
     </ClInclude>

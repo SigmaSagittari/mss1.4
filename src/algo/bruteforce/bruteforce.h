@@ -51,6 +51,8 @@ inline BruteForce::CommonSession BruteForce::buildCommonSession(
         for (int y = 1; y <= board.cols; ++y) {
             if (board.board[x][y] != ObservedBoard::CellState::Hidden) continue;
             const Basic::Mark mark = basic.marks[x][y];
+            // TODO: 在候选建立前排除全局概率为 0 或 1 的格子；当前完整 config
+            // 尚未枚举，强制雷仍可能流入 candidate，造成无效搜索和排序开销。
             if (mark != Basic::Mark::H && mark != Basic::Mark::T) continue;
             candidateAt[board.id(x, y)] = session.candidateCount++;
             session.candidates.push_back({x, y, 0, 0, 0});
