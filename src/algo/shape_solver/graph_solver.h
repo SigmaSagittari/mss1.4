@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <iostream>
 #include <numeric>
 #include <span>
 #include <utility>
@@ -182,19 +183,46 @@ inline std::vector<BoxId> ShapeSolver::GraphSolver::makeOrder(
     for (BoxId box = 0; box < boxCount; ++box)
         remaining[box] = static_cast<int>(graph.neighbors(box).size());
 
+    std::vector<int> distance(boxCount);
+    std::vector<BoxId> queue;
+    queue.reserve(boxCount);
+    auto farthestBox = [&](BoxId source) {
+        std::fill(distance.begin(), distance.end(), -1);
+        queue.clear();
+        distance[source] = 0;
+        queue.push_back(source);
+        BoxId farthest = source;
+        for (int head = 0; head < static_cast<int>(queue.size()); ++head) {
+            const BoxId box = queue[head];
+            if (distance[box] > distance[farthest] ||
+                (distance[box] == distance[farthest] && box < farthest))
+                farthest = box;
+            for (BoxId neighbor : graph.neighbors(box))
+                if (distance[neighbor] < 0) {
+                    distance[neighbor] = distance[box] + 1;
+                    queue.push_back(neighbor);
+                }
+        }
+        return farthest;
+    };
+    const BoxId initial = farthestBox(0);
+
     for (int step = 0; step < boxCount; ++step) {
-        BoxId best = -1;
-        int bestDelta = 0;
-        for (BoxId candidate = 0; candidate < boxCount; ++candidate) {
-            if (selected[candidate]) continue;
-            int closes = 0;
-            for (BoxId neighbor : graph.neighbors(candidate))
-                if (selected[neighbor] && remaining[neighbor] == 1)
-                    ++closes;
-            const int delta = static_cast<int>(remaining[candidate] != 0) - closes;
-            if (best < 0 || delta < bestDelta) {
-                best = candidate;
-                bestDelta = delta;
+        BoxId best = initial;
+        if (step != 0) {
+            best = -1;
+            int bestDelta = 0;
+            for (BoxId candidate = 0; candidate < boxCount; ++candidate) {
+                if (selected[candidate]) continue;
+                int closes = 0;
+                for (BoxId neighbor : graph.neighbors(candidate))
+                    if (selected[neighbor] && remaining[neighbor] == 1)
+                        ++closes;
+                const int delta = static_cast<int>(remaining[candidate] != 0) - closes;
+                if (best < 0 || delta < bestDelta) {
+                    best = candidate;
+                    bestDelta = delta;
+                }
             }
         }
 
@@ -501,6 +529,10 @@ inline DistributionId ShapeSolver::GraphSolver::analyze(
     if (cached >= 0) return cached;
     const Graph graph = Graph::fromShape(shape);
     const std::vector<BoxId> order = makeOrder(graph, polish);
+    const int maxWidth = orderScore(graph, order).first;
+    std::cout << "[graph] boxes=" << shape.boxes.size()
+              << " constraints=" << shape.constraintCount()
+              << " max_width=" << maxWidth << '\n' << std::flush;
     Layer current;
     Layer next;
     current.reset();

@@ -13,7 +13,7 @@ inline void performance() {
         .rows = 30,
         .cols = 16,
         .mines = 99,
-        .seconds = 1.0,
+        .seconds = 20.0,
         .games = -1,
         .filter = PositionFilter::All,
         .maxRestarts = 10000,

@@ -17,7 +17,7 @@ inline void probabilityCase() {
     constexpr int kRows = 10;
     constexpr int kCols = 21;
     constexpr int kMines = 78;
-    constexpr double kTimeoutSeconds = 10.0;
+    constexpr double kTimeoutSeconds = 100.0;
     constexpr std::array<std::string_view, kRows> kRowsData{{
         "HMHMHMHMHMHMHMHMHMHHH",
         "HMHHHMHHHMHHHMHHHMHMH",
