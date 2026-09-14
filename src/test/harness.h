@@ -12,6 +12,7 @@
 namespace test {
 
 inline void harness() {
+    // 手动打开一个入口运行；默认的 bruteforce 可能执行很久。
     //basic();
     bruteforce();
     //flatHashtable();
@@ -19,7 +20,7 @@ inline void harness() {
     //radixSort();
     //structure();
     //performance();
-    //real_endgame_performance(10000, 200000, 600.0);
+    //real_endgame_performance(0, 50000, 1200.0, true);
 }
 
 }  // namespace test

@@ -10,6 +10,7 @@
 
 namespace test {
 
+// 暴力残局测试同时对照普通后端与多掩码后端的推荐动作和胜局数。
 inline void bruteforce() {
     constexpr std::array<const char*, 30> rows{{
         "00012?211111012?",

@@ -28,6 +28,7 @@ namespace test {
 
 struct StackTrace {
 private:
+    // 打印当前线程的 Windows 符号化调用栈。
     static void print() {
         void* frames[32];
         const USHORT count = CaptureStackBackTrace(1, 32, frames, nullptr);
@@ -71,6 +72,7 @@ private:
 inline void check(bool condition, const char* errmsg,
                   std::source_location location =
                       std::source_location::current()) {
+    // 检查测试条件；失败时输出位置和调用栈并终止测试进程。
     if (condition) return;
     std::cerr << "[FAIL] " << errmsg << "\n"
               << "  at " << location.file_name() << ':' << location.line()
@@ -88,8 +90,10 @@ inline void check(bool condition, const char* errmsg,
 struct GameRng {
     std::uint64_t state;
 
+    // 用确定性种子创建测试用伪随机数发生器。
     explicit GameRng(std::uint64_t seed) : state(seed) {}
 
+    // 生成下一个确定性的 64 位伪随机值。
     std::uint64_t next() {
         state ^= state >> 12;
         state ^= state << 25;
@@ -97,6 +101,7 @@ struct GameRng {
         return state * 0x2545f4914f6cdd1dULL;
     }
 
+    // 生成 [0,n) 范围内的测试随机下标。
     int below(int n) {
         return static_cast<int>(next() % static_cast<std::uint64_t>(n));
     }
@@ -113,14 +118,19 @@ struct Game {
     std::vector<char> mines;
     int opened = 0;
 
+    // 按测试配置创建空雷盘和全 Hidden 观测盘面。
     explicit Game(const GameConfig& config)
         : board(config.rows, config.cols, config.mines),
           mines(config.rows * config.cols, 0) {}
 
+    // 将 1-based 棋盘坐标转换为雷数组下标。
     int flat(int x, int y) const { return (x - 1) * board.cols + y - 1; }
+    // 查询指定测试格是否有雷。
     bool mine(int x, int y) const { return mines[flat(x, y)] != 0; }
 
     void placeMines(GameRng& rng, bool firstMoveSafe = false) {
+        // 设计目的：测试夹具固定保留 flat index 0（即 (1,1)）作为稳定的起始安全格；
+        // firstMoveSafe 只控制后续是否再次执行安全交换，不改变这个固定测试布局。
         std::vector<int> cells(board.rows * board.cols - 1);
         std::iota(cells.begin(), cells.end(), 1);
         for (int i = static_cast<int>(cells.size()) - 1; i > 0; --i)
@@ -136,6 +146,7 @@ struct Game {
     }
 
     int adjacentMines(int x, int y) const {
+        // 统计指定格八邻域中的雷数。
         int result = 0;
         mss::forEachAdjacent(x, y, board.rows, board.cols,
                              [&](int nx, int ny) { result += mine(nx, ny); });
@@ -143,6 +154,7 @@ struct Game {
     }
 
     bool reveal(int x, int y, mss::ObservedBoard::Delta& updates) {
+        // 模拟安全点击和零区域泛洪，并把新数字写入观测 Delta。
         if (mine(x, y)) return false;
         std::vector<char> queued((board.rows + 1) * (board.cols + 1), 0);
         std::deque<std::pair<int, int>> pending{{x, y}};
@@ -165,6 +177,7 @@ struct Game {
         return true;
     }
 
+    // 判断测试盘面是否已打开全部非雷格。
     bool won() const { return opened == board.rows * board.cols - board.totalMines; }
 };
 
@@ -177,6 +190,7 @@ struct Analysis {
     mss::Basic::Delta basicDelta;
     mss::Structure::Delta structureDelta;
 
+    // 从当前观测盘面建立生产分析管线的测试副本。
     explicit Analysis(const mss::ObservedBoard::Result& board)
         : basic(mss::Basic::analyze(board)),
           structure(mss::Structure::analyze(board, basic, shapes)) {
@@ -186,6 +200,7 @@ struct Analysis {
 
     void update(mss::ObservedBoard::Result& board,
                 mss::ObservedBoard::Delta& updates) {
+        // 测试分析器按生产管线的固定顺序回放 Delta：board → basic → structure → probability。
         mss::ObservedBoard::update(board, updates);
         mss::Basic::update(basic, basicDelta, board, updates);
         mss::Structure::update(structure, structureDelta, board, basic, shapes,
@@ -197,6 +212,7 @@ struct Analysis {
 
 inline std::vector<mss::CellId> hiddenSafeCells(const Game& game,
                                                 const Analysis& analysis) {
+    // 收集当前已被 Basic 推断为安全但仍未翻开的格子。
     std::vector<mss::CellId> result;
     for (int x = 1; x <= game.board.rows; ++x)
         for (int y = 1; y <= game.board.cols; ++y)
@@ -226,6 +242,7 @@ struct TimeBox {
     std::chrono::steady_clock::time_point start;
     std::chrono::steady_clock::time_point deadline;
 
+    // 创建按时限或按无限时长运行的计时盒。
     explicit TimeBox(double seconds)
         : start(std::chrono::steady_clock::now()),
           deadline(seconds < 0
@@ -234,7 +251,9 @@ struct TimeBox {
                              std::chrono::steady_clock::duration>(
                              std::chrono::duration<double>(seconds))) {}
 
+    // 判断计时盒是否已经达到截止时间。
     bool expired() const { return std::chrono::steady_clock::now() >= deadline; }
+    // 返回从计时盒创建到当前时刻经过的秒数。
     double elapsedSeconds() const {
         return std::chrono::duration<double>(
                    std::chrono::steady_clock::now() - start)
@@ -249,6 +268,7 @@ struct Move {
 };
 
 inline Move lowestRiskMove(const Game& game, const Analysis& analysis) {
+    // 扫描所有可点候选并返回条件雷概率最低的格子。
     Move result;
     for (int x = 1; x <= game.board.rows; ++x)
         for (int y = 1; y <= game.board.cols; ++y) {
@@ -268,6 +288,7 @@ inline Move lowestRiskMove(const Game& game, const Analysis& analysis) {
 using MovePolicy = Move (*)(const Game&, const Analysis&);
 
 inline Move defaultMovePolicy(const Game&, const Analysis&) {
+    // 返回空动作，交给调用方的默认最低风险策略接管。
     return Move{};
 }
 
@@ -281,6 +302,7 @@ struct Snapshot {
 template <typename Policy, typename Fn>
 inline bool generateGame(const TestConfig& config, GameRng& rng,
                          Policy&& movePolicy, Fn&& consume) {
+    // 生成并运行一局测试游戏，在指定快照时机调用消费回调。
     if (config.rows <= 0 || config.cols <= 0 || config.mines < 0 ||
         config.mines >= config.rows * config.cols)
         std::abort();
@@ -334,6 +356,7 @@ inline RunSummary runGamesWithGameEnd(const TestConfig& config, GameRng& rng,
                                       Policy&& movePolicy,
                                       SnapshotFn&& perSnapshot,
                                       GameFn&& perGame) {
+    // 按时间或局数限制批量运行测试，并分别回调快照和对局结束事件。
     if (config.seconds < 0 && config.games < 0) std::abort();
     TimeBox timebox(config.seconds);
     RunSummary summary;
@@ -356,6 +379,7 @@ inline RunSummary runGamesWithGameEnd(const TestConfig& config, GameRng& rng,
 template <typename Policy, typename Fn>
 inline RunSummary runGames(const TestConfig& config, GameRng& rng,
                            Policy&& movePolicy, Fn&& perSnapshot) {
+    // 批量运行测试并只提供逐快照回调。
     return runGamesWithGameEnd(config, rng, std::forward<Policy>(movePolicy),
                                std::forward<Fn>(perSnapshot), [](bool) {});
 }
@@ -363,6 +387,7 @@ inline RunSummary runGames(const TestConfig& config, GameRng& rng,
 template <typename Fn>
 inline RunSummary runGames(const TestConfig& config, GameRng& rng,
                            Fn&& perSnapshot) {
+    // 使用默认最低风险策略批量运行测试。
     return runGames(config, rng, &defaultMovePolicy,
                     std::forward<Fn>(perSnapshot));
 }

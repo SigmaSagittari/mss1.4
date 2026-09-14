@@ -24,6 +24,7 @@ struct radix_sort {
 private:
     template <typename Key>
     static unsigned char byteAt(const Key& key, std::size_t bi) {
+        // 读取定宽键第 bi 个低位字节。
         if constexpr (std::is_unsigned_v<Key>) {
             return static_cast<unsigned char>(key >> (bi * 8));
         } else if constexpr (requires { key.lo; key.hi; }) {
@@ -36,6 +37,7 @@ private:
 
     template <typename Key>
     static constexpr std::size_t keyBytes() {
+        // 返回支持的键类型需要扫描的总字节数。
         if constexpr (std::is_unsigned_v<Key>) return sizeof(Key);
         else if constexpr (requires(const Key& key) { key.lo; key.hi; })
             return sizeof(std::declval<Key>().lo) + sizeof(std::declval<Key>().hi);
@@ -44,6 +46,7 @@ private:
 
     template <typename Key>
     static bool lessKey(const Key& lhs, const Key& rhs) {
+        // 按数值语义比较无符号整数或 U128 键。
         if constexpr (std::is_unsigned_v<Key>) {
             return lhs < rhs;
         } else if constexpr (requires { lhs.lo; lhs.hi; }) {
@@ -54,10 +57,12 @@ private:
     }
 
 public:
+    // 两个入口都要求键/字段是无符号定宽值；有符号值不能直接按字节排序。
     // 按逻辑下标排序。Reader 读取键，Swapper 描述当前存储上的原地交换；
-    // 排序器不接触元素的实际布局。
+    // 排序器不接触元素的实际布局，残局搜索因此可直接重排自定义连续缓冲。
     template <typename Reader, typename Swapper>
     static void sortBy(std::size_t n, Reader read, Swapper swap) {
+        // 按访问器提供的键对逻辑位置排序，并用交换完成原地置换。
         using Key = std::remove_cvref_t<decltype(read(std::size_t{}))>;
         static_assert(keyBytes<Key>() != 0, "radix_sort::sortBy 不支持此键类型");
         if (n <= 1) return;
@@ -124,10 +129,12 @@ public:
         }
     }
 
-    // 按访问器给出的字段升序排序；tmp 为调用方持有、复用的输出缓冲。
+    // 按访问器给出的字段升序排序；tmp 为调用方持有、复用的输出缓冲，
+    // 多字段访问器按传入顺序表达主序，内部反向执行 LSD。
     // 小数组走 std::stable_sort，保持与基数路径一致的稳定语义。
     template <typename Entry, typename... Accessor>
     static void sort(std::vector<Entry>& a, std::vector<Entry>& tmp, Accessor... accessor) {
+        // 按多个无符号字段稳定升序排列条目。
         const std::uint32_t n = static_cast<std::uint32_t>(a.size());
         if (n <= kThreshold) {  // 小数组：比较排序更快
             std::stable_sort(a.begin(), a.end(), [&](const Entry& x, const Entry& y) {

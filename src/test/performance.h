@@ -7,6 +7,7 @@
 
 namespace test {
 
+// 只测核心热路径耗时；输出用于比较实现，不是功能断言。
 inline void performance() {
     const TestConfig config{
         .rows = 30,

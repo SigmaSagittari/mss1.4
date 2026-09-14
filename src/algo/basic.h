@@ -53,22 +53,35 @@ struct Basic {
         bool oldValid = true;
     };
 
+    // Basic 是局部约束传播结果：H/T 是仍可能为雷的候选，S/F 是已推出的安全/雷。
+    // valid=false 表示观测值、强制标记或总雷数互相矛盾；不能继续喂给概率层。
+
 private:
+    // 判断观测状态是否为 0..8 的已翻开数字。
     static bool isNumber(ObservedBoard::CellState state);
+    // 将数字观测状态转换为对应的整数值。
     static int numberValue(ObservedBoard::CellState state);
+    // 判断 Basic 标记是否仍属于可分配雷位的候选集合。
     static bool isCandidate(Mark mark);
 
 public:
+    // 从完整观测盘面构建初始标记、邻域计数和合法性结果：先标出数字相邻的 H，
+    // 再反复应用“剩余雷数为 0/候选数”的确定性约束，最后校验每条数字约束和总雷数。
     static Result analyze(const ObservedBoard::Result& state);
+    // 将一批新观测增量传播到 Basic 结果中，并记录可逆 Delta；只把受影响数字放入
+    // 队列，同时维护 mineAround/hideAround，避免每次点击都重扫整张盘面。
     static void update(Result& result, Delta& delta,
                        const ObservedBoard::Result& board,
                        const ObservedBoard::Delta& updates);
+    // updates 必须已经由 ObservedBoard::update 应用到 board；Delta 的变更顺序也要保持。
+    // 将 Basic Delta 正向或逆向回放到已有结果中；回放只恢复标记和计数，不重新推理。
     static void applyDelta(Result& result, const Delta& delta,
                            bool reverse = true);
 };
 
 //==============================================================================
 inline Basic::Result Basic::analyze(const ObservedBoard::Result& state) {
+        // 这是全量基线构建；Analysis::update 只在增量路径无法复用时调用它。
         Result result;
         result.rows = state.rows;
         result.cols = state.cols;
@@ -287,6 +300,7 @@ inline void Basic::update(Result& result, Delta& delta,
     }
 
 inline void Basic::applyDelta(Result& result, const Delta& delta, bool reverse) {
+        // reverse 分支按逆序撤销标记变化，正向分支按记录顺序重做变化。
         auto account = [&](CellId cell, Mark old, Mark now) {
             if ((old == Mark::F) == (now == Mark::F) &&
                 isCandidate(old) == isCandidate(now)) return;

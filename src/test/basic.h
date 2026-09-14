@@ -7,6 +7,7 @@
 
 namespace test {
 
+// 覆盖 Basic 的初始传播、矛盾检测和增量 Delta 回放。
 inline void basic() {
     using Mark = mss::Basic::Mark;
     using State = mss::ObservedBoard::CellState;

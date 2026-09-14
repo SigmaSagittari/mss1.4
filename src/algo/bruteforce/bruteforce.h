@@ -4,13 +4,21 @@
 
 #include "algo/bruteforce/bruteforce_common.h"
 #include "algo/bruteforce/bruteforce_normal.h"
-#include "algo/bruteforce/bruteforce_bitwise.h"
+#include "algo/bruteforce/bruteforce_multimask.h"
 
 //==============================================================================
 
 namespace mss {
 
+// 自动路径在候选格不多时使用定宽多掩码后端；Common 路径保留给对拍/基准。
+
 inline U128 BruteForce::hashConfigs(std::span<const ConfigId> configs) {
+    // 这是无序集合哈希：递归分组的顺序可能变化，但缓存键必须保持相同。
+    // 缓存键故意不含 unopened：同一 configs 下，已经从 unopened 移除的格子
+    // 必然对所有方案都安全；solve 会在继续分支前统一消掉这些共同安全格，
+    // 所以 exact 结果只由 configs 决定。upper 是带 need 的剪枝上界，取决于
+    // 本次搜索停在哪里，不是 configs 的固有结果。
+    // 将当前方案下标集合压缩成搜索缓存使用的 128 位键。
     U128 hash{configs.size(), configs.size()};
     for (ConfigId config : configs)
         hash += {splitmix64(config), splitmix64(config + 0x9e3779b97f4a7c15ULL)};
@@ -20,6 +28,8 @@ inline U128 BruteForce::hashConfigs(std::span<const ConfigId> configs) {
 inline void BruteForce::saveFail(
     const U128& key, int upper, int count,
     FlatHashTable<U128, int, U128Hash>& table) {
+    // 保存当前方案集合的可证明失败上界。负值只表示“当前阈值未达到”，不是
+    // 负的胜局数；solve 读取它时会比较绝对值与新的 need。
     if (upper <= 0 || upper >= count) return;
     int* old = table.find(key);
     if (old == nullptr) {
@@ -33,6 +43,7 @@ inline void BruteForce::saveFail(
 inline BruteForce::CommonSession BruteForce::buildCommonSession(
     const ObservedBoard::Result& board, const Basic::Result& basic,
     const Structure::Result& structure, const Structure::Pool& shapes) {
+    // 从分析结果枚举完整雷位方案，并建立残局搜索的稠密索引。
     CommonSession session;
     const int cellCount = (board.rows + 1) * (board.cols + 1);
     std::vector<int> candidateAt(cellCount, -1);
@@ -151,14 +162,35 @@ inline BruteForce::Result BruteForce::solve(
     const ObservedBoard::Result& board, const Basic::Result& basic,
     const Structure::Result& structure, const Structure::Pool& shapes,
     const Config& config) {
+    // 按配置选择多掩码或普通递归后端，返回候选动作及可赢方案数。
+    // Automatic 只在候选格不超过 512 且方案数大于 1 时走多掩码；Common 用于
+    // 与新后端对拍。这里的分流必须发生在构建递归 Session 之前，因为两套 Session
+    // 的 unopened 和 mine 存储完全不同。
     CommonSession common = buildCommonSession(board, basic, structure, shapes);
     Result result;
     result.possibilities = common.possibilityCount;
     if (common.possibilityCount == 0 || common.candidateCount == 0) return result;
-    if (common.possibilityCount > 1 &&
-        common.candidateCount < bitwiseCandidateThreshold) {
-        BitwiseSession session = buildBitwiseSession(common);
-        return BitwiseSolver::solve(common, session, config);
+    if (config.route != Config::Route::Common &&
+        common.possibilityCount > 1 &&
+        common.candidateCount <= multiMaskCandidateThreshold) {
+        if (common.candidateCount <= 64) {
+            MultiMaskSession<u64> session =
+                MultiMaskSolver<u64>::buildSession(common);
+            return MultiMaskSolver<u64>::solve(common, session, config);
+        }
+        if (common.candidateCount <= 128) {
+            MultiMaskSession<u128> session =
+                MultiMaskSolver<u128>::buildSession(common);
+            return MultiMaskSolver<u128>::solve(common, session, config);
+        }
+        if (common.candidateCount <= 256) {
+            MultiMaskSession<u256> session =
+                MultiMaskSolver<u256>::buildSession(common);
+            return MultiMaskSolver<u256>::solve(common, session, config);
+        }
+        MultiMaskSession<u512> session =
+            MultiMaskSolver<u512>::buildSession(common);
+        return MultiMaskSolver<u512>::solve(common, session, config);
     }
     scratch.reset();
     cache.clear();
@@ -170,9 +202,13 @@ inline BruteForce::Result BruteForce::solve(
          static_cast<int>(i) < common.possibilityCount; ++i)
         configs[i] = i;
     if (config.checkAllMoves) {
+        // 该模式直接把根节点每个候选的可赢数写入 result；递归中的负数只作为
+        // 未达到阈值时的上界参与剪枝，不会进入公开的 Move::wins。
         solve<true, true>(common, session, configs, 1, 0, cache, result);
     } else {
         result.moves.resize(1);
+        // 单步模式把 minWins 传入递归：正返回值才是推荐步的可赢数；负返回值
+        // 表示当前残局最多只能赢 abs(value) 局，故公开结果必须保持为空。
         const int wins = solve<false, true>(
             common, session, configs, config.minWins, 0, cache, result);
         if (wins >= config.minWins) result.moves[0].wins = wins;

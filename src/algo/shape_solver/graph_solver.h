@@ -13,6 +13,9 @@ namespace mss {
 
 struct ShapeSolver::GraphSolver {
 
+    // 图 DP 只保留当前“尚未闭合”的边界状态；order/polish 影响状态峰值，
+    // 不改变最终分布。该后端由 ShapeSolver::analyze 在 Box 较多时选用。
+
 public:
     enum class PolishKind {
         Adjacent,
@@ -79,6 +82,8 @@ public:
 //==============================================================================
 inline ShapeSolver::GraphSolver::Graph
 ShapeSolver::GraphSolver::Graph::fromShape(const Structure::Shape& shape) {
+    // 将每条约束中的 Box 两两连接，构建消元排序使用的邻接图；同一约束中的
+    // 任意两个 Box 必须在消元前互相可见，才能在局部状态中检查约束剩余量。
     const int boxCount = static_cast<int>(shape.boxes.size());
     Graph graph;
     graph.offsets.assign(boxCount + 1, 0);
@@ -133,6 +138,7 @@ ShapeSolver::GraphSolver::Graph::fromShape(const Structure::Shape& shape) {
 
 inline std::span<const BoxId>
 ShapeSolver::GraphSolver::Graph::neighbors(BoxId box) const {
+    // 返回指定 Box 在压缩邻接数组中的邻居视图。
     const int begin = offsets[box];
     const int end = offsets[box + 1];
     return {adjacent.data() + begin, static_cast<std::size_t>(end - begin)};
@@ -140,6 +146,8 @@ ShapeSolver::GraphSolver::Graph::neighbors(BoxId box) const {
 
 inline std::pair<int, int> ShapeSolver::GraphSolver::orderScore(
     const Graph& graph, const std::vector<BoxId>& order) {
+    // 评估一个 Box 顺序的峰值边界宽度和累计边界面积；makeOrder 用它比较
+    // Window3 局部排列，优先降低 Graph DP 的峰值状态数。
     const int boxCount = static_cast<int>(order.size());
     std::vector<int> remaining(graph.offsets.size() - 1);
     std::vector<char> selected(remaining.size(), 0);
@@ -164,6 +172,8 @@ inline std::pair<int, int> ShapeSolver::GraphSolver::orderScore(
 
 inline std::vector<BoxId> ShapeSolver::GraphSolver::makeOrder(
     const Graph& graph, PolishKind polish) {
+    // 用贪心闭合度生成消元顺序，并按策略做局部优化；顺序只影响中间边界，
+    // 不改变 walkSteps 最终枚举的赋值集合。
     const int boxCount = static_cast<int>(graph.offsets.size()) - 1;
     std::vector<BoxId> order;
     order.reserve(boxCount);
@@ -236,6 +246,8 @@ template <typename Callback>
 inline void ShapeSolver::GraphSolver::walkSteps(
     const Structure::Shape& shape, const std::vector<BoxId>& order,
     Callback&& callback) {
+    // 把消元顺序转换为逐步的读取、收集和闭合计划；StepPlan 让 Layer 只读取
+    // 当前检查所需的旧槽位，并在约束关闭时输出对应 Box 的矩。
     const int boxCount = static_cast<int>(shape.boxes.size());
     std::vector<int> position(boxCount);
     for (int step = 0; step < boxCount; ++step) position[order[step]] = step;
@@ -340,6 +352,7 @@ struct ShapeSolver::GraphSolver::Layer {
     FlatHashTable<U128, std::size_t, U128Hash> index;
 
     void reset() {
+        // 清空 Graph DP 层并恢复“0 个 Box、0 个雷、1 种方式”的初始状态。
         states.clear();
         counts.clear();
         momentBoxes.clear();
@@ -351,6 +364,7 @@ struct ShapeSolver::GraphSolver::Layer {
     }
 
     Count& findOrAddCount(State& state, int mineCount) {
+        // 在状态的链表中查找或创建指定累计雷数的计数项。
         for (int i = state.firstCount; i >= 0; i = counts[i].next)
             if (counts[i].mineCount == mineCount) return counts[i];
         const int index = static_cast<int>(counts.size());
@@ -363,6 +377,8 @@ struct ShapeSolver::GraphSolver::Layer {
     }
 
     void advance(const StepPlan& plan, Layer& nextLayer) const {
+        // 执行一步 Graph DP：按当前 Box 可取的雷数转移，按前沿赋值哈希合并
+        // 等价状态，并累计 ways 与每个关闭 Box 的雷数矩。
         nextLayer.states.clear();
         nextLayer.counts.clear();
         nextLayer.momentValues.clear();
@@ -431,6 +447,8 @@ struct ShapeSolver::GraphSolver::Layer {
 
 inline ShapeSolver::Distribution::Result
 ShapeSolver::GraphSolver::materialize(const Layer& layer, int boxCount) {
+    // 将 Graph DP 的最终层展开为公开的按总雷数分布结果；moment/ways 的比值
+    // 还原每个 Box 在该总雷数条件下的期望雷数。
     if (layer.states.empty()) return {0, boxCount, {}, {}};
     std::vector<int> countIds;
     int start = 0;
@@ -477,6 +495,8 @@ ShapeSolver::GraphSolver::materialize(const Layer& layer, int boxCount) {
 inline DistributionId ShapeSolver::GraphSolver::analyze(
     const Structure::Shape& shape, ShapeSolver::Distribution::Pool& pool,
     ShapeSolver::GraphSolver::PolishKind polish) {
+    // 构建消元图、执行 Graph DP，并把结果写入分布缓存；先查缓存，命中时不再
+    // 重算同一 Shape，未命中时用 polish 控制消元顺序的局部优化。
     const DistributionId cached = pool.find(shape.hash);
     if (cached >= 0) return cached;
     const Graph graph = Graph::fromShape(shape);

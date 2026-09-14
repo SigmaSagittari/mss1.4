@@ -34,6 +34,8 @@ private:
     static AssignmentWorkspace& assignmentWorkspace();
 
 public:
+    // 回调收到一个 Box->雷数赋值及其具体布局权重；weight 是各 Box 内 C(size,k)
+    // 的乘积，调用方用它累计 ways/矩。回调期间 assignment 有效，返回后不能保存 span。
     template <typename Callback>
     static void forEachAssignment(const Structure::Shape& shape, Callback&& callback);
 
@@ -47,12 +49,15 @@ inline thread_local ShapeSolver::DfsSolver::AssignmentWorkspace
 
 inline ShapeSolver::DfsSolver::AssignmentWorkspace&
 ShapeSolver::DfsSolver::assignmentWorkspace() {
+    // 返回当前线程专用的 DFS 分配工作区。
     return workspace;
 }
 
 template <typename Callback>
 inline void mss::ShapeSolver::DfsSolver::forEachAssignment(
     const Structure::Shape& shape, Callback&& callback) {
+    // 深度优先枚举满足全部约束的 Box 雷数赋值；每加入一个 Box 就用当前和与
+    // 剩余容量剪枝，因此 callback 只看合法 assignment，不需要再次检查约束。
     AssignmentWorkspace& workspace = assignmentWorkspace();
     const int boxCount = static_cast<int>(shape.boxes.size());
     const int constraintCount = static_cast<int>(shape.constraintCount());
@@ -155,6 +160,8 @@ inline void mss::ShapeSolver::DfsSolver::forEachAssignment(
 
 inline DistributionId mss::ShapeSolver::DfsSolver::analyze(
     const Structure::Shape& shape, Distribution::Pool& pool) {
+    // 汇总每个合法赋值在各总雷数下的布局权重和 Box 期望雷数，再压缩掉空的
+    // 雷数区间并交给 Distribution::Pool 缓存。
     const DistributionId cached = pool.find(shape.hash);
     if (cached >= 0) return cached;
 

@@ -18,6 +18,7 @@
 namespace test {
 
 inline int bruteForceCandidateCount(const Game& game, const Analysis& analysis) {
+    // 统计当前测试局面中可交给残局搜索的候选格数量。
     int count = 0;
     for (int x = 1; x <= game.board.rows; ++x)
         for (int y = 1; y <= game.board.cols; ++y)
@@ -29,6 +30,7 @@ inline int bruteForceCandidateCount(const Game& game, const Analysis& analysis) 
 }
 
 inline bool hasHiddenSafeCell(const Game& game, const Analysis& analysis) {
+    // 判断当前局面是否还存在已被分析层确定安全的隐藏格。
     for (int x = 1; x <= game.board.rows; ++x)
         for (int y = 1; y <= game.board.cols; ++y)
             if (game.board.board[x][y] == mss::ObservedBoard::CellState::Hidden &&
@@ -38,7 +40,9 @@ inline bool hasHiddenSafeCell(const Game& game, const Analysis& analysis) {
 }
 
 inline void real_endgame_performance(const int l, const int r,
-                                     const double seconds) {
+                                     const double seconds,
+                                     const bool compareCommon = false) {
+    // 在指定样本区间内比较残局后端的结果一致性和运行性能。
     constexpr int kRows = 30;
     constexpr int kCols = 16;
     constexpr int kMines = 99;
@@ -49,8 +53,10 @@ inline void real_endgame_performance(const int l, const int r,
         int high;
         long long calls = 0;
         long long nodes = 0;
+        long long commonNodes = 0;
         long long possibilities = 0;
         double milliseconds = 0.0;
+        double commonMilliseconds = 0.0;
     };
     const int range = r - l;
     const std::array<PossibilityBucket, 5> bucketTemplate{{
@@ -68,6 +74,7 @@ inline void real_endgame_performance(const int l, const int r,
     long long calls = 0;
     long long gamesWithCalls = 0;
     long long totalNodes = 0;
+    long long commonTotalNodes = 0;
     long long totalPossibilities = 0;
     long long positions = 0;
     long long noSafePositions = 0;
@@ -92,6 +99,9 @@ inline void real_endgame_performance(const int l, const int r,
     long double minEligiblePossibilities = 0;
     long double maxEligiblePossibilities = 0;
     double totalMilliseconds = 0.0;
+    double commonTotalMilliseconds = 0.0;
+    long long mismatches = 0;
+    long long tieMoveDifferences = 0;
     int minCandidates = r + 1;
     int maxCandidates = 0;
     int minPossibilities = 0;
@@ -171,39 +181,88 @@ inline void real_endgame_performance(const int l, const int r,
             }
             const long double possibilities = analysis.probability.candidates();
             if (noSafe && noFiftyFifty && l <= possibilities && possibilities <= r) {
-                const auto started = std::chrono::steady_clock::now();
-                const mss::BruteForce::Result result = mss::BruteForce::solve(
+                const auto multimaskStarted = std::chrono::steady_clock::now();
+                const mss::BruteForce::Result multimaskResult = mss::BruteForce::solve(
                     game.board, analysis.basic, analysis.structure, analysis.shapes,
                     {false, 1});
-                const double milliseconds = std::chrono::duration<double, std::milli>(
-                    std::chrono::steady_clock::now() - started).count();
-                totalMilliseconds += milliseconds;
+                const double multimaskMilliseconds =
+                    std::chrono::duration<double, std::milli>(
+                        std::chrono::steady_clock::now() - multimaskStarted)
+                        .count();
+                mss::BruteForce::Result commonResult;
+                double commonMilliseconds = 0.0;
+                bool same = true;
+                bool sameValue = true;
+                if (compareCommon) {
+                    const auto commonStarted = std::chrono::steady_clock::now();
+                    commonResult = mss::BruteForce::solve(
+                        game.board, analysis.basic, analysis.structure, analysis.shapes,
+                        {false, 1, mss::BruteForce::Config::Route::Common});
+                    commonMilliseconds =
+                        std::chrono::duration<double, std::milli>(
+                            std::chrono::steady_clock::now() - commonStarted)
+                            .count();
+                    commonTotalMilliseconds += commonMilliseconds;
+                    commonTotalNodes += commonResult.nodes;
+                    sameValue =
+                        multimaskResult.possibilities == commonResult.possibilities &&
+                        multimaskResult.moves.size() == commonResult.moves.size() &&
+                        std::equal(multimaskResult.moves.begin(), multimaskResult.moves.end(),
+                                   commonResult.moves.begin(),
+                                   [](const auto& a, const auto& b) {
+                                       return a.wins == b.wins;
+                                   });
+                    same = sameValue &&
+                           std::equal(multimaskResult.moves.begin(),
+                                      multimaskResult.moves.end(), commonResult.moves.begin(),
+                                      [](const auto& a, const auto& b) {
+                                          return a.x == b.x && a.y == b.y;
+                                      });
+                    if (!sameValue) {
+                        ++mismatches;
+                        std::cout << "performance/real_endgame/mismatch game="
+                                  << gameNumber << " move=" << moveNumber
+                                  << " multimask_moves=" << multimaskResult.moves.size()
+                                  << " common_moves=" << commonResult.moves.size() << '\n';
+                    } else if (!same) {
+                        ++tieMoveDifferences;
+                    }
+                }
+                totalMilliseconds += multimaskMilliseconds;
                 ++calls;
-                totalNodes += result.nodes;
-                totalPossibilities += result.possibilities;
+                totalNodes += multimaskResult.nodes;
+                totalPossibilities += multimaskResult.possibilities;
                 for (PossibilityBucket& bucket : possibilityBuckets)
-                    if (bucket.low <= result.possibilities &&
-                        result.possibilities < bucket.high) {
+                    if (bucket.low <= multimaskResult.possibilities &&
+                        multimaskResult.possibilities < bucket.high) {
                         ++bucket.calls;
-                        bucket.nodes += result.nodes;
-                        bucket.possibilities += result.possibilities;
-                        bucket.milliseconds += milliseconds;
+                        bucket.nodes += multimaskResult.nodes;
+                        bucket.commonNodes += commonResult.nodes;
+                        bucket.possibilities += multimaskResult.possibilities;
+                        bucket.milliseconds += multimaskMilliseconds;
+                        bucket.commonMilliseconds += commonMilliseconds;
                         break;
                     }
                 std::cout << "performance/real_endgame/search game=" << gameNumber
                           << " move=" << moveNumber << " opened=" << game.opened
                           << " candidates=" << candidates
-                          << " possibilities=" << result.possibilities
-                          << " nodes=" << result.nodes << " time_ms="
-                          << std::fixed << std::setprecision(3) << milliseconds << '\n';
-                if (milliseconds > slowestMilliseconds) {
-                    slowestMilliseconds = milliseconds;
+                          << " possibilities=" << multimaskResult.possibilities
+                          << " multimask_nodes=" << multimaskResult.nodes << " multimask_time_ms="
+                          << std::fixed << std::setprecision(3) << multimaskMilliseconds;
+                if (compareCommon)
+                    std::cout << " common_nodes=" << commonResult.nodes
+                              << " common_time_ms=" << commonMilliseconds
+                              << " same_value=" << (sameValue ? 1 : 0)
+                              << " same_move=" << (same ? 1 : 0);
+                std::cout << '\n';
+                if (multimaskMilliseconds > slowestMilliseconds) {
+                    slowestMilliseconds = multimaskMilliseconds;
                     slowestGame = gameNumber;
                     slowestMove = moveNumber;
                     slowestOpened = game.opened;
                     slowestCandidates = candidates;
-                    slowestPossibilities = result.possibilities;
-                    slowestNodes = result.nodes;
+                    slowestPossibilities = multimaskResult.possibilities;
+                    slowestNodes = multimaskResult.nodes;
                     slowestBoard = game.board;
                     slowestMines = game.mines;
                 }
@@ -213,9 +272,9 @@ inline void real_endgame_performance(const int l, const int r,
                 }
                 minCandidates = (std::min)(minCandidates, candidates);
                 maxCandidates = (std::max)(maxCandidates, candidates);
-                if (minPossibilities == 0 || result.possibilities < minPossibilities)
-                    minPossibilities = result.possibilities;
-                maxPossibilities = (std::max)(maxPossibilities, result.possibilities);
+                if (minPossibilities == 0 || multimaskResult.possibilities < minPossibilities)
+                    minPossibilities = multimaskResult.possibilities;
+                maxPossibilities = (std::max)(maxPossibilities, multimaskResult.possibilities);
             }
 
             updates.clear();
@@ -254,10 +313,18 @@ inline void real_endgame_performance(const int l, const int r,
               << maxPossibilities << "] possibilities_total=" << totalPossibilities
               << " nodes=" << totalNodes << " search_time_ms="
               << std::fixed << std::setprecision(3) << totalMilliseconds;
+    if (compareCommon)
+        std::cout << " common_nodes=" << commonTotalNodes
+                  << " common_search_time_ms=" << commonTotalMilliseconds
+                  << " value_mismatches=" << mismatches
+                  << " tie_move_differences=" << tieMoveDifferences;
     std::cout << " wall_time_ms=" << timebox.elapsedSeconds() * 1000.0;
     if (calls != 0)
         std::cout << " avg_nodes=" << totalNodes / calls
                   << " avg_time_ms=" << totalMilliseconds / calls;
+    if (compareCommon && calls != 0)
+        std::cout << " common_avg_nodes=" << commonTotalNodes / calls
+                  << " common_avg_time_ms=" << commonTotalMilliseconds / calls;
     std::cout << " by_possibilities=";
     bool firstBucket = true;
     for (const PossibilityBucket& bucket : possibilityBuckets) {
@@ -271,6 +338,12 @@ inline void real_endgame_performance(const int l, const int r,
                   << ",avg_nodes=" << bucket.nodes / bucket.calls
                   << ",avg_configs=" << bucket.possibilities / bucket.calls
                   << ",avg_time_ms=" << bucket.milliseconds / bucket.calls;
+        if (compareCommon)
+            std::cout << ",common_nodes=" << bucket.commonNodes
+                      << ",common_time_ms=" << bucket.commonMilliseconds
+                      << ",common_avg_nodes=" << bucket.commonNodes / bucket.calls
+                      << ",common_avg_time_ms="
+                      << bucket.commonMilliseconds / bucket.calls;
     }
     std::cout << '\n';
     if (slowestGame != 0) {

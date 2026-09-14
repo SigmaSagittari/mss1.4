@@ -15,6 +15,9 @@ namespace mss {
 
 struct Structure {
 
+    // Structure 把 Basic 的 H/数字二部图压缩成独立连通组件；同一组件内，
+    // 具有相同数字邻接签名的隐藏格共享一个 Box，后续分布层只枚举 Box 的雷数。
+
     struct Shape {
         struct Box {
             int size = 0;
@@ -28,7 +31,9 @@ struct Structure {
         std::vector<Box> boxes;
         U128 hash = {};
 
+        // 返回该 Shape 保存的数字约束数量。
         std::size_t constraintCount() const { return constraints_.size(); }
+        // 返回指定约束的雷数和 Box 成员视图。
         ConstraintView constraint(std::size_t i) const {
             const Constraint& c = constraints_[i];
             if (c.count == 0) return {};
@@ -50,10 +55,13 @@ struct Structure {
         ShapeId shape = -1;
         struct Boxes {
             std::vector<CellId> cells;
-            // 累计偏移使用 16 位；极端组件超过 65535 个格子时布局无法表示。
+            // 设计目的：用 16 位累计偏移压缩组件布局；组件规模受项目盘面约束，
+            // 不在此处引入更宽整数，以保持 Instance 的紧凑存储。
             std::vector<std::uint16_t> boxOf;
 
+            // 返回实例中的 Box 数量。
             std::size_t count() const { return boxOf.empty() ? 0 : boxOf.size() - 1; }
+            // 返回指定 Box 包含的真实格子数量。
             std::size_t cellCount(std::size_t box) const {
                 return boxOf[box + 1] - boxOf[box];
             }
@@ -69,6 +77,7 @@ struct Structure {
     };
 
     struct Delta {
+        // removed 按降序记录旧组件下标，forward 回放依赖这个顺序避免尾部搬移覆盖。
         std::vector<ComponentId> removed;
         std::vector<InstanceId> removedData;
         std::vector<ComponentId> added;
@@ -76,16 +85,23 @@ struct Structure {
     };
 
     struct Pool {
+        // 通过内容哈希插入或复用一个不可变 Shape。
         ShapeId internShape(Shape shape);
+        // 通过内容哈希插入或复用一个不可变 Instance。
         InstanceId internInstance(Instance instance);
+        // 读取 Shape 池中的指定句柄。
         const Shape& getShape(ShapeId id) const { return shapes_[id]; }
+        // 读取 Shape 池中的指定句柄（兼容旧接口名称）。
         const Shape& get(ShapeId id) const { return getShape(id); }
+        // 读取 Instance 池中的指定句柄。
         const Instance& getInstance(InstanceId id) const {
             return instances_[id];
         }
+        // 返回已缓存 Shape 的数量。
         std::size_t size() const { return shapes_.size(); }
 
     private:
+        // 计算 Instance 的完整内容哈希，用于布局池去重。
         static U128 computeInstanceHash(const Instance& instance);
 
         std::vector<Shape> shapes_;
@@ -125,38 +141,56 @@ struct Structure {
 private:
     static thread_local Workspace workspace;
 
+    // 判断观测状态是否为已翻开的数字。
     static bool isNumber(ObservedBoard::CellState state);
+    // 将数字观测状态转换为整数值。
     static int numberValue(ObservedBoard::CellState state);
+    // 将坐标映射为稳定的位置种子。
     static std::uint64_t positionSeed(int x, int y, int rows, int cols);
+    // 计算格子周围数字位置组成的邻接签名。
     static U128 cellSignature(int x, int y,
                               const ObservedBoard::Result& board);
+    // 将实例中的格子位置映射到当前组件和 Box。
     static void remapInstance(InstanceId instance, ComponentId component,
                               const Pool& pool,
                               std::vector<CellLocation>& cellLoc);
+    // 清除实例在 cellLoc 中留下的组件和 Box 映射。
     static void clearInstance(InstanceId instance,
                               const Pool& pool,
                               std::vector<CellLocation>& cellLoc);
 
+    // 从起始格遍历一个数字/H 候选连通组件。
     static void collectComponent(CellId start, const ObservedBoard::Result& board,
                                  const Basic::Result& basic, Grid<char>& visited,
                                  std::vector<CellId>& cells);
+    // 根据组件格子构造 Box、数字约束和实例布局并写入池。
     static InstanceId buildComponent(const std::vector<CellId>& cells,
                                    const ObservedBoard::Result& board,
                                    const Basic::Result& basic, Grid<U128>& cellHash,
                                    Pool& pool);
+    // 计算 Shape 内容哈希，用于结构池去重。
     static U128 computeHash(const Shape& shape);
 
 public:
+    // 从完整盘面构建所有独立约束组件：数字与 H 候选先按邻接关系连通，再把
+    // 邻接签名相同的 H 压成 Box，供 ShapeSolver 枚举 Box 雷数而非逐格枚举。
     static Result analyze(const ObservedBoard::Result& board,
                           const Basic::Result& basic, Pool& pool);
 
+    // 只重建受观测更新影响的组件，并生成结构 Delta；受影响旧组件先整体失效，
+    // 再从 dirty 区域发现新组件，保证 cellLoc 与 components 的下标同步。
     static void update(Result& result, Delta& delta,
                        const ObservedBoard::Result& board,
                        const Basic::Result& basic, Pool& pool,
                        const ObservedBoard::Delta& updates);
+    // update 只重建受 updates 影响的组件；调用方必须同步更新 board/basic 后再调用。
 
+    // 正向应用或逆向恢复结构组件 Delta；组件删除会用尾元素搬移保持 vector 紧凑，
+    // 因而回放顺序和 cellLoc 重映射是这个接口的核心语义。
     static void applyDelta(Result& result, const Pool& pool, const Delta& delta,
                            bool reverse = true);
+    // 设计目的：applyDelta 只服务于同一条分析管线的父子 Result 回放；组件删改使用
+    // “最后一个元素搬移”维持连续存储，因此调用方必须传入对应的状态。
 
 };
 

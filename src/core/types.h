@@ -24,6 +24,8 @@ using ShapeId = int;         // interned 不可变结构（Structure::Pool 句�
 using InstanceId = int;      // interned 不可变布局（Structure::Pool 句柄）
 using DistributionId = int;  // 分布缓存句柄（DistPool 句柄）
 
+// 坐标永远是 1-based；0 行/列只存在于 Grid 的 padding 中，不能当作真实格子。
+
 // 格子 → (所属连通块, shape 内单位格下标)。
 // 不在任何连通块的格子（Safe/Mine/Unknown）component = -1。
 struct CellLocation {
@@ -31,9 +33,11 @@ struct CellLocation {
     BoxId box = -1;
 };
 
-// 遍历 (x, y) 的 8 个邻居，fn 收到的都是合法坐标。
+// 遍历 (x, y) 的 8 个邻居，fn 收到的都是合法坐标；Basic、Structure 和测试模拟器
+// 共用这个顺序，因此不要在调用层自行补边界或改变邻居定义。
 template <typename Func>
 inline void forEachAdjacent(int x, int y, int rows, int cols, Func&& fn) {
+    // 调用方必须先保证 (x, y) 是盘面内坐标；这里刻意不做边界防御。
     bool up = x > 1;
     bool down = x < rows;
     bool left = y > 1;

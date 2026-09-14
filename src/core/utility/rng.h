@@ -5,6 +5,7 @@
 namespace mss {
 
 // splitmix64：小巧快速的 64 位伪随机混合函数
+// 将输入经过固定轮次的加法、乘法和异或移位，返回混合后的 64 位值。
 inline std::uint64_t splitmix64(std::uint64_t x) {
     x += 0x9e3779b97f4a7c15ULL;
     x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ULL;

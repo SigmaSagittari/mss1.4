@@ -34,11 +34,13 @@ struct BruteForce::ScratchBuffers {
 
 inline BruteForce::ScratchBuffers::Layer&
 BruteForce::ScratchBuffers::layer(int depth) {
+    // 取得指定搜索深度的普通后端临时缓冲层。
     if (static_cast<int>(layers.size()) <= depth) layers.emplace_back();
     return layers[depth];
 }
 
 inline void BruteForce::ScratchBuffers::reset() {
+    // 清空所有搜索临时容器并保留容量，供下一次残局搜索复用。
     for (Layer& l : layers) {
         l.deaths.clear();
         l.safeCells.clear();
@@ -62,6 +64,7 @@ inline thread_local FlatHashTable<U128, int, U128Hash> BruteForce::cache;
 inline int BruteForce::revealAt(const CommonSession& common,
                                 const Session& session, ConfigId config,
                                 CandidateId candidate) {
+    // 读取普通后端缓存的方案/候选揭示数字。
     return session.reveal[static_cast<std::size_t>(config) *
                           common.candidateCount + candidate];
 }
@@ -69,11 +72,14 @@ inline int BruteForce::revealAt(const CommonSession& common,
 inline bool BruteForce::mineAt(const CommonSession& common,
                                const Session& session, ConfigId config,
                                CandidateId candidate) {
+    // 读取普通后端缓存的方案/候选雷标记。
     return session.mine[static_cast<std::size_t>(config) *
                         common.candidateCount + candidate] != 0;
 }
 
 inline BruteForce::Session BruteForce::buildSession(const CommonSession& common) {
+    // 构建普通后端的“方案×候选格”扁平雷表和揭示数字表；这是空间换时间，
+    // 让 solve 的递归只处理方案分组，不重复沿 links 计算揭示数字。
     Session session;
     session.mine.assign(static_cast<std::size_t>(common.possibilityCount) *
                             common.candidateCount, 0);
@@ -105,10 +111,15 @@ inline int BruteForce::solve(
     const CommonSession& common, Session& s, std::span<ConfigId> configs,
     int need, int depth,
     FlatHashTable<U128, int, U128Hash>& table, Result& result) {
+    // 返回值采用带符号的阈值协议：正数表示当前 configs 的精确可赢方案数；
+    // 负数表示无法达到 need，绝对值是已证明的可赢上界。上层只在 value>0 时
+    // 把该分支计入 wins，因此负数不会被误当成“负的胜局数”。
+    // CheckAllMoves 只在根节点展开所有首步；IsRoot 控制是否把推荐动作写入 result。
     if constexpr (CheckAllMoves && IsRoot) {
         ++s.nodes;
         const int n = (int)configs.size();
         result.moves.clear();
+        // 方案总数本身不足 need，直接返回失败上界 -n。
         if (need > n) return -n;
         ScratchBuffers::Layer& buf = scratch.layer(depth);
         const int m = (int)common.candidates.size();
@@ -142,6 +153,7 @@ inline int BruteForce::solve(
         ++s.nodes;
         const int n = (int)configs.size();
         if (n <= 1) {
+            // 单方案节点只能贡献 0/1；不足 need 时仍按同一负上界协议返回。
             if (need > n) return -n;
             if constexpr (IsRoot) if (n == 1)
                 for (int j = 0; j < static_cast<int>(common.candidates.size()); ++j)
@@ -152,8 +164,11 @@ inline int BruteForce::solve(
                     }
             return n;
         }
+        // 不可能从 n 个方案中拿到 need 个胜利方案。
         if (need > n) return -n;
         const U128 key = hashConfigs(configs);
+        // 缓存正值可以直接作为精确结果；负值只有在其上界仍小于 need 时才足以
+        // 证明本次调用失败，否则必须继续搜索更高的阈值。
         if (const int* cached = table.find(key)) {
             if (*cached >= 0) return *cached >= need ? *cached : -*cached;
             if (-*cached < need) return *cached;
@@ -172,6 +187,8 @@ inline int BruteForce::solve(
             if (deaths[j] == 0) safeCells.push_back((int)j);
         });
         if (!safeCells.empty()) {
+            // 所有方案都认为这些格安全；一次同时打开它们后，只需按揭示向量分组，
+            // 不必逐格创建等价的递归子问题。
             if constexpr (IsRoot) {
                 result.moves[0].x = common.candidates[safeCells[0]].x;
                 result.moves[0].y = common.candidates[safeCells[0]].y;
@@ -251,6 +268,7 @@ inline int BruteForce::solve(
             }
             for (int j : safeCells) s.unopened.set(j);
             if (bailed) {
+                // 当前安全集合无法达到 need；upper 是尚未展开分支也不可能超过的总上界。
                 saveFail(key, upper, n, table);
                 return -upper;
             }
@@ -283,8 +301,8 @@ inline int BruteForce::solve(
                 groups[r].push_back(ci);
             }
             if (groupCount <= 1) {
-                // 不分裂的候选不产生失败上界；保持 upper 为 0，供末尾判断
-                // “所有候选都不分裂”，此时返回值精确为 1。
+                // 该操作平白丢掉候选为雷的配置，却没有把存活配置分成不同数字分支，
+                // 所以是纯亏：它可能是最优操作，但一定不是唯一的最优操作，可以跳过。
                 continue;
             }
             std::vector<std::pair<int, int>>& groupList = buf.groupList;
@@ -336,8 +354,8 @@ inline int BruteForce::solve(
             table[key] = best;
             return best;
         }
-        // upper == 0 证明没有可分裂候选进入失败路径；need 只是阈值，
-        // 不能用来判断这个终局。
+        // upper == 0 说明所有操作都没有信息增益；此时只能在全部 configs 中猜中一条，
+        // 因而胜利线数精确为 1，与本次 need 无关。
         if (best == 0 && upper == 0) {
             if constexpr (IsRoot)
                 for (int j = 0; j < m; ++j)

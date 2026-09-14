@@ -39,9 +39,9 @@
 
 #include "test/harness.h"
 
+// 配置 Windows 错误模式并启动当前 test/harness 选择的测试入口；生产 UI 不从此
+// 入口启动，调试时应先在 harness 中切换要运行的测试函数。
 int main() {
-    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX |
-                 SEM_NOOPENFILEERRORBOX);
     test::harness();
     return 0;
 }

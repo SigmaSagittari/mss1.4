@@ -13,6 +13,8 @@ namespace mss {
 inline void assert_(bool condition, std::string_view message,
                     const std::source_location location =
                         std::source_location::current()) {
+    // 条件不满足时记录调用位置并终止进程；算法层用它暴露破坏调用契约的路径，
+    // 不返回默认值继续计算，以免把无效状态传给后续概率/搜索层。
     if (condition) return;
 
     static std::mutex logMutex;
@@ -35,6 +37,7 @@ inline void assert_(bool condition, std::string_view message,
 inline void warn_(std::string_view message,
                   const std::source_location location =
                       std::source_location::current()) {
+    // 记录非致命诊断信息并继续执行；只用于确实不影响结果的诊断分支。
     static std::mutex logMutex;
     std::lock_guard lock(logMutex);
     std::ofstream log("mss_error.log", std::ios::app);

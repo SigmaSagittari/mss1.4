@@ -30,6 +30,7 @@ struct Probability::ObserveResult {
 };
 
 // 计算点开 cell 后的结果分布。
+// cell 必须是 Hidden；结果下标 9 表示爆炸，0..8 表示点开后数字。
 // distributions 可被补充组件分布缓存；其内容不代表 observe 的临时状态。
 
 //==============================================================================
@@ -56,6 +57,7 @@ inline thread_local Probability::ObserveWorkspace Probability::observeWorkspace;
 inline void Probability::observePolyMultiply(
     int leftStart, std::span<const long double> left, int rightStart,
     std::span<const long double> right, ObservePoly& out) {
+    // 卷积两个点开结果多项式并写入 out。
     const int size = static_cast<int>(left.size()) +
                      static_cast<int>(right.size()) - 1;
     out.coeffs.assign(size, 0.0L);
@@ -68,6 +70,7 @@ inline void Probability::observePolyMultiply(
 inline void Probability::observePolyMultiplyInto(
     ObservePoly& accumulator, int sourceStart,
     std::span<const long double> source, ObservePoly& mult) {
+    // 将 source 多项式乘入 accumulator，并交换临时系数缓冲。
     observePolyMultiply(accumulator.start, accumulator.coeffs, sourceStart,
                         source, mult);
     accumulator.coeffs.swap(mult.coeffs);
@@ -76,6 +79,7 @@ inline void Probability::observePolyMultiplyInto(
 
 inline long double Probability::observeDenominator(
     const ObservePoly& polynomial, int totalMines, int tSum) {
+    // 计算点开条件下满足总雷数的加权方案数。
     long double result = 0.0L;
     for (int i = 0; i < static_cast<int>(polynomial.coeffs.size()); ++i) {
         const int componentMines = polynomial.start + i;
@@ -89,6 +93,8 @@ inline long double Probability::observeDenominator(
 inline void Probability::buildObserveTable(
     const Structure::Shape& shape, std::span<const int> adjacentBoxCells,
     int xBox, std::vector<ObserveTransfer>& out) {
+    // 根据组件规模选择 DFS 或 Graph 后端生成点开转移表；xBox>=0 时排除被点击
+    // Box 的具体格子，xBox=-1 表示该组件只通过邻居数字影响点开结果。
     out.clear();
     if (static_cast<int>(shape.boxes.size()) < ShapeSolver::graphThreshold)
         return Probability::buildDfsTable(shape, adjacentBoxCells, xBox, out);
@@ -100,6 +106,8 @@ inline Probability::ObserveResult Probability::observe(
     const Structure::Result& structure, const Structure::Pool& shapes,
     const Result& probability, ShapeSolver::Distribution::Pool& distributions,
     CellId cell) {
+    // 设计目的：这里严格对当前 board/basic/structure/probability 做条件化；这些对象
+    // 必须来自同一次分析刷新，才能让点开结果与当前盘面保持一致。
     using Mark = Basic::Mark;
     const auto [x, y] = board.pos(cell);
     const int tSum = basic.unknownSum;
@@ -150,6 +158,8 @@ inline Probability::ObserveResult Probability::observe(
     const int stride = maxCapturedMines + 1;
     ws.dp.assign(9 * stride, 0.0L);
     ws.dp[0] = 1.0L;
+    // 把一个组件/Unknown 的联合转移卷入 dp；第一维是点击格邻居雷数，第二维是
+    // 已捕获组件的雷数，后续 restWays 再补齐未捕获组件和远端 Unknown。
     auto applyTransfer = [&](const ObserveTransfer& transfer) {
         for (int neighborMines = 0;
              neighborMines + transfer.neighborMines <= 8; ++neighborMines)
@@ -165,6 +175,7 @@ inline Probability::ObserveResult Probability::observe(
             }
     };
 
+    // 只捕获与点击格相邻的组件；不相邻组件不会影响点开数字，但仍影响总雷数。
     for (const ComponentId component : ws.captured) {
         const Structure::Instance& instance = shapes.getInstance(
             structure.components[component]);
@@ -198,6 +209,8 @@ inline Probability::ObserveResult Probability::observe(
     const int tPool = tSum - unknownNeighbors - (xInUnknown ? 1 : 0);
     ws.rest.start = 0;
     ws.rest.coeffs.assign(1, 1.0L);
+    // restWays 汇总未捕获组件与剩余 Unknown 的雷数，负责把局部点开事件重新
+    // 条件化到整张盘面的 totalMines。
     for (ComponentId component = 0;
          component < static_cast<ComponentId>(structure.components.size());
          ++component) {
@@ -232,6 +245,7 @@ inline Probability::ObserveResult Probability::observe(
             neighborWays[neighborMines] += ways * ws.restWays[restMines];
         }
 
+    // 爆炸项直接复用当前格的全局雷概率；数字项则由邻居雷数分布归一化得到。
     result.probability[9] = probability.mineProbability(
         cell, board, basic, structure);
     ws.all.coeffs.assign(ws.rest.coeffs.begin(), ws.rest.coeffs.end());
@@ -256,6 +270,7 @@ inline Probability::ObserveResult Probability::observe(
 inline void Probability::buildDfsTable(
     const Structure::Shape& shape, std::span<const int> adjacentBoxCells,
     int xBox, std::vector<Probability::ObserveTransfer>& out) {
+    // 枚举组件 Box 雷数，统计点开格邻居数字与组件雷数的联合权重。
     int maxMineCount = 0;
     for (const Structure::Shape::Box& box : shape.boxes)
         maxMineCount += box.size;
@@ -323,6 +338,7 @@ struct Probability::GraphLayer {
     std::vector<char> frontierValues;
     FlatHashTable<U128, std::size_t, U128Hash> index;
     void reset() {
+        // 清空 Graph DP 层并恢复只含空状态的初始层。
         states.clear();
         counts.clear();
         frontierValues.clear();
@@ -331,6 +347,7 @@ struct Probability::GraphLayer {
         counts.push_back({0, 0, 1.0L, -1});
     }
     Count& findOrAddCount(State& state, int componentMines, int neighborMines) {
+        // 在状态的计数链中查找或创建指定雷数对。
         for (int i = state.firstCount; i >= 0; i = counts[i].next)
             if (counts[i].componentMines == componentMines &&
                 counts[i].neighborMines == neighborMines)
@@ -345,6 +362,7 @@ struct Probability::GraphLayer {
     void advance(const ShapeSolver::GraphSolver::StepPlan& plan,
                  GraphLayer& nextLayer,
                  std::span<const int> adjacentBoxCells, int xBox) const {
+        // 按一步 Box 计划推进点开专用 Graph DP，并累计转移权重。
         nextLayer.states.clear();
         nextLayer.counts.clear();
         nextLayer.frontierValues.clear();
@@ -429,6 +447,7 @@ struct Probability::GraphLayer {
         }
     }
     void emit(std::vector<Probability::ObserveTransfer>& out) const {
+        // 将 Graph DP 的非零状态转换成公开的点开转移表。
         for (const State& state : states)
             for (int index = state.firstCount; index >= 0;
                  index = counts[index].next) {
@@ -443,6 +462,7 @@ struct Probability::GraphLayer {
 inline void Probability::buildGraphTable(
     const Structure::Shape& shape, std::span<const int> adjacentBoxCells,
     int xBox, std::vector<Probability::ObserveTransfer>& out) {
+    // 使用结构图的消元顺序构建点开专用 Graph DP 转移表。
     const ShapeSolver::GraphSolver::Graph graph =
         ShapeSolver::GraphSolver::Graph::fromShape(shape);
     const std::vector<BoxId> order = ShapeSolver::GraphSolver::makeOrder(

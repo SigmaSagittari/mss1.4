@@ -16,10 +16,14 @@ struct Probability::Poly {
     std::vector<long double> coeffs;
     std::span<const long double> view;
 
+    // 返回当前多项式的有效系数视图：叶节点借用组件分布的 ways，卷积节点使用
+    // 自己的 coeffs；调用方只需依赖这个统一入口。
     std::span<const long double> coefficients() const {
         return view.empty() ? std::span<const long double>(coeffs) : view;
     }
 
+    // 将多项式切换为指定指数起点和外部系数视图；清空自有 coeffs 表示该节点
+    // 只是借用叶节点/恒等多项式的存储。
     void setView(int newStart, std::span<const long double> newCoefficients) {
         start = newStart;
         coeffs.clear();
@@ -37,6 +41,8 @@ struct Probability::Workspace {
 };
 
 // 根据盘面约束计算全局雷概率并返回结果。
+// candidates 是满足总雷数的加权方案数，不是去重后的整数布局数；组件 ways 已经
+// 把同一 Box 雷数对应的具体格子布局数量计入权重。
 
 // 高性能复用入口：result 由本函数完全重建，内部容量可跨次调用复用。
 
@@ -46,6 +52,8 @@ inline thread_local Probability::Workspace Probability::globalWorkspace;
 inline void Probability::polyMultiply(
     int leftStart, std::span<const long double> left, int rightStart,
     std::span<const long double> right, Poly& out) {
+    // 卷积两个稀疏区间多项式；树节点用它合并左右组件，out 必须拥有自己的系数，
+    // 不能继续借用任一输入视图。
     const int size = static_cast<int>(left.size()) +
                      static_cast<int>(right.size()) - 1;
     out.view = {};
@@ -58,6 +66,8 @@ inline void Probability::polyMultiply(
 
 inline long double Probability::denominator(
     const Poly& polynomial, int totalMines, int tSum) {
+    // 用组件雷数多项式与 Unknown 的 C(tSum,tMines) 组合数相乘，得到全局条件化
+    // 分母；同一分母同时归一化组件和组件外格子的概率。
     long double result = 0.0L;
     const auto coefficients = polynomial.coefficients();
     for (int i = 0; i < static_cast<int>(coefficients.size()); ++i) {
@@ -71,6 +81,8 @@ inline long double Probability::denominator(
 
 inline long double Probability::unknownMineProbability(
     const Poly& polynomial, int totalMines, int tSum, long double denom) {
+    // 固定一个组件外 Unknown 为雷，把组合数改为 C(tSum-1,tMines)，计算该格的
+    // 条件雷概率；denom 必须是同一 polynomial 的总方案数。
     assert_(denom > 0.0L,
             "Probability::unknownMineProbability: 分母为零");
     long double result = 0.0L;
@@ -88,6 +100,7 @@ inline Probability::Result Probability::analyze(
     const ObservedBoard::Result& board, const Basic::Result& basic,
     const Structure::Result& structure, const Structure::Pool& shapes,
     ShapeSolver::Distribution::Pool& distributions) {
+    // 创建并返回一次全局概率分析结果。
     Result result;
     analyze(board, basic, structure, shapes, distributions, result);
     return result;
@@ -97,6 +110,10 @@ inline void Probability::analyze(
     const ObservedBoard::Result& board, const Basic::Result& basic,
     const Structure::Result& structure, const Structure::Pool& shapes,
     ShapeSolver::Distribution::Pool& distributions, Result& result) {
+    // 重建 result 的组件概率、Unknown 概率和加权方案总数；先用乘积树得到总分母，
+    // 再用 outside 树为每个组件排除自身，避免为每个组件重复卷积其余组件。
+    // 设计目的：globalWorkspace 按线程复用多项式和临时数组，避免热路径反复分配；
+    // 分析结果本身拥有自己的存储，不依赖该工作区的生命周期。
     Workspace& ws = globalWorkspace;
     ws.distributions.clear();
     for (InstanceId instanceId : structure.components) {

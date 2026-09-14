@@ -8,6 +8,7 @@
 
 namespace test {
 
+// 覆盖坐标编码以及 ObservedBoard Delta 的正向/逆向应用。
 inline void observedBoard() {
     using State = mss::ObservedBoard::CellState;
     static_assert(sizeof(State) == sizeof(std::uint8_t));

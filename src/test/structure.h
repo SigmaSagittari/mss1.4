@@ -7,6 +7,7 @@
 
 namespace test {
 
+// 覆盖组件发现、Box/constraint 构造和结构结果的基本不变量。
 inline void structure() {
     using State = mss::ObservedBoard::CellState;
     auto board = mss::ObservedBoard::analyze(3, 3, 1);

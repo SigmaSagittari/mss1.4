@@ -50,35 +50,47 @@ struct ObservedBoard {
         void clear();
     };
 
+    // analyze 只创建全 Hidden 的分析视图，不推断任何数字或雷位。
+
     static Result analyze(int rows, int cols, int mines);
     static void update(Result& board, Delta& delta);
+    // update 会回写每个 Change::previous；同一 Delta 不能重复作为“新更新”提交。
+    // reverse=true 的 applyDelta 必须在该 Delta 对应的子状态上调用，且按逆序撤销。
     static void applyDelta(Result& board, const Delta& delta, bool reverse = true);
 };
 
 //==============================================================================
+// 创建空的观测结果，供后续赋值或移动构造使用。
 inline ObservedBoard::Result::Result() = default;
 
+// 创建指定尺寸和雷数的全 Hidden 观测盘面。
 inline ObservedBoard::Result::Result(int rows, int cols, int mines)
     : rows(rows), cols(cols), totalMines(mines),
       board(rows, cols, CellState::Hidden) {}
 
+// 将 1-based 坐标编码成与 Grid 存储一致的 CellId。
 inline CellId ObservedBoard::Result::id(int x, int y) const {
     return x * (cols + 1) + y;
 }
 
+// 将 CellId 解码回 1-based 坐标。
 inline std::pair<int, int> ObservedBoard::Result::pos(CellId cell) const {
     return {cell / (cols + 1), cell % (cols + 1)};
 }
 
+// 清空本次观测变化记录。
 inline void ObservedBoard::Delta::clear() {
     changes.clear();
 }
 
+// 创建全 Hidden 的初始观测结果。
 inline ObservedBoard::Result ObservedBoard::analyze(int rows, int cols,
                                                      int mines) {
     return Result(rows, cols, mines);
 }
 
+    // 按 Delta 将 Hidden 格子更新为数字或强制状态，并回写旧状态；这是生产分析
+    // 管线的第一步，后续 Basic/Structure 必须使用同一批 updates。
 inline void ObservedBoard::update(Result& board, Delta& delta) {
     for (Change& change : delta.changes) {
         assert_(change.next != CellState::Hidden,
@@ -91,6 +103,8 @@ inline void ObservedBoard::update(Result& board, Delta& delta) {
     }
 }
 
+// 将观测 Delta 正向应用或按逆序恢复到指定观测结果；reverse=true 用于搜索/测试
+// 返回父状态，且必须从 changes 的末尾开始撤销。
 inline void ObservedBoard::applyDelta(Result& board, const Delta& delta,
                                       bool reverse) {
     if (reverse) {

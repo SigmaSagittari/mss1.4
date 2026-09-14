@@ -10,6 +10,7 @@
 
 namespace test {
 
+// 同时验证小数组比较排序和大数组 LSD 路径的稳定多字段顺序。
 inline void radixSort() {
     struct Entry {
         std::uint32_t key;
