@@ -69,7 +69,7 @@ inline DistributionId ShapeSolver::analyze(
     if (static_cast<int>(shape.boxes.size()) < graphThreshold)
         return ShapeSolver::DfsSolver::analyze(shape, pool);
     return ShapeSolver::GraphSolver::analyze(
-        shape, pool, ShapeSolver::GraphSolver::PolishKind::Adjacent);
+        shape, pool, ShapeSolver::GraphSolver::OrderAlgo::SA);
 }
 
 }  // namespace mss

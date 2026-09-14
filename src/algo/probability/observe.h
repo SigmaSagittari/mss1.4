@@ -466,7 +466,7 @@ inline void Probability::buildGraphTable(
     const ShapeSolver::GraphSolver::Graph graph =
         ShapeSolver::GraphSolver::Graph::fromShape(shape);
     const std::vector<BoxId> order = ShapeSolver::GraphSolver::makeOrder(
-        graph, ShapeSolver::GraphSolver::PolishKind::Adjacent);
+        graph, ShapeSolver::GraphSolver::OrderAlgo::Adjacent);
     GraphLayer current;
     GraphLayer next;
     current.reset();

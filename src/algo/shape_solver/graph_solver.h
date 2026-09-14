@@ -2,6 +2,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
+#include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <numeric>
 #include <span>
@@ -14,13 +17,15 @@ namespace mss {
 
 struct ShapeSolver::GraphSolver {
 
-    // 图 DP 只保留当前“尚未闭合”的边界状态；order/polish 影响状态峰值，
+    // 图 DP 只保留当前“尚未闭合”的边界状态；order/algo 影响状态峰值，
     // 不改变最终分布。该后端由 ShapeSolver::analyze 在 Box 较多时选用。
 
 public:
-    enum class PolishKind {
+    enum class OrderAlgo {
         Adjacent,
         Window3,
+        SA,
+        Auto,
     };
 
 struct Graph {
@@ -34,10 +39,18 @@ struct Graph {
 private:
     static std::pair<int, int> orderScore(
         const Graph& graph, const std::vector<BoxId>& order);
+    static BoxId farthestBox(const Graph& graph, BoxId source);
+    static std::vector<BoxId> makeGreedyOrder(
+        const Graph& graph, BoxId first, bool lookahead);
+    static std::vector<BoxId> makeWindow3Order(
+        const Graph& graph, std::vector<BoxId> order);
+    static std::vector<BoxId> makeSAOrder(
+        const Graph& graph, std::vector<BoxId> seed);
+    static std::vector<BoxId> makeAutoOrder(const Graph& graph);
 
 public:
     static std::vector<BoxId> makeOrder(const Graph& graph,
-                                        PolishKind polish);
+                                        OrderAlgo algo);
 
 struct StepPlan {
     struct Check {
@@ -77,7 +90,7 @@ public:
     // Graph DP 后端的普通分布求解。
     static DistributionId analyze(const Structure::Shape& shape,
                                   Distribution::Pool& pool,
-                                  PolishKind polish);
+                                  OrderAlgo algo);
 };
 
 //==============================================================================
@@ -148,7 +161,7 @@ ShapeSolver::GraphSolver::Graph::neighbors(BoxId box) const {
 inline std::pair<int, int> ShapeSolver::GraphSolver::orderScore(
     const Graph& graph, const std::vector<BoxId>& order) {
     // 评估一个 Box 顺序的峰值边界宽度和累计边界面积；makeOrder 用它比较
-    // Window3 局部排列，优先降低 Graph DP 的峰值状态数。
+    // 局部排列和模拟退火结果，优先降低 Graph DP 的峰值状态数。
     const int boxCount = static_cast<int>(order.size());
     std::vector<int> remaining(graph.offsets.size() - 1);
     std::vector<char> selected(remaining.size(), 0);
@@ -171,11 +184,33 @@ inline std::pair<int, int> ShapeSolver::GraphSolver::orderScore(
     return {peak, area};
 }
 
-inline std::vector<BoxId> ShapeSolver::GraphSolver::makeOrder(
-    const Graph& graph, PolishKind polish) {
-    // 用贪心闭合度生成消元顺序，并按策略做局部优化；顺序只影响中间边界，
-    // 不改变 walkSteps 最终枚举的赋值集合。
+inline BoxId ShapeSolver::GraphSolver::farthestBox(
+    const Graph& graph, BoxId source) {
     const int boxCount = static_cast<int>(graph.offsets.size()) - 1;
+    std::vector<int> distance(boxCount, -1);
+    std::vector<BoxId> queue;
+    queue.reserve(boxCount);
+    distance[source] = 0;
+    queue.push_back(source);
+    BoxId farthest = source;
+    for (int head = 0; head < static_cast<int>(queue.size()); ++head) {
+        const BoxId box = queue[head];
+        if (distance[box] > distance[farthest] ||
+            (distance[box] == distance[farthest] && box < farthest))
+            farthest = box;
+        for (BoxId neighbor : graph.neighbors(box))
+            if (distance[neighbor] < 0) {
+                distance[neighbor] = distance[box] + 1;
+                queue.push_back(neighbor);
+            }
+    }
+    return farthest;
+}
+
+inline std::vector<BoxId> ShapeSolver::GraphSolver::makeGreedyOrder(
+    const Graph& graph, BoxId first, bool lookahead) {
+    const int boxCount = static_cast<int>(graph.offsets.size()) - 1;
+    const BoxId fallback = first >= 0 ? first : farthestBox(graph, 0);
     std::vector<BoxId> order;
     order.reserve(boxCount);
     std::vector<int> remaining(boxCount);
@@ -183,91 +218,248 @@ inline std::vector<BoxId> ShapeSolver::GraphSolver::makeOrder(
     for (BoxId box = 0; box < boxCount; ++box)
         remaining[box] = static_cast<int>(graph.neighbors(box).size());
 
-    std::vector<int> distance(boxCount);
-    std::vector<BoxId> queue;
-    queue.reserve(boxCount);
-    auto farthestBox = [&](BoxId source) {
-        std::fill(distance.begin(), distance.end(), -1);
-        queue.clear();
-        distance[source] = 0;
-        queue.push_back(source);
-        BoxId farthest = source;
-        for (int head = 0; head < static_cast<int>(queue.size()); ++head) {
-            const BoxId box = queue[head];
-            if (distance[box] > distance[farthest] ||
-                (distance[box] == distance[farthest] && box < farthest))
-                farthest = box;
-            for (BoxId neighbor : graph.neighbors(box))
-                if (distance[neighbor] < 0) {
-                    distance[neighbor] = distance[box] + 1;
-                    queue.push_back(neighbor);
-                }
-        }
-        return farthest;
-    };
-    const BoxId initial = farthestBox(0);
-
+    int frontier = 0;
     for (int step = 0; step < boxCount; ++step) {
-        BoxId best = initial;
-        if (step != 0) {
-            best = -1;
+        BoxId best = -1;
+        if (step == 0 && first >= 0) {
+            best = first;
+        } else {
             int bestDelta = 0;
+            std::vector<BoxId> ties;
             for (BoxId candidate = 0; candidate < boxCount; ++candidate) {
                 if (selected[candidate]) continue;
                 int closes = 0;
                 for (BoxId neighbor : graph.neighbors(candidate))
                     if (selected[neighbor] && remaining[neighbor] == 1)
                         ++closes;
-                const int delta = static_cast<int>(remaining[candidate] != 0) - closes;
+                const int delta =
+                    static_cast<int>(remaining[candidate] != 0) - closes;
                 if (best < 0 || delta < bestDelta) {
                     best = candidate;
                     bestDelta = delta;
+                    if (lookahead) {
+                        ties.clear();
+                        ties.push_back(candidate);
+                    }
+                } else if (lookahead && delta == bestDelta) {
+                    ties.push_back(candidate);
+                }
+            }
+
+            if (lookahead && ties.size() > 1) {
+                std::pair<int, int> previewBest{boxCount + 1, boxCount + 1};
+                for (BoxId candidate : ties) {
+                    std::vector<int> nextRemaining = remaining;
+                    std::vector<char> nextSelected = selected;
+                    int nextFrontier = frontier;
+                    if (nextRemaining[candidate] != 0) ++nextFrontier;
+                    for (BoxId neighbor : graph.neighbors(candidate))
+                        if (nextSelected[neighbor] &&
+                            nextRemaining[neighbor] == 1)
+                            --nextFrontier;
+                    nextSelected[candidate] = 1;
+                    for (BoxId neighbor : graph.neighbors(candidate))
+                        --nextRemaining[neighbor];
+
+                    int nextDelta = 0;
+                    BoxId nextBest = -1;
+                    for (BoxId follow = 0; follow < boxCount; ++follow) {
+                        if (nextSelected[follow]) continue;
+                        int closes = 0;
+                        for (BoxId neighbor : graph.neighbors(follow))
+                            if (nextSelected[neighbor] &&
+                                nextRemaining[neighbor] == 1)
+                                ++closes;
+                        const int delta = static_cast<int>(
+                            nextRemaining[follow] != 0) - closes;
+                        if (nextBest < 0 || delta < nextDelta) {
+                            nextBest = follow;
+                            nextDelta = delta;
+                        }
+                    }
+                    const std::pair<int, int> preview{
+                        (std::max)(nextFrontier, nextFrontier + nextDelta),
+                        nextDelta};
+                    if (preview < previewBest) {
+                        previewBest = preview;
+                        best = candidate;
+                    }
                 }
             }
         }
 
+        if (best < 0) best = fallback;
+        if (remaining[best] != 0) ++frontier;
+        for (BoxId neighbor : graph.neighbors(best))
+            if (selected[neighbor] && remaining[neighbor] == 1)
+                --frontier;
         selected[best] = 1;
         order.push_back(best);
         for (BoxId neighbor : graph.neighbors(best)) --remaining[neighbor];
     }
+    return order;
+}
 
-    if (polish == PolishKind::Window3) {
-        for (int start = 0; start < boxCount; start += 3) {
-            const int length = (std::min)(3, boxCount - start);
-            std::array<BoxId, 3> candidate{};
-            std::array<BoxId, 3> best{};
-            for (int i = 0; i < length; ++i) {
-                candidate[i] = order[start + i];
-                best[i] = candidate[i];
-            }
-            std::pair<int, int> bestScore = orderScore(graph, order);
-
-            auto consider = [&] {
-                for (int i = 0; i < length; ++i) order[start + i] = candidate[i];
-                const std::pair<int, int> score = orderScore(graph, order);
-                if (score < bestScore) {
-                    bestScore = score;
-                    best = candidate;
-                }
-            };
-
-            if (length == 1) {
-                consider();
-            } else if (length == 2) {
-                if (candidate[1] < candidate[0]) std::swap(candidate[0], candidate[1]);
-                consider();
-                std::swap(candidate[0], candidate[1]);
-                consider();
-            } else {
-                std::sort(candidate.begin(), candidate.end());
-                do {
-                    consider();
-                } while (std::next_permutation(candidate.begin(), candidate.end()));
-            }
-            for (int i = 0; i < length; ++i) order[start + i] = best[i];
+inline std::vector<BoxId> ShapeSolver::GraphSolver::makeWindow3Order(
+    const Graph& graph, std::vector<BoxId> order) {
+    const int boxCount = static_cast<int>(graph.offsets.size()) - 1;
+    for (int start = 0; start < boxCount; start += 3) {
+        const int length = (std::min)(3, boxCount - start);
+        std::array<BoxId, 3> candidate{};
+        std::array<BoxId, 3> best{};
+        for (int i = 0; i < length; ++i) {
+            candidate[i] = order[start + i];
+            best[i] = candidate[i];
         }
+        std::pair<int, int> bestScore = orderScore(graph, order);
+
+        auto consider = [&] {
+            for (int i = 0; i < length; ++i)
+                order[start + i] = candidate[i];
+            const std::pair<int, int> score = orderScore(graph, order);
+            if (score < bestScore) {
+                bestScore = score;
+                best = candidate;
+            }
+        };
+
+        if (length == 1) {
+            consider();
+        } else if (length == 2) {
+            if (candidate[1] < candidate[0]) std::swap(candidate[0], candidate[1]);
+            consider();
+            std::swap(candidate[0], candidate[1]);
+            consider();
+        } else {
+            std::sort(candidate.begin(), candidate.end());
+            do {
+                consider();
+            } while (std::next_permutation(candidate.begin(), candidate.end()));
+        }
+        for (int i = 0; i < length; ++i) order[start + i] = best[i];
     }
     return order;
+}
+
+inline std::vector<BoxId> ShapeSolver::GraphSolver::makeSAOrder(
+    const Graph& graph, std::vector<BoxId> seed) {
+    const int boxCount = static_cast<int>(graph.offsets.size()) - 1;
+    auto nextRandom = [](std::uint64_t& state) {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        return state;
+    };
+    auto unitRandom = [&](std::uint64_t& state) {
+        return static_cast<double>(nextRandom(state) >> 11) *
+               (1.0 / 9007199254740992.0);
+    };
+    auto energy = [](const std::pair<int, int> score) {
+        return score.first * 20000 + score.second;
+    };
+
+    constexpr int rounds = 8;
+    constexpr int iterations = 50000;
+    constexpr double startTemperature = 40000.0;
+    constexpr double endTemperature = 0.1;
+    const double cooling = std::pow(
+        endTemperature / startTemperature,
+        1.0 / static_cast<double>(iterations - 1));
+    std::vector<BoxId> bestOrder = seed;
+    std::pair<int, int> bestScore = orderScore(graph, bestOrder);
+    for (int round = 0; round < rounds; ++round) {
+        std::uint64_t state = 0x9e3779b97f4a7c15ULL +
+                              static_cast<std::uint64_t>(round) *
+                                  0x6a09e667f3bcc909ULL;
+        std::vector<BoxId> current = seed;
+        for (int perturb = 0; perturb < round; ++perturb) {
+            const int left = static_cast<int>(nextRandom(state) % boxCount);
+            const int right = static_cast<int>(nextRandom(state) % boxCount);
+            std::swap(current[left], current[right]);
+        }
+        std::pair<int, int> currentScore = orderScore(graph, current);
+        int currentEnergy = energy(currentScore);
+        double temperature = startTemperature;
+        for (int iteration = 0; iteration < iterations; ++iteration) {
+            std::vector<BoxId> candidate = current;
+            int left = static_cast<int>(nextRandom(state) % boxCount);
+            int right = static_cast<int>(nextRandom(state) % boxCount);
+            switch (nextRandom(state) % 2) {
+            case 0:
+                std::swap(candidate[left], candidate[right]);
+                break;
+            case 1: {
+                const BoxId value = candidate[left];
+                if (left < right) {
+                    for (int i = left; i < right; ++i)
+                        candidate[i] = candidate[i + 1];
+                } else if (right < left) {
+                    for (int i = left; i > right; --i)
+                        candidate[i] = candidate[i - 1];
+                }
+                candidate[right] = value;
+                break;
+            }
+            }
+
+            const std::pair<int, int> candidateScore =
+                orderScore(graph, candidate);
+            const int candidateEnergy = energy(candidateScore);
+            const int difference = currentEnergy - candidateEnergy;
+            const bool accept =
+                difference >= 0 ||
+                unitRandom(state) <
+                    std::exp(static_cast<double>(difference) / temperature);
+            if (candidateScore < bestScore) {
+                bestOrder = candidate;
+                bestScore = candidateScore;
+            }
+            if (accept) {
+                current = std::move(candidate);
+                currentScore = candidateScore;
+                currentEnergy = candidateEnergy;
+            }
+            temperature *= cooling;
+        }
+    }
+    return bestOrder;
+}
+
+inline std::vector<BoxId> ShapeSolver::GraphSolver::makeAutoOrder(
+    const Graph& graph) {
+    const BoxId initial = farthestBox(graph, 0);
+    std::vector<BoxId> best = makeGreedyOrder(graph, initial, false);
+    std::pair<int, int> bestScore = orderScore(graph, best);
+    if (bestScore.first <= 25) return best;
+
+    std::vector<BoxId> candidate = makeWindow3Order(graph, best);
+    std::pair<int, int> candidateScore = orderScore(graph, candidate);
+    if (candidateScore < bestScore) {
+        best = candidate;
+        bestScore = candidateScore;
+    }
+    if (bestScore.first <= 25) return best;
+
+    candidate = makeSAOrder(graph, makeGreedyOrder(graph, -1, true));
+    candidateScore = orderScore(graph, candidate);
+    if (candidateScore < bestScore) best = std::move(candidate);
+    return best;
+}
+
+inline std::vector<BoxId> ShapeSolver::GraphSolver::makeOrder(
+    const Graph& graph, OrderAlgo algo) {
+    const BoxId initial = farthestBox(graph, 0);
+    switch (algo) {
+    case OrderAlgo::Adjacent:
+        return makeGreedyOrder(graph, initial, false);
+    case OrderAlgo::Window3:
+        return makeWindow3Order(graph, makeGreedyOrder(graph, initial, false));
+    case OrderAlgo::SA:
+        return makeSAOrder(graph, makeGreedyOrder(graph, -1, true));
+    case OrderAlgo::Auto:
+        return makeAutoOrder(graph);
+    }
+    std::abort();
 }
 
 template <typename Callback>
@@ -522,13 +714,13 @@ ShapeSolver::GraphSolver::materialize(const Layer& layer, int boxCount) {
 
 inline DistributionId ShapeSolver::GraphSolver::analyze(
     const Structure::Shape& shape, ShapeSolver::Distribution::Pool& pool,
-    ShapeSolver::GraphSolver::PolishKind polish) {
+    ShapeSolver::GraphSolver::OrderAlgo algo) {
     // 构建消元图、执行 Graph DP，并把结果写入分布缓存；先查缓存，命中时不再
-    // 重算同一 Shape，未命中时用 polish 控制消元顺序的局部优化。
+    // 重算同一 Shape，未命中时用 algo 控制消元顺序的优化策略。
     const DistributionId cached = pool.find(shape.hash);
     if (cached >= 0) return cached;
     const Graph graph = Graph::fromShape(shape);
-    const std::vector<BoxId> order = makeOrder(graph, polish);
+    const std::vector<BoxId> order = makeOrder(graph, algo);
     const int maxWidth = orderScore(graph, order).first;
     std::cout << "[graph] boxes=" << shape.boxes.size()
               << " constraints=" << shape.constraintCount()
