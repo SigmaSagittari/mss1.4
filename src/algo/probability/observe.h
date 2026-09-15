@@ -11,7 +11,7 @@
 
 #include "algo/probability/probability.h"
 #include "algo/shape_solver/dfs_solver.h"
-#include "algo/shape_solver/graph_solver.h"
+#include "algo/shape_solver/graph_solver/graph_solver.h"
 #include "core/assert.h"
 #include "core/utility/combinatorics.h"
 

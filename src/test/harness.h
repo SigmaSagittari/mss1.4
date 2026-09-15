@@ -22,9 +22,9 @@ inline void harness() {
     // ObservedBoard：棋盘观测、翻开更新和边界状态的功能回归。
     //observedBoard();
     // ProbabilityCase：人工构造的极端概率盘面压力测试，不代表通用性能。
-    //probabilityCase();
+    probabilityCase();
     // Performance：固定种子随机实战盘面，完整概率分析链路的 20 秒吞吐基线。
-    performance();
+    //performance();
     // RadixSort：基数排序的功能与固定数据性能回归。
     //radixSort();
     // Structure：组件拆分、Box 压缩、池化和增量 Delta 回放的功能回归。

@@ -103,7 +103,9 @@
     <ClInclude Include="src\algo\probability\observe.h" />
     <ClInclude Include="src\algo\probability\probability.h" />
     <ClInclude Include="src\algo\shape_solver\dfs_solver.h" />
-    <ClInclude Include="src\algo\shape_solver\graph_solver.h" />
+    <ClInclude Include="src\algo\shape_solver\graph_solver\graph_solver.h" />
+    <ClInclude Include="src\algo\shape_solver\graph_solver\graph_solver_dp.h" />
+    <ClInclude Include="src\algo\shape_solver\graph_solver\graph_solver_order.h" />
     <ClInclude Include="src\algo\shape_solver\shape_solver.h" />
     <ClInclude Include="src\algo\shape_solver\shape_solver_common.h" />
     <ClInclude Include="src\algo\structure.h" />

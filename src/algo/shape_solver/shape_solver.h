@@ -6,7 +6,7 @@
 
 //==============================================================================
 #include "algo/shape_solver/dfs_solver.h"
-#include "algo/shape_solver/graph_solver.h"
+#include "algo/shape_solver/graph_solver/graph_solver.h"
 
 namespace mss {
 
@@ -69,7 +69,7 @@ inline DistributionId ShapeSolver::analyze(
     if (static_cast<int>(shape.boxes.size()) < graphThreshold)
         return ShapeSolver::DfsSolver::analyze(shape, pool);
     return ShapeSolver::GraphSolver::analyze(
-        shape, pool, ShapeSolver::GraphSolver::OrderAlgo::SA);
+        shape, pool, ShapeSolver::GraphSolver::OrderAlgo::Auto);
 }
 
 }  // namespace mss

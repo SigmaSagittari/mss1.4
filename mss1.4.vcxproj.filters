@@ -16,6 +16,9 @@
     <Filter Include="src\algo\shape_solver">
       <UniqueIdentifier>{7F6B3F4A-6018-4E2D-91D2-30B2BDBB8AD1}</UniqueIdentifier>
     </Filter>
+    <Filter Include="src\algo\shape_solver\graph_solver">
+      <UniqueIdentifier>{C5B30C1D-6D1A-4F0D-9C3B-2A8B4E7D6F90}</UniqueIdentifier>
+    </Filter>
     <Filter Include="src\core">
       <UniqueIdentifier>{0ACB0F25-DDF1-44A7-A94C-A07B72E9BC85}</UniqueIdentifier>
     </Filter>
@@ -62,8 +65,14 @@
     <ClInclude Include="src\algo\shape_solver\dfs_solver.h">
       <Filter>src\algo\shape_solver</Filter>
     </ClInclude>
-    <ClInclude Include="src\algo\shape_solver\graph_solver.h">
-      <Filter>src\algo\shape_solver</Filter>
+    <ClInclude Include="src\algo\shape_solver\graph_solver\graph_solver.h">
+      <Filter>src\algo\shape_solver\graph_solver</Filter>
+    </ClInclude>
+    <ClInclude Include="src\algo\shape_solver\graph_solver\graph_solver_dp.h">
+      <Filter>src\algo\shape_solver\graph_solver</Filter>
+    </ClInclude>
+    <ClInclude Include="src\algo\shape_solver\graph_solver\graph_solver_order.h">
+      <Filter>src\algo\shape_solver\graph_solver</Filter>
     </ClInclude>
     <ClInclude Include="src\algo\shape_solver\shape_solver.h">
       <Filter>src\algo\shape_solver</Filter>
