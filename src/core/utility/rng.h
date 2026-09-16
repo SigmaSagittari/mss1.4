@@ -13,4 +13,4 @@ inline std::uint64_t splitmix64(std::uint64_t x) {
     return x ^ (x >> 31);
 }
 
-}  // namespace mss
+} // namespace mss

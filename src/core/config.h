@@ -9,4 +9,4 @@ namespace mss {
 // Unknown 组合数，超过即拒绝进入指数枚举；这个值控制可接受的最坏延迟。
 inline constexpr int kMaxBruteforceCount = 200000;
 
-}  // namespace mss
+} // namespace mss

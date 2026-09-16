@@ -17,12 +17,12 @@ namespace mss {
 
 // ── 整数身份 ──
 // 稠密 int 句柄，全部以 vector 下标形式存储与传递，越界即 bug。
-using CellId = int;          // 棋盘格：x*(cols+1)+y（即 Grid 存储下标，可直接索引 cellLoc）
-using ComponentId = int;     // 连通块实例（Structure::Result::components 下标）
-using BoxId = int;           // 单位格（Shape 内局部下标，0..boxes.size()-1）
-using ShapeId = int;         // interned 不可变结构（Structure::Pool 句柄）
-using InstanceId = int;      // interned 不可变布局（Structure::Pool 句柄）
-using DistributionId = int;  // 分布缓存句柄（DistPool 句柄）
+using CellId = int;         // 棋盘格：x*(cols+1)+y（即 Grid 存储下标，可直接索引 cellLoc）
+using ComponentId = int;    // 连通块实例（Structure::Result::components 下标）
+using BoxId = int;          // 单位格（Shape 内局部下标，0..boxes.size()-1）
+using ShapeId = int;        // interned 不可变结构（Structure::Pool 句柄）
+using InstanceId = int;     // interned 不可变布局（Structure::Pool 句柄）
+using DistributionId = int; // 分布缓存句柄（DistPool 句柄）
 
 // 坐标永远是 1-based；0 行/列只存在于 Grid 的 padding 中，不能当作真实格子。
 
@@ -35,22 +35,29 @@ struct CellLocation {
 
 // 遍历 (x, y) 的 8 个邻居，fn 收到的都是合法坐标；Basic、Structure 和测试模拟器
 // 共用这个顺序，因此不要在调用层自行补边界或改变邻居定义。
-template <typename Func>
-inline void forEachAdjacent(int x, int y, int rows, int cols, Func&& fn) {
+template <typename Func> inline void forEachAdjacent(int x, int y, int rows, int cols, Func &&fn) {
     // 调用方必须先保证 (x, y) 是盘面内坐标；这里刻意不做边界防御。
     bool up = x > 1;
     bool down = x < rows;
     bool left = y > 1;
     bool right = y < cols;
 
-    if (up && left) fn(x - 1, y - 1);
-    if (up) fn(x - 1, y);
-    if (up && right) fn(x - 1, y + 1);
-    if (left) fn(x, y - 1);
-    if (right) fn(x, y + 1);
-    if (down && left) fn(x + 1, y - 1);
-    if (down) fn(x + 1, y);
-    if (down && right) fn(x + 1, y + 1);
+    if (up && left)
+        fn(x - 1, y - 1);
+    if (up)
+        fn(x - 1, y);
+    if (up && right)
+        fn(x - 1, y + 1);
+    if (left)
+        fn(x, y - 1);
+    if (right)
+        fn(x, y + 1);
+    if (down && left)
+        fn(x + 1, y - 1);
+    if (down)
+        fn(x + 1, y);
+    if (down && right)
+        fn(x + 1, y + 1);
 }
 
-}  // namespace mss
+} // namespace mss

@@ -22,14 +22,13 @@ inline void performance() {
     };
     GameRng rng(0xC0FFEE12345ULL);
     long long steps = 0;
-    const RunSummary summary = runGames(
-        config, rng, [&](const Snapshot&) { ++steps; });
+    const RunSummary summary = runGames(config, rng, [&](const Snapshot &) {
+        ++steps;
+    });
     const double winRate = 100.0 * summary.wins / summary.games;
     const double gamesPerSecond = summary.games / summary.elapsedSeconds;
-    std::cout << "performance/real-game: " << summary.games << " games, "
-              << summary.wins << " wins (" << std::fixed << std::setprecision(3)
-              << winRate << "%), " << gamesPerSecond << " games/s, " << steps
-              << " steps, " << summary.elapsedSeconds << "s\n";
+    std::cout << "performance/real-game: " << summary.games << " games, " << summary.wins << " wins (" << std::fixed << std::setprecision(3)
+              << winRate << "%), " << gamesPerSecond << " games/s, " << steps << " steps, " << summary.elapsedSeconds << "s\n";
 }
 
-}  // namespace test
+} // namespace test

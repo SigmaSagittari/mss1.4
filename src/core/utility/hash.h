@@ -15,13 +15,17 @@ struct U128 {
     std::uint64_t hi = 0;
 
     // 比较两个 128 位身份值的全部位。
-    bool operator==(const U128& o) const { return lo == o.lo && hi == o.hi; }
+    bool operator==(const U128 &o) const {
+        return lo == o.lo && hi == o.hi;
+    }
     // 判断两个 128 位身份值是否不同。
-    bool operator!=(const U128& o) const { return !(*this == o); }
+    bool operator!=(const U128 &o) const {
+        return !(*this == o);
+    }
 
     // 分量相加：用于几何分组时把各数字格种子累加到邻格
     // 将另一个 128 位值按分量加入当前值。
-    U128& operator+=(const U128& o) {
+    U128 &operator+=(const U128 &o) {
         lo += o.lo;
         hi += o.hi;
         return *this;
@@ -35,7 +39,7 @@ struct U128 {
 // U128 全量保证，折叠碰撞只会增加探测长度，不改变缓存身份。
 struct U128Hash {
     // 将 128 位身份折叠为哈希表桶下标输入。
-    std::size_t operator()(const U128& k) const noexcept {
+    std::size_t operator()(const U128 &k) const noexcept {
         return k.lo ^ k.hi;
     }
 };
@@ -43,13 +47,13 @@ struct U128Hash {
 // 流式 128 位混合哈希：两个不同种子的 splitmix 累加器并行推进。
 // 对定宽值反复 mix()，最后 finalize() 得到 U128。
 class U128Hasher {
-public:
+  public:
     // 创建使用默认双通道种子的哈希器。
     U128Hasher() = default;
 
     // 创建使用指定种子初始化双通道的哈希器。
-    explicit U128Hasher(std::uint64_t seed)
-        : lo_(seed + kLoSeed), hi_(seed + kHiSeed) {}
+    explicit U128Hasher(std::uint64_t seed) : lo_(seed + kLoSeed), hi_(seed + kHiSeed) {
+    }
 
     void mix(std::uint64_t v) {
         // 将一个 64 位字段混入两个独立的哈希通道。
@@ -63,9 +67,11 @@ public:
     }
 
     // 返回当前累计状态形成的 128 位身份值。
-    U128 finalize() const { return {lo_, hi_}; }
+    U128 finalize() const {
+        return {lo_, hi_};
+    }
 
-private:
+  private:
     static constexpr std::uint64_t kLoSeed = 0x9e3779b97f4a7c15ULL;
     static constexpr std::uint64_t kHiSeed = 0xd1b54a32d192ed03ULL;
     static constexpr std::uint64_t kMixOffset = 0x6d2b79f5a39c8b7dULL;
@@ -74,4 +80,4 @@ private:
     std::uint64_t hi_ = kHiSeed;
 };
 
-}  // namespace mss
+} // namespace mss

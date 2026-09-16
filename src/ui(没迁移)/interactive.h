@@ -5,8 +5,8 @@
 
 #include "analysis/basic.h"
 #include "analysis/distribution/distribution.h"
-#include "analysis/probability/probability.h"
 #include "analysis/probability/exact.h"
+#include "analysis/probability/probability.h"
 #include "analysis/structure.h"
 #include "core/types.h"
 #include "ui/game_control.h"
@@ -29,32 +29,22 @@ namespace Interactive {
 // ── 引擎无关查询（基于当前 Analysis 管线）──
 
 // 单格雷概率（Mine→1，Unknown→tProb，Safe→0，前沿格→boxProbs）。
-long double mineProbability(GameController::Analysis& an, int x, int y);
+long double mineProbability(GameController::Analysis &an, int x, int y);
 
 // 候选方案数。
-long double candidates(const GameController::Analysis& an);
+long double candidates(const GameController::Analysis &an);
 
 // 非前沿（Unknown）格雷密度。
-long double tCellProbability(const GameController::Analysis& an);
+long double tCellProbability(const GameController::Analysis &an);
 
 // 整盘概率网格物化（1-based，与棋盘一致）。逐格查询，O(rows*cols)。
-Grid<long double> materializeProbability(GameController::Analysis& an);
+Grid<long double> materializeProbability(GameController::Analysis &an);
 
 // 点开某格的结果分布（explosion + digit[0..8]），详情面板查询。
-Probability::ObserveResult observe(GameController::Analysis& an, int x, int y);
+Probability::ObserveResult observe(GameController::Analysis &an, int x, int y);
 
 // ── 实现区 ──
 
+} // namespace Interactive
 
-
-
-
-
-
-
-
-
-
-}  // namespace Interactive
-
-}  // namespace mss
+} // namespace mss

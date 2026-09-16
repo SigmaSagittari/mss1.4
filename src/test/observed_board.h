@@ -22,11 +22,9 @@ inline void observedBoard() {
     check(board.board[1][2] == State::ForcedMine, "forced state was not applied");
     check(delta.changes[0].previous == State::Hidden, "previous state was not recorded");
     mss::ObservedBoard::applyDelta(board, delta);
-    check(board.board[1][1] == State::Hidden && board.board[1][2] == State::Hidden,
-          "reverse apply did not restore Hidden");
+    check(board.board[1][1] == State::Hidden && board.board[1][2] == State::Hidden, "reverse apply did not restore Hidden");
     mss::ObservedBoard::applyDelta(board, delta, false);
-    check(board.board[1][1] == State::Num1 && board.board[1][2] == State::ForcedMine,
-          "forward apply did not restore next states");
+    check(board.board[1][1] == State::Num1 && board.board[1][2] == State::ForcedMine, "forward apply did not restore next states");
     delta.clear();
     check(delta.changes.capacity() == capacity, "Delta capacity was discarded by clear");
     delta.changes.push_back({board.id(2, 2), State::Num0});
@@ -35,4 +33,4 @@ inline void observedBoard() {
     std::cout << "test/observed_board: packed state, external Delta and reuse passed\n";
 }
 
-}  // namespace test
+} // namespace test

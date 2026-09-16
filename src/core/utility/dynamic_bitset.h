@@ -8,7 +8,7 @@
 namespace mss {
 
 class DynamicBitset {
-public:
+  public:
     // resize 只改变可见位数；残局普通后端先 resize 再 setAll 建立 unopened，
     // 新增加的 word 为 0，不会自动继承“全候选开放”的语义。
     void resize(std::size_t size) {
@@ -18,8 +18,10 @@ public:
 
     void setAll() {
         // 将当前可见范围内的所有位设为 1，并清除尾部 padding 位。
-        for (std::uint64_t& word : words_) word = ~std::uint64_t{};
-        if (size_ % 64 != 0) words_.back() &= tailMask();
+        for (std::uint64_t &word : words_)
+            word = ~std::uint64_t{};
+        if (size_ % 64 != 0)
+            words_.back() &= tailMask();
     }
 
     // index 必须小于当前 size；本类没有边界检查，热路径调用依赖此契约。
@@ -38,8 +40,7 @@ public:
         return ((words_[index / 64] >> (index % 64)) & 1) != 0;
     }
 
-    template <typename Callback>
-    void for_each(Callback&& callback) const {
+    template <typename Callback> void for_each(Callback &&callback) const {
         // 按递增下标访问所有置位位；回调看到的是局部 word 提取出的下标，
         // 遍历期间不要通过同一个 bitset 改动位集合。
         for (int wordIndex = 0; wordIndex < (int)(words_.size()); ++wordIndex) {
@@ -53,7 +54,7 @@ public:
         }
     }
 
-private:
+  private:
     std::uint64_t tailMask() const {
         // 生成最后一个 word 中有效位对应的掩码。
         const std::size_t tail = size_ % 64;
@@ -64,4 +65,4 @@ private:
     std::size_t size_ = 0;
 };
 
-}  // namespace mss
+} // namespace mss

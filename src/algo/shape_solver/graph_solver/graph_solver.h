@@ -22,7 +22,7 @@ struct ShapeSolver::GraphSolver {
     // 图 DP 只保留当前“尚未闭合”的边界状态；order/algo 影响状态峰值，
     // 不改变最终分布。该后端由 ShapeSolver::analyze 在 Box 较多时选用。
 
-public:
+  public:
     enum class OrderAlgo {
         Adjacent,
         Window3,
@@ -34,25 +34,20 @@ public:
         std::vector<int> offsets;
         std::vector<BoxId> adjacent;
 
-        static Graph fromShape(const Structure::Shape& shape);
+        static Graph fromShape(const Structure::Shape &shape);
         std::span<const BoxId> neighbors(BoxId box) const;
     };
 
-private:
-    static std::pair<int, int> orderScore(
-        const Graph& graph, const std::vector<BoxId>& order);
-    static BoxId farthestBox(const Graph& graph, BoxId source);
-    static std::vector<BoxId> makeGreedyOrder(
-        const Graph& graph, BoxId first, bool lookahead);
-    static std::vector<BoxId> makeWindow3Order(
-        const Graph& graph, std::vector<BoxId> order);
-    static std::vector<BoxId> makeSAOrder(
-        const Graph& graph, std::vector<BoxId> seed);
-    static std::vector<BoxId> makeAutoOrder(const Graph& graph);
+  private:
+    static std::pair<int, int> orderScore(const Graph &graph, const std::vector<BoxId> &order);
+    static BoxId farthestBox(const Graph &graph, BoxId source);
+    static std::vector<BoxId> makeGreedyOrder(const Graph &graph, BoxId first, bool lookahead);
+    static std::vector<BoxId> makeWindow3Order(const Graph &graph, std::vector<BoxId> order);
+    static std::vector<BoxId> makeSAOrder(const Graph &graph, std::vector<BoxId> seed);
+    static std::vector<BoxId> makeAutoOrder(const Graph &graph);
 
-public:
-    static std::vector<BoxId> makeOrder(const Graph& graph,
-                                        OrderAlgo algo);
+  public:
+    static std::vector<BoxId> makeOrder(const Graph &graph, OrderAlgo algo);
 
     // 一个消元步骤的完整转移计划：处理一个 Box，读取旧 frontier，生成新
     // frontier，并记录本步刚好闭合的 Box。
@@ -90,24 +85,18 @@ public:
         std::vector<Closing> closings;
     };
 
-    template <typename Callback>
-    static void walkSteps(const Structure::Shape& shape,
-                          const std::vector<BoxId>& order, Callback&& callback);
+    template <typename Callback> static void walkSteps(const Structure::Shape &shape, const std::vector<BoxId> &order, Callback &&callback);
 
-private:
+  private:
     struct Layer;
-    static ShapeSolver::Distribution::Result materialize(const Layer& layer,
-                                                         int boxCount);
+    static ShapeSolver::Distribution::Result materialize(const Layer &layer, int boxCount);
 
-public:
-
+  public:
     // Graph DP 后端的普通分布求解。
-    static DistributionId analyze(const Structure::Shape& shape,
-                                  Distribution::Pool& pool,
-                                  OrderAlgo algo);
+    static DistributionId analyze(const Structure::Shape &shape, Distribution::Pool &pool, OrderAlgo algo);
 };
 
-}  // namespace mss
+} // namespace mss
 
-#include "algo/shape_solver/graph_solver/graph_solver_order.h"
 #include "algo/shape_solver/graph_solver/graph_solver_dp.h"
+#include "algo/shape_solver/graph_solver/graph_solver_order.h"

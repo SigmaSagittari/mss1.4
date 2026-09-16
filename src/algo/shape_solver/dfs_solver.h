@@ -9,7 +9,7 @@
 namespace mss {
 
 struct ShapeSolver::DfsSolver {
-private:
+  private:
     struct AssignmentWorkspace {
         struct Frame {
             int index = 0;
@@ -31,34 +31,29 @@ private:
     };
 
     static thread_local AssignmentWorkspace workspace;
-    static AssignmentWorkspace& assignmentWorkspace();
+    static AssignmentWorkspace &assignmentWorkspace();
 
-public:
+  public:
     // 回调收到一个 Box->雷数赋值及其具体布局权重；weight 是各 Box 内 C(size,k)
     // 的乘积，调用方用它累计 ways/矩。回调期间 assignment 有效，返回后不能保存 span。
-    template <typename Callback>
-    static void forEachAssignment(const Structure::Shape& shape, Callback&& callback);
+    template <typename Callback> static void forEachAssignment(const Structure::Shape &shape, Callback &&callback);
 
-    static DistributionId analyze(const Structure::Shape& shape,
-                                  Distribution::Pool& pool);
+    static DistributionId analyze(const Structure::Shape &shape, Distribution::Pool &pool);
 };
 
 //==============================================================================
-inline thread_local ShapeSolver::DfsSolver::AssignmentWorkspace
-    ShapeSolver::DfsSolver::workspace;
+inline thread_local ShapeSolver::DfsSolver::AssignmentWorkspace ShapeSolver::DfsSolver::workspace;
 
-inline ShapeSolver::DfsSolver::AssignmentWorkspace&
-ShapeSolver::DfsSolver::assignmentWorkspace() {
+inline ShapeSolver::DfsSolver::AssignmentWorkspace &ShapeSolver::DfsSolver::assignmentWorkspace() {
     // 返回当前线程专用的 DFS 分配工作区。
     return workspace;
 }
 
 template <typename Callback>
-inline void mss::ShapeSolver::DfsSolver::forEachAssignment(
-    const Structure::Shape& shape, Callback&& callback) {
+inline void mss::ShapeSolver::DfsSolver::forEachAssignment(const Structure::Shape &shape, Callback &&callback) {
     // 深度优先枚举满足全部约束的 Box 雷数赋值；每加入一个 Box 就用当前和与
     // 剩余容量剪枝，因此 callback 只看合法 assignment，不需要再次检查约束。
-    AssignmentWorkspace& workspace = assignmentWorkspace();
+    AssignmentWorkspace &workspace = assignmentWorkspace();
     const int boxCount = shape.boxes.size();
     const int constraintCount = shape.constraintCount();
 
@@ -93,7 +88,7 @@ inline void mss::ShapeSolver::DfsSolver::forEachAssignment(
     workspace.frames.push_back({0, 0, -1, 0, 1.0L});
 
     while (!workspace.frames.empty()) {
-        AssignmentWorkspace::Frame& frame = workspace.frames.back();
+        AssignmentWorkspace::Frame &frame = workspace.frames.back();
         if (frame.index == boxCount) {
             callback(std::span<const char>(workspace.assignment), frame.ways);
             const int appliedIndex = frame.appliedIndex;
@@ -101,8 +96,7 @@ inline void mss::ShapeSolver::DfsSolver::forEachAssignment(
             workspace.frames.pop_back();
             if (appliedIndex >= 0) {
                 const int maxMine = shape.boxes[appliedIndex].size;
-                for (int link = workspace.boxHead[appliedIndex]; link >= 0;
-                     link = workspace.constraintNext[link]) {
+                for (int link = workspace.boxHead[appliedIndex]; link >= 0; link = workspace.constraintNext[link]) {
                     const int constraint = workspace.constraintIds[link];
                     workspace.currentSum[constraint] -= appliedMine;
                     workspace.assignedSize[constraint] -= maxMine;
@@ -119,8 +113,7 @@ inline void mss::ShapeSolver::DfsSolver::forEachAssignment(
             workspace.frames.pop_back();
             if (appliedIndex >= 0) {
                 const int appliedMaxMine = shape.boxes[appliedIndex].size;
-                for (int link = workspace.boxHead[appliedIndex]; link >= 0;
-                     link = workspace.constraintNext[link]) {
+                for (int link = workspace.boxHead[appliedIndex]; link >= 0; link = workspace.constraintNext[link]) {
                     const int constraint = workspace.constraintIds[link];
                     workspace.currentSum[constraint] -= appliedMine;
                     workspace.assignedSize[constraint] -= appliedMaxMine;
@@ -132,52 +125,47 @@ inline void mss::ShapeSolver::DfsSolver::forEachAssignment(
         const int mine = frame.nextMine++;
         workspace.assignment[index] = mine;
         bool valid = true;
-        for (int link = workspace.boxHead[index]; link >= 0;
-             link = workspace.constraintNext[link]) {
+        for (int link = workspace.boxHead[index]; link >= 0; link = workspace.constraintNext[link]) {
             const int constraint = workspace.constraintIds[link];
             const int sum = workspace.currentSum[constraint] + mine;
-            const int remaining = workspace.constraintMaxAdd[constraint] -
-                                  (workspace.assignedSize[constraint] + maxMine);
-            if (sum > workspace.constraintSum[constraint] ||
-                sum + remaining < workspace.constraintSum[constraint]) {
+            const int remaining = workspace.constraintMaxAdd[constraint] - (workspace.assignedSize[constraint] + maxMine);
+            if (sum > workspace.constraintSum[constraint] || sum + remaining < workspace.constraintSum[constraint]) {
                 valid = false;
                 break;
             }
         }
-        if (!valid) continue;
+        if (!valid)
+            continue;
 
-        for (int link = workspace.boxHead[index]; link >= 0;
-             link = workspace.constraintNext[link]) {
+        for (int link = workspace.boxHead[index]; link >= 0; link = workspace.constraintNext[link]) {
             const int constraint = workspace.constraintIds[link];
             workspace.currentSum[constraint] += mine;
             workspace.assignedSize[constraint] += maxMine;
         }
-        workspace.frames.push_back(
-            {index + 1, 0, index, mine,
-             frame.ways * ShapeSolver::binom(maxMine, mine)});
+        workspace.frames.push_back({index + 1, 0, index, mine, frame.ways * ShapeSolver::binom(maxMine, mine)});
     }
 }
 
-inline DistributionId mss::ShapeSolver::DfsSolver::analyze(
-    const Structure::Shape& shape, Distribution::Pool& pool) {
+inline DistributionId mss::ShapeSolver::DfsSolver::analyze(const Structure::Shape &shape, Distribution::Pool &pool) {
     // 汇总每个合法赋值在各总雷数下的布局权重和 Box 期望雷数，再压缩掉空的
     // 雷数区间并交给 Distribution::Pool 缓存。
     const DistributionId cached = pool.find(shape.hash);
-    if (cached >= 0) return cached;
+    if (cached >= 0)
+        return cached;
 
     const int boxCount = shape.boxes.size();
     int maxMineCount = 0;
-    for (const Structure::Shape::Box& box : shape.boxes)
+    for (const Structure::Shape::Box &box : shape.boxes)
         maxMineCount += box.size;
 
     thread_local std::vector<long double> ways;
     thread_local std::vector<long double> moments;
     ways.assign(maxMineCount + 1, 0.0L);
     moments.assign((maxMineCount + 1) * boxCount, 0.0L);
-    forEachAssignment(shape, [&](std::span<const char> assignment,
-                                 long double weight) {
+    forEachAssignment(shape, [&](std::span<const char> assignment, long double weight) {
         int mineCount = 0;
-        for (char mine : assignment) mineCount += mine;
+        for (char mine : assignment)
+            mineCount += mine;
         ways[mineCount] += weight;
         const std::size_t offset = mineCount * boxCount;
         for (int box = 0; box < boxCount; ++box)
@@ -185,26 +173,26 @@ inline DistributionId mss::ShapeSolver::DfsSolver::analyze(
     });
 
     int start = 0;
-    while (start <= maxMineCount && ways[start] == 0.0L) ++start;
+    while (start <= maxMineCount && ways[start] == 0.0L)
+        ++start;
     if (start > maxMineCount)
         return pool.insert(shape.hash, Distribution::Result(0, boxCount, {}, {}));
 
     int end = maxMineCount;
-    while (ways[end] == 0.0L) --end;
-    std::vector<long double> compactWays(ways.begin() + start,
-                                         ways.begin() + end + 1);
+    while (ways[end] == 0.0L)
+        --end;
+    std::vector<long double> compactWays(ways.begin() + start, ways.begin() + end + 1);
     std::vector<long double> expectation(compactWays.size() * boxCount, 0.0L);
     for (int mineCount = start; mineCount <= end; ++mineCount) {
-        if (ways[mineCount] == 0.0L) continue;
+        if (ways[mineCount] == 0.0L)
+            continue;
         const std::size_t sourceOffset = mineCount * boxCount;
         const std::size_t targetOffset = (mineCount - start) * boxCount;
         for (int box = 0; box < boxCount; ++box)
-            expectation[targetOffset + box] =
-                moments[sourceOffset + box] / ways[mineCount];
+            expectation[targetOffset + box] = moments[sourceOffset + box] / ways[mineCount];
     }
-    Distribution::Result result(start, boxCount, std::move(compactWays),
-                                std::move(expectation));
+    Distribution::Result result(start, boxCount, std::move(compactWays), std::move(expectation));
     return pool.insert(shape.hash, std::move(result));
 }
 
-}  // namespace mss
+} // namespace mss

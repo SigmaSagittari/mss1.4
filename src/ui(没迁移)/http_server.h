@@ -25,8 +25,8 @@ struct HttpResponse {
 };
 
 class HttpServer {
-public:
-    using Handler = std::function<HttpResponse(const HttpRequest&)>;
+  public:
+    using Handler = std::function<HttpResponse(const HttpRequest &)>;
 
     ~HttpServer();
     void setHandler(Handler h);
@@ -35,15 +35,15 @@ public:
     void run();
     void requestStop();
 
-private:
+  private:
     Handler handler_;
     SOCKET listenSock_ = INVALID_SOCKET;
     bool running_ = false;
 
     void handleClient(SOCKET client);
-    static std::string urlDecode(const std::string& s);
+    static std::string urlDecode(const std::string &s);
     static int hexVal(char c);
-    static const char* statusText(int code);
+    static const char *statusText(int code);
 };
 
-}  // namespace mss
+} // namespace mss

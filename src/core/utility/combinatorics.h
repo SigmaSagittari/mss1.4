@@ -20,7 +20,7 @@ struct CombinationCache {
     std::vector<long double> values;
 };
 
-inline CombinationCache& combinationCache() {
+inline CombinationCache &combinationCache() {
     static thread_local CombinationCache cache;
     return cache;
 }
@@ -30,17 +30,16 @@ inline long double combLog(int n, int k) {
     // 乘到组件 ways 上，因此这里的数值口径必须与分布层一致。
     assert_(k >= 0 && k <= n, "combLog: 参数越界");
     k = (std::min)(k, n - k);
-    CombinationCache& cache = combinationCache();
+    CombinationCache &cache = combinationCache();
     if (cache.n != n) {
         cache.n = n;
         cache.values.assign(1, 1.0L);
     }
     while ((int)(cache.values.size()) <= k) {
         const int i = cache.values.size();
-        cache.values.push_back(
-            cache.values.back() * (n - i + 1) / i);
+        cache.values.push_back(cache.values.back() * (n - i + 1) / i);
     }
     return cache.values[k];
 }
 
-}  // namespace mss
+} // namespace mss

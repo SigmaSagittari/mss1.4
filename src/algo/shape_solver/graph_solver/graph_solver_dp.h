@@ -5,14 +5,13 @@
 namespace mss {
 
 template <typename Callback>
-inline void ShapeSolver::GraphSolver::walkSteps(
-    const Structure::Shape& shape, const std::vector<BoxId>& order,
-    Callback&& callback) {
+inline void ShapeSolver::GraphSolver::walkSteps(const Structure::Shape &shape, const std::vector<BoxId> &order, Callback &&callback) {
     // 把消元顺序转换为逐步的读取、收集和闭合计划；StepPlan 让 Layer 只读取
     // 当前检查所需的旧槽位，并在约束关闭时输出对应 Box 的矩。
     const int boxCount = shape.boxes.size();
     std::vector<int> position(boxCount);
-    for (int step = 0; step < boxCount; ++step) position[order[step]] = step;
+    for (int step = 0; step < boxCount; ++step)
+        position[order[step]] = step;
 
     const int constraintCount = shape.constraintCount();
     std::vector<int> constraintLast(constraintCount, -1);
@@ -22,8 +21,7 @@ inline void ShapeSolver::GraphSolver::walkSteps(
     for (int constraint = 0; constraint < constraintCount; ++constraint) {
         const Structure::Shape::ConstraintView view = shape.constraint(constraint);
         for (BoxId box : view.boxIds)
-            constraintLast[constraint] =
-                (std::max)(constraintLast[constraint], position[box]);
+            constraintLast[constraint] = (std::max)(constraintLast[constraint], position[box]);
         for (BoxId box : view.boxIds) {
             nextLink.push_back(boxHead[box]);
             constraintIds.push_back(constraint);
@@ -34,8 +32,7 @@ inline void ShapeSolver::GraphSolver::walkSteps(
     std::vector<int> closeStep = position;
     for (int constraint = 0; constraint < constraintCount; ++constraint)
         for (BoxId box : shape.constraint(constraint).boxIds)
-            closeStep[box] =
-                (std::max)(closeStep[box], constraintLast[constraint]);
+            closeStep[box] = (std::max)(closeStep[box], constraintLast[constraint]);
 
     std::vector<int> closeHead(boxCount, -1);
     std::vector<int> closeNext(boxCount, -1);
@@ -56,8 +53,7 @@ inline void ShapeSolver::GraphSolver::walkSteps(
         plan.closings.clear();
 
         for (int link = boxHead[plan.box]; link >= 0; link = nextLink[link]) {
-            const Structure::Shape::ConstraintView view =
-                shape.constraint(constraintIds[link]);
+            const Structure::Shape::ConstraintView view = shape.constraint(constraintIds[link]);
             StepPlan::Check check;
             check.sum = view.sum;
             for (BoxId member : view.boxIds) {
@@ -72,7 +68,8 @@ inline void ShapeSolver::GraphSolver::walkSteps(
         nextLayout.clear();
         for (int oldSlot = 0; oldSlot < (int)(layout.size()); ++oldSlot) {
             const BoxId box = layout[oldSlot];
-            if (closeStep[box] == step) continue;
+            if (closeStep[box] == step)
+                continue;
             plan.gather.push_back(oldSlot);
             nextLayout.push_back(box);
         }
@@ -93,8 +90,7 @@ inline void ShapeSolver::GraphSolver::walkSteps(
 }
 
 struct ShapeSolver::GraphSolver::Layer {
-public:
-
+  public:
     // 一个 frontier 在某个累计雷数下的 DP 数据；同一 frontier 的多个 Count
     // 通过 next 串成链。
     struct Count {
@@ -136,9 +132,8 @@ public:
     // frontier 哈希到 states 下标的索引；每个 frontier 只有一个 State。
     FlatHashTable<U128, std::size_t, U128Hash> index;
 
-    std::uint64_t frontierValue(const State& state, int slot) const {
-        const std::uint64_t word =
-            frontierWords[state.frontierOffset + slot / 16];
+    std::uint64_t frontierValue(const State &state, int slot) const {
+        const std::uint64_t word = frontierWords[state.frontierOffset + slot / 16];
         return (word >> ((slot & 15) * 4)) & 0xf;
     }
 
@@ -154,20 +149,7 @@ public:
         counts.push_back({0, 1.0L, 0, -1});
     }
 
-    Count& findOrAddCount(State& state, int mineCount) {
-        // 在状态的链表中查找或创建指定累计雷数的计数项。
-        for (int i = state.firstCount; i >= 0; i = counts[i].next)
-            if (counts[i].mineCount == mineCount) return counts[i];
-        const int index = counts.size();
-        counts.push_back({mineCount, 0.0L, momentValues.size(), -1});
-        if (state.lastCount >= 0) counts[state.lastCount].next = index;
-        else state.firstCount = index;
-        state.lastCount = index;
-        momentValues.resize(momentValues.size() + momentBoxes.size(), 0.0L);
-        return counts.back();
-    }
-
-    void advance(const StepPlan& plan, Layer& nextLayer) const {
+    void advance(const StepPlan &plan, Layer &nextLayer) const {
         // 执行一步 Graph DP：按当前 Box 可取的雷数转移，按
         // (frontier assignment, total mine count) 合并等价状态，并累计 ways
         // 与每个关闭 Box 的雷数矩。
@@ -177,12 +159,12 @@ public:
         nextLayer.frontierWords.clear();
         nextLayer.index.clear();
         nextLayer.momentBoxes = momentBoxes;
-        for (const StepPlan::Closing& closing : plan.closings)
+        for (const StepPlan::Closing &closing : plan.closings)
             nextLayer.momentBoxes.push_back(closing.box);
-        for (const State& state : states) {
+        for (const State &state : states) {
             int minMine = 0;
             int maxMine = plan.boxSize;
-            for (const StepPlan::Check& check : plan.checks) {
+            for (const StepPlan::Check &check : plan.checks) {
                 int partial = 0;
                 for (int i = 0; i < check.readCount; ++i)
                     partial += frontierValue(state, check.readSlots[i]);
@@ -192,48 +174,52 @@ public:
             for (int mine = minMine; mine <= maxMine; ++mine) {
                 const std::size_t packedOffset = nextLayer.frontierWords.size();
                 for (std::size_t slot = 0; slot < plan.gather.size(); ++slot) {
-                    if ((slot & 15) == 0) nextLayer.frontierWords.push_back(0);
+                    if ((slot & 15) == 0)
+                        nextLayer.frontierWords.push_back(0);
                     const int source = plan.gather[slot];
-                    const std::uint64_t value = source < 0
-                        ? mine
-                        : frontierValue(state, source);
+                    const std::uint64_t value = source < 0 ? mine : frontierValue(state, source);
                     nextLayer.frontierWords.back() |= value << ((slot & 15) * 4);
                 }
                 U128Hasher hasher;
-                for (std::size_t i = packedOffset;
-                     i < nextLayer.frontierWords.size(); ++i)
+                for (std::size_t i = packedOffset; i < nextLayer.frontierWords.size(); ++i)
                     hasher.mix(nextLayer.frontierWords[i]);
                 const U128 hash = hasher.finalize();
-                State* target;
-                if (const std::size_t* found = nextLayer.index.find(hash))
-                {
+                State *target;
+                if (const std::size_t *found = nextLayer.index.find(hash)) {
                     nextLayer.frontierWords.resize(packedOffset);
                     target = &nextLayer.states[*found];
-                }
-                else {
+                } else {
                     const std::size_t id = nextLayer.states.size();
                     nextLayer.states.push_back({packedOffset, -1, -1});
                     nextLayer.index.emplace(hash, id);
                     target = &nextLayer.states.back();
                 }
                 const long double factor = ShapeSolver::binom(plan.boxSize, mine);
-                for (int sourceIndex = state.firstCount; sourceIndex >= 0;
-                     sourceIndex = counts[sourceIndex].next) {
-                    const Count& source = counts[sourceIndex];
-                    Count& targetCount = nextLayer.findOrAddCount(
-                        *target, source.mineCount + mine);
+                for (int sourceIndex = state.firstCount; sourceIndex >= 0; sourceIndex = counts[sourceIndex].next) {
+                    const Count &source = counts[sourceIndex];
+                    const int mineCount = source.mineCount + mine;
+                    int targetIndex = target->firstCount;
+                    while (targetIndex >= 0 && nextLayer.counts[targetIndex].mineCount != mineCount)
+                        targetIndex = nextLayer.counts[targetIndex].next;
+                    if (targetIndex < 0) {
+                        targetIndex = nextLayer.counts.size();
+                        nextLayer.counts.push_back({mineCount, 0.0L, nextLayer.momentValues.size(), -1});
+                        if (target->lastCount >= 0)
+                            nextLayer.counts[target->lastCount].next = targetIndex;
+                        else
+                            target->firstCount = targetIndex;
+                        target->lastCount = targetIndex;
+                        nextLayer.momentValues.resize(nextLayer.momentValues.size() + nextLayer.momentBoxes.size(), 0.0L);
+                    }
+                    Count &targetCount = nextLayer.counts[targetIndex];
                     const long double ways = source.ways * factor;
                     targetCount.ways += ways;
                     for (int slot = 0; slot < (int)(momentBoxes.size()); ++slot)
-                        nextLayer.momentValues[targetCount.momentOffset + slot] +=
-                            momentValues[source.momentOffset + slot] * factor;
+                        nextLayer.momentValues[targetCount.momentOffset + slot] += momentValues[source.momentOffset + slot] * factor;
                     for (int i = 0; i < (int)(plan.closings.size()); ++i) {
-                        const StepPlan::Closing& closing = plan.closings[i];
-                        const long double boxMine = closing.oldSlot < 0
-                        ? mine
-                        : frontierValue(state, closing.oldSlot);
-                        nextLayer.momentValues[targetCount.momentOffset +
-                                                momentBoxes.size() + i] += boxMine * ways;
+                        const StepPlan::Closing &closing = plan.closings[i];
+                        const long double boxMine = closing.oldSlot < 0 ? mine : frontierValue(state, closing.oldSlot);
+                        nextLayer.momentValues[targetCount.momentOffset + momentBoxes.size() + i] += boxMine * ways;
                     }
                 }
             }
@@ -241,18 +227,17 @@ public:
     }
 };
 
-inline ShapeSolver::Distribution::Result
-ShapeSolver::GraphSolver::materialize(const Layer& layer, int boxCount) {
+inline ShapeSolver::Distribution::Result ShapeSolver::GraphSolver::materialize(const Layer &layer, int boxCount) {
     // 将 Graph DP 的最终层展开为公开的按总雷数分布结果；moment/ways 的比值
     // 还原每个 Box 在该总雷数条件下的期望雷数。
-    if (layer.states.empty()) return {0, boxCount, {}, {}};
+    if (layer.states.empty())
+        return {0, boxCount, {}, {}};
     std::vector<int> countIds;
     int start = 0;
     int end = 0;
     bool first = true;
-    for (int index = layer.states[0].firstCount; index >= 0;
-         index = layer.counts[index].next) {
-        const Layer::Count& count = layer.counts[index];
+    for (int index = layer.states[0].firstCount; index >= 0; index = layer.counts[index].next) {
+        const Layer::Count &count = layer.counts[index];
         countIds.push_back(index);
         if (first) {
             start = count.mineCount;
@@ -263,17 +248,17 @@ ShapeSolver::GraphSolver::materialize(const Layer& layer, int boxCount) {
             end = (std::max)(end, count.mineCount);
         }
     }
-    if (first) return {0, boxCount, {}, {}};
+    if (first)
+        return {0, boxCount, {}, {}};
     std::vector<std::size_t> order(countIds.size());
     std::iota(order.begin(), order.end(), 0);
     std::sort(order.begin(), order.end(), [&](std::size_t lhs, std::size_t rhs) {
-        return layer.counts[countIds[lhs]].mineCount <
-               layer.counts[countIds[rhs]].mineCount;
+        return layer.counts[countIds[lhs]].mineCount < layer.counts[countIds[rhs]].mineCount;
     });
     std::vector<long double> sortedWays(end - start + 1, 0.0L);
     std::vector<long double> moments(sortedWays.size() * boxCount, 0.0L);
     for (const BoxId id : order) {
-        const Layer::Count& count = layer.counts[countIds[id]];
+        const Layer::Count &count = layer.counts[countIds[id]];
         sortedWays[count.mineCount - start] = count.ways;
         const std::size_t offset = (count.mineCount - start) * boxCount;
         for (int box = 0; box < boxCount; ++box) {
@@ -287,13 +272,13 @@ ShapeSolver::GraphSolver::materialize(const Layer& layer, int boxCount) {
     return {start, boxCount, std::move(sortedWays), std::move(moments)};
 }
 
-inline DistributionId ShapeSolver::GraphSolver::analyze(
-    const Structure::Shape& shape, ShapeSolver::Distribution::Pool& pool,
-    ShapeSolver::GraphSolver::OrderAlgo algo) {
+inline DistributionId ShapeSolver::GraphSolver::analyze(const Structure::Shape &shape, ShapeSolver::Distribution::Pool &pool,
+                                                        ShapeSolver::GraphSolver::OrderAlgo algo) {
     // 构建消元图、执行 Graph DP，并把结果写入分布缓存；先查缓存，命中时不再
     // 重算同一 Shape，未命中时用 algo 控制消元顺序的优化策略。
     const DistributionId cached = pool.find(shape.hash);
-    if (cached >= 0) return cached;
+    if (cached >= 0)
+        return cached;
     const Graph graph = Graph::fromShape(shape);
     const std::vector<BoxId> order = makeOrder(graph, algo);
     std::vector<char> selected(graph.offsets.size() - 1, 0);
@@ -314,20 +299,18 @@ inline DistributionId ShapeSolver::GraphSolver::analyze(
         selected[box] = 1;
     }
     const int maxWidth = orderScore(graph, order).first;
-    std::cout << "[graph] boxes=" << shape.boxes.size()
-              << " constraints=" << shape.constraintCount()
-              << " max_width=" << maxWidth << '\n' << std::flush;
+    std::cout << "[graph] boxes=" << shape.boxes.size() << " constraints=" << shape.constraintCount() << " max_width=" << maxWidth << '\n'
+              << std::flush;
     Layer current;
     Layer next;
     current.reset();
     next.reset();
-    walkSteps(shape, order, [&](const StepPlan& plan) {
+    walkSteps(shape, order, [&](const StepPlan &plan) {
         current.advance(plan, next);
         std::swap(current, next);
     });
-    ShapeSolver::Distribution::Result result = materialize(
-        current, shape.boxes.size());
+    ShapeSolver::Distribution::Result result = materialize(current, shape.boxes.size());
     return pool.insert(shape.hash, std::move(result));
 }
 
-}  // namespace mss
+} // namespace mss

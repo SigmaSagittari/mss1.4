@@ -18,26 +18,31 @@ struct ShapeSolver {
     // 再用 ways 与其它组件多项式卷积，才能得到全局而非组件内的概率。
     struct Distribution {
         class Result {
-        public:
+          public:
             // 创建指定雷数区间和 Box 期望值的分布结果。
-            Result(int start, int boxCount, std::vector<long double> ways,
-                   std::vector<long double> perBoxExpectations);
+            Result(int start, int boxCount, std::vector<long double> ways, std::vector<long double> perBoxExpectations);
 
             // 禁止复制分布结果，避免复制内部 span 视图。
-            Result(const Result&) = delete;
+            Result(const Result &) = delete;
             // 禁止复制赋值分布结果。
-            Result& operator=(const Result&) = delete;
+            Result &operator=(const Result &) = delete;
             // 移动分布结果及其拥有的系数存储。
-            Result(Result&&) noexcept = default;
+            Result(Result &&) noexcept = default;
             // 移动赋值分布结果。
-            Result& operator=(Result&&) noexcept = default;
+            Result &operator=(Result &&) noexcept = default;
 
             // 返回 ways[0] 所对应的实际最小组件雷数，实际雷数为 start()+索引。
-            int start() const { return start_; }
+            int start() const {
+                return start_;
+            }
             // 返回该组件的 Box 数量。
-            int boxCount() const { return boxCount_; }
+            int boxCount() const {
+                return boxCount_;
+            }
             // 返回各总雷数对应的布局权重。
-            std::span<const long double> ways() const { return ways_; }
+            std::span<const long double> ways() const {
+                return ways_;
+            }
             // 返回按组件总雷数分组的每个 Box 期望雷数视图；索引仍是压缩区间索引。
             std::span<const std::span<const long double>> perBoxExpectations() const {
                 return perBoxExpectations_;
@@ -47,7 +52,7 @@ struct ShapeSolver {
                 return perBoxExpectations_[i];
             }
 
-        private:
+          private:
             int start_;
             int boxCount_;
             std::vector<long double> ways_;
@@ -59,15 +64,19 @@ struct ShapeSolver {
             // 按结构哈希查找已缓存的分布，未命中返回 -1。
             DistributionId find(U128 hash) const;
             // 读取指定分布缓存项。
-            const Result& get(DistributionId id) const { return results_[id]; }
+            const Result &get(DistributionId id) const {
+                return results_[id];
+            }
             // 插入分布或返回相同哈希已有的缓存项。
             DistributionId insert(U128 hash, Result result);
             // 清空分布缓存但保留底层容量。
             void clear();
             // 返回当前缓存中的分布数量。
-            std::size_t size() const { return results_.size(); }
+            std::size_t size() const {
+                return results_.size();
+            }
 
-        private:
+          private:
             std::vector<Result> results_;
             FlatHashTable<U128, DistributionId, U128Hash> index_;
         };
@@ -78,8 +87,7 @@ struct ShapeSolver {
 
     // 按组件规模选择 DFS 或 Graph 后端并返回缓存句柄；两者必须产出同一分布，
     // 阈值只为控制状态爆炸和运行时间。
-    static DistributionId analyze(const Structure::Shape& shape,
-                                  Distribution::Pool& pool);
+    static DistributionId analyze(const Structure::Shape &shape, Distribution::Pool &pool);
 
     // 返回 n 个格子中选 k 个雷的组合数。
     static long double binom(int n, int k);
@@ -88,4 +96,4 @@ struct ShapeSolver {
     inline static constexpr int graphThreshold = 35;
 };
 
-}  // namespace mss
+} // namespace mss
