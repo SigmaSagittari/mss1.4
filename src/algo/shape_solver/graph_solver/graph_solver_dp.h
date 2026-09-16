@@ -110,8 +110,8 @@ public:
 
     // 一个 frontier 状态；firstCount/lastCount 是 counts 链的首尾下标。
     struct State {
-        // 该 State 的 frontier 值在 frontierValues 中的连续数据起点；长度由
-        // 当前 DP 层的 frontier 宽度决定。
+        // 该 State 的 packed frontier 在 frontierWords 中的连续数据起点；长度
+        // 由当前 DP 层的 frontier 宽度决定。
         std::size_t frontierOffset = 0;
         // 该 frontier 的第一个 Count 在 counts 中的下标；-1 表示为空。
         int firstCount = -1;
@@ -120,7 +120,7 @@ public:
     };
 
     // 当前 DP 层的所有不同 frontier；State::frontierOffset 指向它们在
-    // frontierValues 中的值。
+    // frontierWords 中的 packed 值。
     std::vector<State> states;
     // 所有 State 共享的 Count 池；State 的 firstCount/lastCount 指向其中的链。
     std::vector<Count> counts;
@@ -130,11 +130,17 @@ public:
     // 按 Count 分段存储已闭合 Box 的加权雷数总和；Count::momentOffset 指向
     // 当前 Count 的段首。
     std::vector<long double> momentValues;
-    // 按唯一 frontier 分段存储各活跃 Box 的雷数；State::frontierOffset 指向
-    // 当前 State 的段首。
-    std::vector<char> frontierValues;
+    // 按唯一 frontier 分段存储各活跃 Box 的雷数，每个 slot 占 4 bit；
+    // State::frontierOffset 指向当前 State 的 word 段首。
+    std::vector<std::uint64_t> frontierWords;
     // frontier 哈希到 states 下标的索引；每个 frontier 只有一个 State。
     FlatHashTable<U128, std::size_t, U128Hash> index;
+
+    std::uint64_t frontierValue(const State& state, int slot) const {
+        const std::uint64_t word =
+            frontierWords[state.frontierOffset + slot / 16];
+        return (word >> ((slot & 15) * 4)) & 0xf;
+    }
 
     void reset() {
         // 清空 Graph DP 层并恢复“空 frontier、0 个累计雷、1 种方式”的初始状态。
@@ -142,7 +148,7 @@ public:
         counts.clear();
         momentBoxes.clear();
         momentValues.clear();
-        frontierValues.clear();
+        frontierWords.clear();
         index.clear();
         states.push_back({0, 0, 0});
         counts.push_back({0, 1.0L, 0, -1});
@@ -168,7 +174,7 @@ public:
         nextLayer.states.clear();
         nextLayer.counts.clear();
         nextLayer.momentValues.clear();
-        nextLayer.frontierValues.clear();
+        nextLayer.frontierWords.clear();
         nextLayer.index.clear();
         nextLayer.momentBoxes = momentBoxes;
         for (const StepPlan::Closing& closing : plan.closings)
@@ -179,29 +185,34 @@ public:
             for (const StepPlan::Check& check : plan.checks) {
                 int partial = 0;
                 for (int i = 0; i < check.readCount; ++i)
-                    partial += frontierValues[state.frontierOffset + check.readSlots[i]];
+                    partial += frontierValue(state, check.readSlots[i]);
                 minMine = (std::max)(minMine, check.sum - partial - check.remainingSize);
                 maxMine = (std::min)(maxMine, check.sum - partial);
             }
             for (int mine = minMine; mine <= maxMine; ++mine) {
-                U128Hasher hasher;
-                for (int source : plan.gather) {
-                    const char value = source < 0
+                const std::size_t packedOffset = nextLayer.frontierWords.size();
+                for (std::size_t slot = 0; slot < plan.gather.size(); ++slot) {
+                    if ((slot & 15) == 0) nextLayer.frontierWords.push_back(0);
+                    const int source = plan.gather[slot];
+                    const std::uint64_t value = source < 0
                         ? mine
-                        : frontierValues[state.frontierOffset + source];
-                    hasher.mix((std::uint64_t)(unsigned char)(value));
+                        : frontierValue(state, source);
+                    nextLayer.frontierWords.back() |= value << ((slot & 15) * 4);
                 }
+                U128Hasher hasher;
+                for (std::size_t i = packedOffset;
+                     i < nextLayer.frontierWords.size(); ++i)
+                    hasher.mix(nextLayer.frontierWords[i]);
                 const U128 hash = hasher.finalize();
                 State* target;
                 if (const std::size_t* found = nextLayer.index.find(hash))
+                {
+                    nextLayer.frontierWords.resize(packedOffset);
                     target = &nextLayer.states[*found];
+                }
                 else {
                     const std::size_t id = nextLayer.states.size();
-                    nextLayer.states.push_back({nextLayer.frontierValues.size(), -1, -1});
-                    for (int source : plan.gather)
-                        nextLayer.frontierValues.push_back(source < 0
-                            ? mine
-                            : frontierValues[state.frontierOffset + source]);
+                    nextLayer.states.push_back({packedOffset, -1, -1});
                     nextLayer.index.emplace(hash, id);
                     target = &nextLayer.states.back();
                 }
@@ -220,7 +231,7 @@ public:
                         const StepPlan::Closing& closing = plan.closings[i];
                         const long double boxMine = closing.oldSlot < 0
                         ? mine
-                        : frontierValues[state.frontierOffset + closing.oldSlot];
+                        : frontierValue(state, closing.oldSlot);
                         nextLayer.momentValues[targetCount.momentOffset +
                                                 momentBoxes.size() + i] += boxMine * ways;
                     }
