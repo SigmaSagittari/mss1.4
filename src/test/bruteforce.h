@@ -43,20 +43,23 @@ inline void bruteforce() {
         "???????33?311011",
         "????????323?101?",
         "????????21?21011"}};
-    auto board = mss::ObservedBoard::analyze(30, 16, 99);
+    mss::ObservedBoard::Result board =
+        mss::ObservedBoard::analyze(30, 16, 99);
     for (int x = 1; x <= board.rows; ++x)
         for (int y = 1; y <= board.cols; ++y) {
             const char cell = rows[x - 1][y - 1];
             board.board[x][y] = cell == '?'
                                     ? mss::ObservedBoard::CellState::Hidden
-                                    : static_cast<mss::ObservedBoard::CellState>(cell - '0');
+                                    : (mss::ObservedBoard::CellState)(cell - '0');
         }
-    const auto basic = mss::Basic::analyze(board);
+    const mss::Basic::Result basic = mss::Basic::analyze(board);
     mss::Structure::ShapePool shapes;
-    const auto structure = mss::Structure::analyze(board, basic, shapes);
+    const mss::Structure::Result structure =
+        mss::Structure::analyze(board, basic, shapes);
     const mss::BruteForce::Config config{false, 1};
-    const auto start = std::chrono::steady_clock::now();
-    const auto result = mss::BruteForce::solve(
+    const std::chrono::steady_clock::time_point start =
+        std::chrono::steady_clock::now();
+    const mss::BruteForce::Result result = mss::BruteForce::solve(
         board, basic, structure, shapes, config);
     const double milliseconds = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - start).count();

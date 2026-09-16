@@ -36,7 +36,7 @@ inline ShapeSolver::Distribution::Result::Result(
     // 为每个总雷数建立指向连续期望值数组的 span。
     perBoxExpectations_.reserve(ways_.size());
     const std::span<const long double> allExpectations = perBoxExpectationData_;
-    for (std::size_t i = 0; i < ways_.size(); ++i)
+    for (int i = 0; i < (int)(ways_.size()); ++i)
         perBoxExpectations_.push_back(
             allExpectations.subspan(i * boxCount_, boxCount_));
 }
@@ -51,7 +51,7 @@ inline DistributionId ShapeSolver::Distribution::Pool::insert(
     U128 hash, ShapeSolver::Distribution::Result result) {
     // 将新分布加入缓存，并复用已存在的同哈希结果。
     if (const DistributionId* found = index_.find(hash)) return *found;
-    const DistributionId id = static_cast<DistributionId>(results_.size());
+    const DistributionId id = results_.size();
     results_.push_back(std::move(result));
     index_.emplace(hash, id);
     return id;
@@ -66,7 +66,7 @@ inline void ShapeSolver::Distribution::Pool::clear() {
 inline DistributionId ShapeSolver::analyze(
     const Structure::Shape& shape, ShapeSolver::Distribution::Pool& pool) {
     // 根据 Box 数量选择分布求解后端。
-    if (static_cast<int>(shape.boxes.size()) < graphThreshold)
+    if (shape.boxes.size() < graphThreshold)
         return ShapeSolver::DfsSolver::analyze(shape, pool);
     return ShapeSolver::GraphSolver::analyze(
         shape, pool, ShapeSolver::GraphSolver::OrderAlgo::Auto);

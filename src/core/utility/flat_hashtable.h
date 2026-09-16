@@ -50,7 +50,7 @@ public:
 
     FlatHashTable& operator=(const FlatHashTable& other) {
         if (this == &other) return *this;
-        const auto capacity = other.activeSlots_.size();
+        const std::size_t capacity = other.activeSlots_.size();
         const bool atFront = other.activeAtFront();
         hash_ = other.hash_;
         slots_ = other.slots_;
@@ -81,7 +81,7 @@ public:
 
     // 预留至少 expected 个元素对应的容量；可用另一端时原地重排。
     void reserve(std::size_t expected) {
-        const auto need = nextPowerOfTwo(expected > 0 ? expected * 2 : 1);
+        const std::size_t need = nextPowerOfTwo(expected > 0 ? expected * 2 : 1);
         if (need <= activeSlots_.size()) return;
         if (activeSlots_.empty())
             activate(need);
@@ -93,13 +93,13 @@ public:
     const Value* find(const Key& key) const { return valueAt(findIndex(key)); }
 
     Value& operator[](const Key& key) {
-        const auto i = insertionIndex(key);
+        const std::size_t i = insertionIndex(key);
         if (insertKey(i, key)) activeSlots_[i].value = Value{};
         return activeSlots_[i].value;
     }
 
     void emplace(const Key& key, const Value& value) {
-        const auto i = insertionIndex(key);
+        const std::size_t i = insertionIndex(key);
         if (insertKey(i, key)) activeSlots_[i].value = value;
     }
 
@@ -117,7 +117,7 @@ private:
                 : std::span<Slot>(slots_.data() + slots_.size(), 0);
             return;
         }
-        const auto base = atFront ? 0 : slots_.size() - capacity;
+        const std::size_t base = atFront ? 0 : slots_.size() - capacity;
         activeSlots_ = std::span<Slot>(slots_.data() + base, capacity);
     }
 
@@ -140,8 +140,8 @@ private:
 
     std::size_t findIndex(const Key& key) const {
         if (size_ == 0) return capacity();
-        const auto mask = capacity() - 1;
-        auto i = hash_(key) & mask;
+        const std::size_t mask = capacity() - 1;
+        std::size_t i = hash_(key) & mask;
         for (;;) {
             const Slot& slot = activeSlots_[i];
             if (!slot.used) return capacity();
@@ -152,8 +152,8 @@ private:
 
     std::size_t insertionIndex(const Key& key) {
         if (size_ + 1 > capacity() * kMaxLoadFactor) grow();
-        const auto mask = capacity() - 1;
-        auto i = hash_(key) & mask;
+        const std::size_t mask = capacity() - 1;
+        std::size_t i = hash_(key) & mask;
         for (;;) {
             const Slot& slot = activeSlots_[i];
             if (!slot.used || slot.key == key) return i;
@@ -162,7 +162,7 @@ private:
     }
 
     static std::size_t nextPowerOfTwo(std::size_t n) {
-        auto p = std::size_t{1};
+        std::size_t p = 1;
         while (p < n) p <<= 1;
         return p;
     }
@@ -182,18 +182,18 @@ private:
     }
 
     void rehash(std::size_t newCapacity) {
-        const auto oldSlots = activeSlots_;
-        const auto oldCapacity = oldSlots.size();
+        const std::span<Slot> oldSlots = activeSlots_;
+        const std::size_t oldCapacity = oldSlots.size();
         const bool newAtFront = !activeAtFront();
-        const auto newMask = newCapacity - 1;
+        const std::size_t newMask = newCapacity - 1;
 
         if (oldCapacity + newCapacity <= slots_.size()) {
-            const auto newBase = newAtFront ? 0 : slots_.size() - newCapacity;
+            const std::size_t newBase = newAtFront ? 0 : slots_.size() - newCapacity;
             std::span<Slot> next(slots_.data() + newBase, newCapacity);
             for (Slot& slot : next) slot.used = 0;
             for (const Slot& source : oldSlots) {
                 if (!source.used) continue;
-                auto j = hash_(source.key) & newMask;
+                std::size_t j = hash_(source.key) & newMask;
                 while (next[j].used) j = (j + 1) & newMask;
                 next[j].used = 1;
                 next[j].key = source.key;
@@ -202,11 +202,11 @@ private:
             activeSlots_ = next;
         } else {
             std::vector<Slot> newSlots(newCapacity);
-            const auto newBase = newAtFront ? 0 : newSlots.size() - newCapacity;
+            const std::size_t newBase = newAtFront ? 0 : newSlots.size() - newCapacity;
             std::span<Slot> next(newSlots.data() + newBase, newCapacity);
             for (const Slot& source : oldSlots) {
                 if (!source.used) continue;
-                auto j = hash_(source.key) & newMask;
+                std::size_t j = hash_(source.key) & newMask;
                 while (next[j].used) j = (j + 1) & newMask;
                 next[j].used = 1;
                 next[j].key = source.key;

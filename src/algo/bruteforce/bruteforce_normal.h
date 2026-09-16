@@ -35,7 +35,7 @@ struct BruteForce::ScratchBuffers {
 inline BruteForce::ScratchBuffers::Layer&
 BruteForce::ScratchBuffers::layer(int depth) {
     // 取得指定搜索深度的普通后端临时缓冲层。
-    if (static_cast<int>(layers.size()) <= depth) layers.emplace_back();
+    if ((int)(layers.size()) <= depth) layers.emplace_back();
     return layers[depth];
 }
 
@@ -65,7 +65,7 @@ inline int BruteForce::revealAt(const CommonSession& common,
                                 const Session& session, ConfigId config,
                                 CandidateId candidate) {
     // 读取普通后端缓存的方案/候选揭示数字。
-    return session.reveal[static_cast<std::size_t>(config) *
+    return session.reveal[(std::size_t)(config) *
                           common.candidateCount + candidate];
 }
 
@@ -73,7 +73,7 @@ inline bool BruteForce::mineAt(const CommonSession& common,
                                const Session& session, ConfigId config,
                                CandidateId candidate) {
     // 读取普通后端缓存的方案/候选雷标记。
-    return session.mine[static_cast<std::size_t>(config) *
+    return session.mine[(std::size_t)(config) *
                         common.candidateCount + candidate] != 0;
 }
 
@@ -81,26 +81,25 @@ inline BruteForce::Session BruteForce::buildSession(const CommonSession& common)
     // 构建普通后端的“方案×候选格”扁平雷表和揭示数字表；这是空间换时间，
     // 让 solve 的递归只处理方案分组，不重复沿 links 计算揭示数字。
     Session session;
-    session.mine.assign(static_cast<std::size_t>(common.possibilityCount) *
+    session.mine.assign((std::size_t)(common.possibilityCount) *
                             common.candidateCount, 0);
-    for (ConfigId config = 0;
-         config < static_cast<ConfigId>(common.possibilityCount); ++config)
+    for (int config = 0;
+         config < common.possibilityCount; ++config)
         for (std::uint32_t i = common.mineOffsets[config];
              i < common.mineOffsets[config + 1]; ++i)
-            session.mine[static_cast<std::size_t>(config) *
+            session.mine[(std::size_t)(config) *
                              common.candidateCount + common.mineCells[i]] = 1;
-    session.reveal.assign(static_cast<std::size_t>(common.possibilityCount) *
+    session.reveal.assign((std::size_t)(common.possibilityCount) *
                               common.candidateCount, 0);
-    for (ConfigId config = 0;
-         config < static_cast<ConfigId>(common.possibilityCount); ++config)
-        for (CandidateId candidate = 0;
-             candidate < static_cast<CandidateId>(common.candidateCount); ++candidate) {
+    for (int config = 0;
+         config < common.possibilityCount; ++config)
+        for (int candidate = 0; candidate < common.candidateCount; ++candidate) {
             int value = common.candidates[candidate].fixedMines;
             const CommonSession::Candidate& current = common.candidates[candidate];
             for (std::uint32_t i = 0; i < current.linksCount; ++i)
                 value += mineAt(common, session, config,
                                 common.links[current.linksOffset + i]);
-            session.reveal[static_cast<std::size_t>(config) *
+            session.reveal[(std::size_t)(config) *
                            common.candidateCount + candidate] = value;
         }
     return session;
@@ -117,12 +116,12 @@ inline int BruteForce::solve(
     // CheckAllMoves 只在根节点展开所有首步；IsRoot 控制是否把推荐动作写入 result。
     if constexpr (CheckAllMoves && IsRoot) {
         ++s.nodes;
-        const int n = (int)configs.size();
+        const int n = configs.size();
         result.moves.clear();
         // 方案总数本身不足 need，直接返回失败上界 -n。
         if (need > n) return -n;
         ScratchBuffers::Layer& buf = scratch.layer(depth);
-        const int m = (int)common.candidates.size();
+        const int m = common.candidates.size();
         std::vector<int>& deaths = buf.deaths;
         deaths.assign(m, 0);
             for (ConfigId ci : configs)
@@ -151,12 +150,12 @@ inline int BruteForce::solve(
         return best;
     } else {
         ++s.nodes;
-        const int n = (int)configs.size();
+        const int n = configs.size();
         if (n <= 1) {
             // 单方案节点只能贡献 0/1；不足 need 时仍按同一负上界协议返回。
             if (need > n) return -n;
             if constexpr (IsRoot) if (n == 1)
-                for (int j = 0; j < static_cast<int>(common.candidates.size()); ++j)
+                for (int j = 0; j < (int)(common.candidates.size()); ++j)
                     if (!mineAt(common, s, configs[0], j)) {
                         result.moves[0].x = common.candidates[j].x;
                         result.moves[0].y = common.candidates[j].y;
@@ -174,7 +173,7 @@ inline int BruteForce::solve(
             if (-*cached < need) return *cached;
         }
         ScratchBuffers::Layer& buf = scratch.layer(depth);
-        const int m = (int)common.candidates.size();
+        const int m = common.candidates.size();
         std::vector<int>& deaths = buf.deaths;
         deaths.assign(m, 0);
             for (ConfigId ci : configs)
@@ -199,8 +198,8 @@ inline int BruteForce::solve(
             const std::size_t keyLen = safeCells.size();
             for (ConfigId ci : configs) {
                 U128Hasher hasher;
-                for (std::size_t i = 0; i < keyLen; ++i)
-                    hasher.mix(static_cast<std::uint64_t>(revealAt(
+                for (int i = 0; i < (int)(keyLen); ++i)
+                    hasher.mix((std::uint64_t)(revealAt(
                         common, s, ci, safeCells[i])) * (keyLen + 1) + i);
                 hashes.push_back(hasher.finalize());
             }
@@ -215,7 +214,7 @@ inline int BruteForce::solve(
             groupTable.reserve(hashes.size());
             groupIds.resize(hashes.size());
             groupSizes.clear();
-            for (std::size_t i = 0; i < hashes.size(); ++i) {
+            for (int i = 0; i < (int)(hashes.size()); ++i) {
                 int& slot = groupTable[hashes[i]];
                 if (slot == 0) {
                     slot = (int)groupSizes.size() + 1;
@@ -226,14 +225,14 @@ inline int BruteForce::solve(
             }
             groupOffsets.resize(groupSizes.size() + 1);
             groupOffsets[0] = 0;
-            for (std::size_t i = 0; i < groupSizes.size(); ++i)
+            for (int i = 0; i < (int)(groupSizes.size()); ++i)
                 groupOffsets[i + 1] = groupOffsets[i] + groupSizes[i];
             groupedConfigs.resize(configs.size());
-            for (std::size_t i = 0; i < groupSizes.size(); ++i)
+            for (int i = 0; i < (int)(groupSizes.size()); ++i)
                 groupSizes[i] = groupOffsets[i];
-            for (std::size_t i = 0; i < configs.size(); ++i)
+            for (int i = 0; i < (int)(configs.size()); ++i)
                 groupedConfigs[groupSizes[groupIds[i]]++] = configs[i];
-            for (std::size_t i = 0; i < groupSizes.size(); ++i)
+            for (int i = 0; i < (int)(groupSizes.size()); ++i)
                 groupList.emplace_back(groupedConfigs.data() + groupOffsets[i],
                                        groupOffsets[i + 1] - groupOffsets[i]);
             std::sort(groupList.begin(), groupList.end(),
@@ -243,13 +242,13 @@ inline int BruteForce::solve(
                       });
             std::vector<int>& suffix = buf.suffix;
             suffix.assign(groupList.size() + 1, 0);
-            for (int i = static_cast<int>(groupList.size()) - 1; i >= 0; --i)
+            for (int i = (int)(groupList.size()) - 1; i >= 0; --i)
                 suffix[i] = suffix[i + 1] + (int)groupList[i].size();
             int wins = 0;
             bool bailed = false;
             int upper = 0;
-            for (int i = 0; i < static_cast<int>(groupList.size()); ++i) {
-                const int size = (int)groupList[i].size();
+            for (int i = 0; i < (int)(groupList.size()); ++i) {
+                const int size = groupList[i].size();
                 if (wins + size + suffix[i + 1] < need) {
                     upper = wins + size + suffix[i + 1];
                     bailed = true;
@@ -316,13 +315,13 @@ inline int BruteForce::solve(
                       });
             std::vector<int>& suffix = buf.suffix;
             suffix.assign(groupList.size() + 1, 0);
-            for (int i = static_cast<int>(groupList.size()) - 1; i >= 0; --i)
+            for (int i = (int)(groupList.size()) - 1; i >= 0; --i)
                 suffix[i] = suffix[i + 1] + groupList[i].second;
             s.unopened.reset(j);
             int wins = 0;
             bool bailed = false;
             int moveUpper = 0;
-            for (int i = 0; i < static_cast<int>(groupList.size()); ++i) {
+            for (int i = 0; i < (int)(groupList.size()); ++i) {
                 std::vector<ConfigId>& group = groups[groupList[i].first];
                 if (wins + groupList[i].second + suffix[i + 1] < target) {
                     moveUpper = wins + groupList[i].second + suffix[i + 1];

@@ -108,7 +108,7 @@ inline void ObservedBoard::update(Result& board, Delta& delta) {
 inline void ObservedBoard::applyDelta(Result& board, const Delta& delta,
                                       bool reverse) {
     if (reverse) {
-        for (std::size_t i = delta.changes.size(); i-- > 0;) {
+        for (int i = delta.changes.size(); i-- > 0;) {
             const Change& change = delta.changes[i];
             const auto [x, y] = board.pos(change.cell);
             board.board[x][y] = change.previous;

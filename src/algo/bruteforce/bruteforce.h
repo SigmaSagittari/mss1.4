@@ -57,22 +57,21 @@ inline BruteForce::CommonSession BruteForce::buildCommonSession(
             candidateAt[board.id(x, y)] = session.candidateCount++;
             session.candidates.push_back({x, y, 0, 0, 0});
         }
-    for (CandidateId candidate = 0;
-         candidate < static_cast<CandidateId>(session.candidates.size()); ++candidate) {
+    for (int candidate = 0;
+         candidate < (int)session.candidates.size(); ++candidate) {
         CommonSession::Candidate& current = session.candidates[candidate];
-        current.linksOffset = static_cast<std::uint32_t>(session.links.size());
+        current.linksOffset = session.links.size();
         forEachAdjacent(current.x, current.y, board.rows, board.cols,
                         [&](int x, int y) {
             if (basic.marks[x][y] == Basic::Mark::F) ++current.fixedMines;
             const int linked = candidateAt[board.id(x, y)];
             if (linked >= 0) session.links.push_back(linked);
         });
-        current.linksCount = static_cast<std::uint8_t>(
-            session.links.size() - current.linksOffset);
+        current.linksCount = session.links.size() - current.linksOffset;
     }
     std::vector<CandidateId> tCells;
-    for (CandidateId candidate = 0;
-         candidate < static_cast<CandidateId>(session.candidates.size()); ++candidate)
+    for (int candidate = 0;
+         candidate < (int)session.candidates.size(); ++candidate)
         if (basic.marks[session.candidates[candidate].x]
                         [session.candidates[candidate].y] == Basic::Mark::T)
             tCells.push_back(candidate);
@@ -80,16 +79,16 @@ inline BruteForce::CommonSession BruteForce::buildCommonSession(
     session.mineOffsets.push_back(0);
     std::vector<CandidateId> placed;
     const int mines = board.totalMines - basic.mineSum;
-    const int componentCount = static_cast<int>(structure.components.size());
+    const int componentCount = structure.components.size();
     std::vector<std::uint32_t> assignmentOffsets(componentCount + 1);
     std::vector<std::uint32_t> assignmentCounts(componentCount);
     std::vector<char> assignments;
     for (int component = 0; component < componentCount; ++component) {
-        assignmentOffsets[component] = static_cast<std::uint32_t>(assignments.size());
+        assignmentOffsets[component] = assignments.size();
         const Structure::Instance& instance = shapes.getInstance(
             structure.components[component]);
         const Structure::Shape& shape = shapes.get(instance.shape);
-        const int boxCount = static_cast<int>(instance.boxes.count());
+        const int boxCount = instance.boxes.count();
         ShapeSolver::DfsSolver::forEachAssignment(
             shape, [&](auto assignment, long double) {
                 for (int box = 0; box < boxCount; ++box)
@@ -97,22 +96,22 @@ inline BruteForce::CommonSession BruteForce::buildCommonSession(
                 ++assignmentCounts[component];
             });
     }
-    assignmentOffsets[componentCount] = static_cast<std::uint32_t>(assignments.size());
+    assignmentOffsets[componentCount] = assignments.size();
 
     auto enumerateComponents = [&](auto&& self, int component, int used) -> void {
         if (component == componentCount) {
             const int left = mines - used;
-            if (left < 0 || left > static_cast<int>(tCells.size())) return;
+            if (left < 0 || left > (int)tCells.size()) return;
             auto chooseT = [&](auto&& choose, int start, int remaining) -> void {
                 if (remaining == 0) {
                     ++session.possibilityCount;
                     for (CandidateId candidate : placed)
                         session.mineCells.push_back(candidate);
                     session.mineOffsets.push_back(
-                        static_cast<std::uint32_t>(session.mineCells.size()));
+                        session.mineCells.size());
                     return;
                 }
-                for (int i = start; i <= static_cast<int>(tCells.size()) - remaining; ++i) {
+                for (int i = start; i <= (int)tCells.size() - remaining; ++i) {
                     placed.push_back(tCells[i]);
                     choose(choose, i + 1, remaining - 1);
                     placed.pop_back();
@@ -123,11 +122,11 @@ inline BruteForce::CommonSession BruteForce::buildCommonSession(
         }
         const Structure::Instance& instance = shapes.getInstance(
             structure.components[component]);
-        const int boxCount = static_cast<int>(instance.boxes.count());
+        const int boxCount = instance.boxes.count();
         const std::uint32_t assignmentOffset = assignmentOffsets[component];
         for (std::uint32_t index = 0; index < assignmentCounts[component]; ++index) {
             const int assignmentStart =
-                static_cast<int>(assignmentOffset + index * boxCount);
+                assignmentOffset + index * boxCount;
             int componentMines = 0;
             for (int box = 0; box < boxCount; ++box)
                 componentMines += assignments[assignmentStart + box];
@@ -146,8 +145,7 @@ inline BruteForce::CommonSession BruteForce::buildCommonSession(
                 const int first = instance.boxes.boxOf[box];
                 const int count = instance.boxes.boxOf[box + 1] - first;
                 for (int i = start; i <= count - remaining; ++i) {
-                    placed.push_back(static_cast<CandidateId>(
-                        candidateAt[instance.boxes.cells[first + i]]));
+                    placed.push_back(candidateAt[instance.boxes.cells[first + i]]);
                     choose(choose, box, i + 1, remaining - 1);
                     placed.pop_back();
                 }
@@ -200,8 +198,7 @@ inline BruteForce::Result BruteForce::solve(
     session.unopened.resize(common.candidateCount);
     session.unopened.setAll();
     std::vector<ConfigId> configs(common.possibilityCount);
-    for (ConfigId i = 0;
-         static_cast<int>(i) < common.possibilityCount; ++i)
+    for (int i = 0; i < (int)configs.size(); ++i)
         configs[i] = i;
     if (config.checkAllMoves) {
         // 该模式直接把根节点每个候选的可赢数写入 result；递归中的负数只作为

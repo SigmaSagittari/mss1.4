@@ -92,14 +92,14 @@ struct bitMask {
 
     // 保留两个候选集合的交集。
     bitMask& operator&=(const bitMask& other) {
-        for (std::size_t i = 0; i < WordCount; ++i)
+        for (int i = 0; i < (int)(WordCount); ++i)
             words[i] &= other.words[i];
         return *this;
     }
 
     // 将另一个候选集合并入当前集合。
     bitMask& operator|=(const bitMask& other) {
-        for (std::size_t i = 0; i < WordCount; ++i)
+        for (int i = 0; i < (int)(WordCount); ++i)
             words[i] |= other.words[i];
         return *this;
     }
@@ -107,7 +107,7 @@ struct bitMask {
     // 按 word 取反，得到候选全集的补集掩码。
     bitMask operator~() const {
         bitMask result;
-        for (std::size_t i = 0; i < WordCount; ++i)
+        for (int i = 0; i < (int)(WordCount); ++i)
             result.words[i] = ~words[i];
         return result;
     }
@@ -243,7 +243,7 @@ struct BruteForce::MultiMaskSolver {
     struct Scratch {
         // 返回指定递归深度的可复用临时缓冲层。
         Layer& layer(int depth) {
-            if (static_cast<int>(layers.size()) <= depth) layers.emplace_back();
+            if ((int)(layers.size()) <= depth) layers.emplace_back();
             return layers[depth];
         }
 
@@ -278,7 +278,7 @@ struct BruteForce::MultiMaskSolver {
     // 读取某个方案下点击候选格后的揭示数字。
     static int revealAt(const Common& common, const Session& session,
                         ConfigId config, ConfigId candidate) {
-        return session.reveal[static_cast<std::size_t>(config) *
+        return session.reveal[(std::size_t)(config) *
                               common.candidateCount + candidate];
     }
     // 判断候选格在指定方案中是否为雷。
@@ -316,23 +316,20 @@ BruteForce::MultiMaskSolver<Mask>::buildSession(
     // 后的数字；递归阶段只做位运算和数组读取。
     Session session;
     session.mineMasks.resize(common.possibilityCount);
-    for (ConfigId config = 0;
-         config < static_cast<ConfigId>(common.possibilityCount); ++config)
+    for (int config = 0; config < common.possibilityCount; ++config)
         for (std::uint32_t i = common.mineOffsets[config];
              i < common.mineOffsets[config + 1]; ++i)
             session.mineMasks[config].set(common.mineCells[i]);
-    session.reveal.assign(static_cast<std::size_t>(common.possibilityCount) *
+    session.reveal.assign((std::size_t)(common.possibilityCount) *
                               common.candidateCount, 0);
-    for (ConfigId config = 0;
-         config < static_cast<ConfigId>(common.possibilityCount); ++config)
-        for (CandidateId candidate = 0;
-             candidate < static_cast<CandidateId>(common.candidateCount); ++candidate) {
+    for (int config = 0; config < common.possibilityCount; ++config)
+        for (int candidate = 0; candidate < common.candidateCount; ++candidate) {
             int value = common.candidates[candidate].fixedMines;
             const CommonSession::Candidate& current = common.candidates[candidate];
             for (std::uint32_t i = 0; i < current.linksCount; ++i)
                 value += session.mineMasks[config].test(
                     common.links[current.linksOffset + i]);
-            session.reveal[static_cast<std::size_t>(config) *
+            session.reveal[(std::size_t)(config) *
                            common.candidateCount + candidate] = value;
         }
     return session;
@@ -410,7 +407,7 @@ inline std::vector<int>& BruteForce::MultiMaskSolver<Mask>::orderCandidates(
               });
     // 首轮竞争只在最低 death 的候选之间使用 Java-lite；其余 death 层仍按
     // death 递增，避免为不会先被尝试的候选支付额外评分成本。
-    if (static_cast<int>(configs.size()) >= kJavaLiteConfigThreshold &&
+    if (configs.size() >= kJavaLiteConfigThreshold &&
         order.size() > 1) {
         std::size_t tieEnd = 1;
         while (tieEnd < order.size() &&
@@ -418,7 +415,7 @@ inline std::vector<int>& BruteForce::MultiMaskSolver<Mask>::orderCandidates(
             ++tieEnd;
         if (tieEnd > 1) {
             std::array<int, Mask::kBitCount> javaLiteScores{};
-            for (std::size_t i = 0; i < tieEnd; ++i)
+            for (int i = 0; i < (int)(tieEnd); ++i)
                 javaLiteScores[order[i]] =
                     javaLiteScore(common, session, configs, order[i]);
             std::sort(order.begin(), order.begin() + tieEnd,
@@ -445,7 +442,7 @@ inline int BruteForce::MultiMaskSolver<Mask>::solve(
     // 根节点在 CheckAllMoves 模式下逐候选汇总各数字分支，否则只求一条推荐路径。
     if constexpr (CheckAllMoves && IsRoot) {
         ++s.nodes;
-        const int n = static_cast<int>(configs.size());
+        const int n = configs.size();
         result.moves.clear();
         // 方案总数不足 need，-n 表示这是本节点可达到的最大上界。
         if (need > n) return -n;
@@ -475,7 +472,7 @@ inline int BruteForce::MultiMaskSolver<Mask>::solve(
         return best;
     } else {
         ++s.nodes;
-        const int n = static_cast<int>(configs.size());
+        const int n = configs.size();
         if (n <= 1) {
             // 单方案节点至多贡献一个胜利方案；不足 need 时返回负上界。
             if (need > n) return -n;
@@ -523,8 +520,7 @@ inline int BruteForce::MultiMaskSolver<Mask>::solve(
                 int word = 0;
                 int shift = 0;
                 safeMask.forEachSetBit([&](int candidate) {
-                    const std::uint64_t value = static_cast<std::uint64_t>(
-                        revealAt(common, s, config, candidate));
+                    const std::uint64_t value = revealAt(common, s, config, candidate);
                     packed[word] |= value << shift;
                     shift += 4;
                     if (shift == 64) {
@@ -533,7 +529,7 @@ inline int BruteForce::MultiMaskSolver<Mask>::solve(
                     }
                 });
                 U128Hasher hasher;
-                for (std::size_t i = 0; i < wordCount; ++i)
+                for (int i = 0; i < (int)(wordCount); ++i)
                     hasher.mix(packed[i]);
                 hashes.push_back(hasher.finalize());
             }
@@ -549,10 +545,10 @@ inline int BruteForce::MultiMaskSolver<Mask>::solve(
             groupTable.reserve(hashes.size());
             groupIds.resize(hashes.size());
             groupSizes.clear();
-            for (std::size_t i = 0; i < hashes.size(); ++i) {
+            for (int i = 0; i < (int)(hashes.size()); ++i) {
                 int& slot = groupTable[hashes[i]];
                 if (slot == 0) {
-                    slot = static_cast<int>(groupSizes.size()) + 1;
+                    slot = groupSizes.size() + 1;
                     groupSizes.push_back(0);
                 }
                 groupIds[i] = slot - 1;
@@ -560,14 +556,14 @@ inline int BruteForce::MultiMaskSolver<Mask>::solve(
             }
             groupOffsets.resize(groupSizes.size() + 1);
             groupOffsets[0] = 0;
-            for (std::size_t i = 0; i < groupSizes.size(); ++i)
+            for (int i = 0; i < (int)(groupSizes.size()); ++i)
                 groupOffsets[i + 1] = groupOffsets[i] + groupSizes[i];
             groupedConfigs.resize(configs.size());
-            for (std::size_t i = 0; i < groupSizes.size(); ++i)
+            for (int i = 0; i < (int)(groupSizes.size()); ++i)
                 groupSizes[i] = groupOffsets[i];
-            for (std::size_t i = 0; i < configs.size(); ++i)
+            for (int i = 0; i < (int)(configs.size()); ++i)
                 groupedConfigs[groupSizes[groupIds[i]]++] = configs[i];
-            for (std::size_t i = 0; i < groupSizes.size(); ++i)
+            for (int i = 0; i < (int)(groupSizes.size()); ++i)
                 groupList.emplace_back(groupedConfigs.data() + groupOffsets[i],
                                        groupOffsets[i + 1] - groupOffsets[i]);
             std::sort(groupList.begin(), groupList.end(),
@@ -578,13 +574,13 @@ inline int BruteForce::MultiMaskSolver<Mask>::solve(
             std::vector<int>& suffix = buf.suffix;
             suffix.resize(groupList.size() + 1);
             suffix.back() = 0;
-            for (int i = static_cast<int>(groupList.size()) - 1; i >= 0; --i)
-                suffix[i] = suffix[i + 1] + static_cast<int>(groupList[i].size());
+            for (int i = (int)(groupList.size()) - 1; i >= 0; --i)
+                suffix[i] = suffix[i + 1] + groupList[i].size();
             int wins = 0;
             bool bailed = false;
             int upper = 0;
-            for (int i = 0; i < static_cast<int>(groupList.size()); ++i) {
-                const int size = static_cast<int>(groupList[i].size());
+            for (int i = 0; i < (int)(groupList.size()); ++i) {
+                const int size = groupList[i].size();
                 if (wins + size + suffix[i + 1] < need) {
                     upper = wins + size + suffix[i + 1];
                     bailed = true;
@@ -637,7 +633,7 @@ inline int BruteForce::MultiMaskSolver<Mask>::solve(
             groupList.clear();
             for (int reveal = 0; reveal < 9; ++reveal)
                 if (!groups[reveal].empty())
-                    groupList.push_back({reveal, static_cast<int>(groups[reveal].size())});
+                    groupList.push_back({reveal, groups[reveal].size()});
             std::sort(groupList.begin(), groupList.end(),
                       [](const auto& a, const auto& b) {
                           if (a.second != b.second) return a.second > b.second;
@@ -646,13 +642,13 @@ inline int BruteForce::MultiMaskSolver<Mask>::solve(
             std::vector<int>& suffix = buf.suffix;
             suffix.resize(groupList.size() + 1);
             suffix.back() = 0;
-            for (int i = static_cast<int>(groupList.size()) - 1; i >= 0; --i)
+            for (int i = (int)(groupList.size()) - 1; i >= 0; --i)
                 suffix[i] = suffix[i + 1] + groupList[i].second;
             s.unopened.reset(candidate);
             int wins = 0;
             bool bailed = false;
             int moveUpper = 0;
-            for (int i = 0; i < static_cast<int>(groupList.size()); ++i) {
+            for (int i = 0; i < (int)(groupList.size()); ++i) {
                 std::vector<ConfigId>& group = groups[groupList[i].first];
                 if (wins + groupList[i].second + suffix[i + 1] < target) {
                     moveUpper = wins + groupList[i].second + suffix[i + 1];
@@ -716,8 +712,7 @@ inline BruteForce::Result BruteForce::MultiMaskSolver<Mask>::solve(
     scratch.reset();
     cache.clear();
     std::vector<ConfigId> configs(common.possibilityCount);
-    for (ConfigId i = 0;
-         static_cast<int>(i) < common.possibilityCount; ++i)
+    for (int i = 0; i < (int)(configs.size()); ++i)
         configs[i] = i;
     if (config.checkAllMoves) {
         // 该模式直接暴露根节点各候选的可赢数；递归负值只是阈值失败上界，

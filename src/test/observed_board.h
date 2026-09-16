@@ -12,11 +12,11 @@ namespace test {
 inline void observedBoard() {
     using State = mss::ObservedBoard::CellState;
     static_assert(sizeof(State) == sizeof(std::uint8_t));
-    auto board = mss::ObservedBoard::analyze(3, 3, 1);
+    mss::ObservedBoard::Result board = mss::ObservedBoard::analyze(3, 3, 1);
     mss::ObservedBoard::Delta delta;
     delta.changes.push_back({board.id(1, 1), State::Num1});
     delta.changes.push_back({board.id(1, 2), State::ForcedMine});
-    const auto capacity = delta.changes.capacity();
+    const std::size_t capacity = delta.changes.capacity();
     mss::ObservedBoard::update(board, delta);
     check(board.board[1][1] == State::Num1, "revealed state was not applied");
     check(board.board[1][2] == State::ForcedMine, "forced state was not applied");

@@ -158,11 +158,12 @@ inline void Probability::Result::reset(
     components_.reserve(componentBoxCounts.size());
     components_.resize(componentBoxCounts.size());
     std::size_t totalBoxCount = 0;
-    for (const std::size_t count : componentBoxCounts) totalBoxCount += count;
+    for (int i = 0; i < (int)(componentBoxCounts.size()); ++i)
+        totalBoxCount += componentBoxCounts[i];
     boxProbabilities_.resize(totalBoxCount);
     const std::span<const long double> allProbabilities = boxProbabilities_;
     std::size_t offset = 0;
-    for (std::size_t i = 0; i < componentBoxCounts.size(); ++i) {
+    for (int i = 0; i < (int)(componentBoxCounts.size()); ++i) {
         const std::size_t count = componentBoxCounts[i];
         components_[i].boxProbabilities = allProbabilities.subspan(offset, count);
         offset += count;
@@ -196,13 +197,13 @@ inline void mss::Probability::Result::frontierCells(
     const mss::Structure::Result& structure,
     const mss::Structure::Pool& shapes, Callback&& callback) const {
     // 展开每个前沿 Box 的成员格，并把 Box 概率传给回调。
-    for (std::size_t cid = 0; cid < components_.size(); ++cid) {
+    for (int cid = 0; cid < (int)(components_.size()); ++cid) {
         const Component& component = components_[cid];
         const Structure::Instance& instance = shapes.getInstance(
             structure.components[cid]);
-        for (std::size_t box = 0; box < component.boxProbabilities.size(); ++box) {
+        for (int box = 0; box < (int)(component.boxProbabilities.size()); ++box) {
             const long double probability = component.boxProbabilities[box];
-            for (std::size_t i = instance.boxes.boxOf[box];
+            for (int i = instance.boxes.boxOf[box];
                  i < instance.boxes.boxOf[box + 1]; ++i) {
                 const auto [x, y] = board.pos(instance.boxes.cells[i]);
                 callback(x, y, probability);

@@ -118,7 +118,7 @@ inline Basic::Result Basic::analyze(const ObservedBoard::Result& state) {
             for (int j = 1; j <= state.cols; ++j)
                 if (isNumber(state.board[i][j])) pending.push_back(state.id(i, j));
 
-        for (std::size_t head = 0; head < pending.size(); ++head) {
+        for (int head = 0; head < (int)(pending.size()); ++head) {
             const auto [x, y] = state.pos(pending[head]);
             int mineCount = 0;
             int candidateCount = 0;
@@ -203,8 +203,7 @@ inline void Basic::update(Result& result, Delta& delta,
         static thread_local std::vector<CellId> pending;
         static thread_local std::vector<unsigned char> queued;
         pending.clear();
-        const auto queueSize = static_cast<std::vector<unsigned char>::size_type>(
-            (rows + 1) * (cols + 1));
+        const std::size_t queueSize = (rows + 1) * (cols + 1);
         if (queued.size() != queueSize) queued.resize(queueSize, 0);
 
         auto setMark = [&](int x, int y, Mark mark) {
@@ -268,7 +267,7 @@ inline void Basic::update(Result& result, Delta& delta,
             });
         }
 
-        for (std::size_t head = 0; head < pending.size(); ++head) {
+        for (int head = 0; head < (int)(pending.size()); ++head) {
             const auto [x, y] = board.pos(pending[head]);
             queued[pending[head]] = 0;
             const int remaining = numberValue(board.board[x][y]) - result.mineAround[x][y];
@@ -314,7 +313,7 @@ inline void Basic::applyDelta(Result& result, const Delta& delta, bool reverse) 
             });
         };
         if (reverse) {
-            for (std::size_t i = delta.changes.size(); i-- > 0;) {
+            for (int i = delta.changes.size(); i-- > 0;) {
                 const Delta::Change& change = delta.changes[i];
                 const int x = change.cell / (result.cols + 1);
                 const int y = change.cell % (result.cols + 1);
@@ -340,12 +339,12 @@ inline void Basic::applyDelta(Result& result, const Delta& delta, bool reverse) 
 }
 
 inline bool Basic::isNumber(ObservedBoard::CellState state) {
-    return static_cast<int>(state) <=
-           static_cast<int>(ObservedBoard::CellState::Num8);
+    return (int)(state) <=
+           (int)(ObservedBoard::CellState::Num8);
 }
 
 inline int Basic::numberValue(ObservedBoard::CellState state) {
-    return static_cast<int>(state);
+    return (int)(state);
 }
 
 inline bool Basic::isCandidate(Mark mark) {

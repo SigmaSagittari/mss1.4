@@ -20,7 +20,7 @@ bool HttpServer::start(int port){
         sockaddr_in addr{};
         addr.sin_family = AF_INET;
         addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        addr.sin_port = htons(static_cast<u_short>(port));
+        addr.sin_port = htons(port);
         if (bind(listenSock_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0)
             return false;
         if (listen(listenSock_, 8) != 0) return false;
@@ -69,7 +69,7 @@ void HttpServer::handleClient(SOCKET client){
         while (!headerDone && received < 65536) {
             const int n = recv(client, buf, sizeof(buf), 0);
             if (n <= 0) break;
-            raw.append(buf, static_cast<std::size_t>(n));
+            raw.append(buf, n);
             received += n;
             const size_t sep = raw.find("\r\n\r\n");
             headerDone = (sep != std::string::npos) ||
@@ -126,14 +126,14 @@ void HttpServer::handleClient(SOCKET client){
         }
 
         // 补齐 body。
-        while (received < static_cast<int>(bodyStart) + contentLength && received < 65536) {
+        while (received < bodyStart + contentLength && received < 65536) {
             const int n = recv(client, buf, sizeof(buf), 0);
             if (n <= 0) break;
-            raw.append(buf, static_cast<std::size_t>(n));
+            raw.append(buf, n);
             received += n;
         }
-        if (static_cast<int>(raw.size()) >= bodyStart + contentLength)
-            req.body = raw.substr(bodyStart, static_cast<std::size_t>(contentLength));
+        if (raw.size() >= bodyStart + contentLength)
+            req.body = raw.substr(bodyStart, contentLength);
 
         // 分发 + 回包。
         HttpResponse res = handler_ ? handler_(req) : HttpResponse{404, "text/plain", "no handler"};
@@ -150,15 +150,15 @@ void HttpServer::handleClient(SOCKET client){
             << "\r\n"
             << res.body;
         const std::string response = out.str();
-        send(client, response.data(), static_cast<int>(response.size()), 0);
+        send(client, response.data(), response.size(), 0);
     }
 
 std::string HttpServer::urlDecode(const std::string& s){
         std::string out;
         out.reserve(s.size());
-        for (std::size_t i = 0; i < s.size(); ++i) {
+        for (int i = 0; i < (int)(s.size()); ++i) {
             if (s[i] == '%' && i + 2 < s.size()) {
-                out += static_cast<char>(hexVal(s[i + 1]) * 16 + hexVal(s[i + 2]));
+                out += hexVal(s[i + 1]) * 16 + hexVal(s[i + 2]);
                 i += 2;
             } else if (s[i] == '+') {
                 out += ' ';

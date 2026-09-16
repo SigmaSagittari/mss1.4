@@ -200,16 +200,16 @@ public:
 namespace mss {
 
 inline bool Structure::isNumber(ObservedBoard::CellState state) {
-    return static_cast<int>(state) <=
-           static_cast<int>(ObservedBoard::CellState::Num8);
+    return (int)(state) <=
+           (int)(ObservedBoard::CellState::Num8);
 }
 
 inline int Structure::numberValue(ObservedBoard::CellState state) {
-    return static_cast<int>(state);
+    return (int)(state);
 }
 
 inline std::uint64_t Structure::positionSeed(int x, int y, int rows, int cols) {
-    return static_cast<std::uint64_t>(x) * (cols + rows + 3) + y;
+    return (std::uint64_t)(x) * (cols + rows + 3) + y;
 }
 
 inline U128 Structure::cellSignature(int x, int y,
@@ -229,11 +229,11 @@ inline void Structure::remapInstance(InstanceId instance,
                                      const Structure::Pool& pool,
                                      std::vector<CellLocation>& cellLoc) {
     const Instance& data = pool.getInstance(instance);
-    for (std::size_t box = 0; box < data.boxes.count(); ++box)
-        for (std::size_t i = data.boxes.boxOf[box];
+    for (int box = 0; box < (int)(data.boxes.count()); ++box)
+        for (int i = data.boxes.boxOf[box];
              i < data.boxes.boxOf[box + 1]; ++i)
             cellLoc[data.boxes.cells[i]] =
-                CellLocation{component, static_cast<BoxId>(box)};
+                CellLocation{component, box};
     for (CellId cell : data.constraintCells)
         cellLoc[cell] = CellLocation{component, -1};
 }
@@ -251,7 +251,7 @@ inline thread_local Structure::Workspace Structure::workspace;
 inline ShapeId Structure::Pool::internShape(Shape shape) {
     shape.hash = Structure::computeHash(shape);
     if (const ShapeId* found = shapeIndex_.find(shape.hash)) return *found;
-    const ShapeId id = static_cast<ShapeId>(shapes_.size());
+    const ShapeId id = shapes_.size();
     shapes_.push_back(std::move(shape));
     shapeIndex_.emplace(shapes_[id].hash, id);
     return id;
@@ -260,7 +260,7 @@ inline ShapeId Structure::Pool::internShape(Shape shape) {
 inline InstanceId Structure::Pool::internInstance(Instance data) {
     const U128 hash = Structure::Pool::computeInstanceHash(data);
     if (const InstanceId* found = instanceIndex_.find(hash)) return *found;
-    const InstanceId id = static_cast<InstanceId>(instances_.size());
+    const InstanceId id = instances_.size();
     instances_.push_back(std::move(data));
     instanceIndex_.emplace(hash, id);
     return id;
@@ -268,13 +268,13 @@ inline InstanceId Structure::Pool::internInstance(Instance data) {
 
 inline U128 Structure::Pool::computeInstanceHash(const Instance& data) {
     U128Hasher hasher;
-    hasher.mix(static_cast<std::uint64_t>(data.shape));
-    hasher.mix(static_cast<std::uint64_t>(data.boxes.cells.size()));
+    hasher.mix((std::uint64_t)(data.shape));
+    hasher.mix((std::uint64_t)(data.boxes.cells.size()));
     for (CellId cell : data.boxes.cells) hasher.mix(cell);
-    hasher.mix(static_cast<std::uint64_t>(data.boxes.boxOf.size()));
+    hasher.mix((std::uint64_t)(data.boxes.boxOf.size()));
     for (std::uint16_t offset : data.boxes.boxOf)
-        hasher.mix(static_cast<std::uint64_t>(offset));
-    hasher.mix(static_cast<std::uint64_t>(data.constraintCells.size()));
+        hasher.mix((std::uint64_t)(offset));
+    hasher.mix((std::uint64_t)(data.constraintCells.size()));
     for (CellId cell : data.constraintCells) hasher.mix(cell);
     return hasher.finalize();
 }
@@ -318,7 +318,7 @@ inline Structure::Result Structure::analyze(
                     Structure::workspace.analyze.cellHash, pool));
             }
     for (ComponentId component = 0;
-         component < static_cast<ComponentId>(result.components.size()); ++component)
+         component < (int)(result.components.size()); ++component)
         Structure::remapInstance(result.components[component], component, pool,
                                  result.cellLoc);
     return result;
@@ -332,7 +332,7 @@ inline void Structure::collectComponent(CellId start,
     const auto [startX, startY] = board.pos(start);
     visited[startX][startY] = 1;
     cells.push_back(start);
-    for (std::size_t i = 0; i < cells.size(); ++i) {
+    for (int i = 0; i < (int)(cells.size()); ++i) {
         const auto [x, y] = board.pos(cells[i]);
         if (Structure::isNumber(board.board[x][y]))
             forEachAdjacent(x, y, board.rows, board.cols, [&](int nx, int ny) {
@@ -357,26 +357,26 @@ inline InstanceId Structure::buildComponent(
     Structure::workspace.hashBox.clear();
     Structure::workspace.boxOfCells.assign(cells.size(), -1);
     Shape shape;
-    for (std::size_t i = 0; i < cells.size(); ++i) {
+    for (int i = 0; i < (int)(cells.size()); ++i) {
         const auto [x, y] = board.pos(cells[i]);
         if (basic.marks[x][y] != Basic::Mark::H) continue;
         const U128 hash = cellHash[x][y];
         BoxId box;
         if (const BoxId* found = Structure::workspace.hashBox.find(hash)) box = *found;
         else {
-            box = static_cast<BoxId>(shape.boxes.size());
+            box = shape.boxes.size();
             shape.boxes.push_back({0});
             Structure::workspace.hashBox.emplace(hash, box);
         }
         ++shape.boxes[box].size;
         Structure::workspace.boxOfCells[i] = box;
-        cellHash[x][y] = U128{static_cast<std::uint64_t>(box), 0};
+        cellHash[x][y] = U128{(std::uint64_t)(box), 0};
     }
     Structure::workspace.bucketSize.assign(shape.boxes.size(), 0);
     if (Structure::workspace.buckets.size() < shape.boxes.size())
         Structure::workspace.buckets.resize(shape.boxes.size());
     std::size_t numberCells = 0;
-    for (std::size_t i = 0; i < cells.size(); ++i) {
+    for (int i = 0; i < (int)(cells.size()); ++i) {
         const BoxId box = Structure::workspace.boxOfCells[i];
         if (box == -1) {
             ++numberCells;
@@ -386,12 +386,12 @@ inline InstanceId Structure::buildComponent(
     }
     Instance instance;
     instance.boxes.boxOf.resize(shape.boxes.size() + 1);
-    for (std::size_t box = 0; box < shape.boxes.size(); ++box)
-        instance.boxes.boxOf[box + 1] = static_cast<std::uint16_t>(
-            instance.boxes.boxOf[box] + Structure::workspace.bucketSize[box]);
+    for (int box = 0; box < (int)(shape.boxes.size()); ++box)
+        instance.boxes.boxOf[box + 1] =
+            instance.boxes.boxOf[box] + Structure::workspace.bucketSize[box];
     instance.boxes.cells.resize(instance.boxes.boxOf.back());
     Structure::workspace.boxCursor.assign(shape.boxes.size(), 0);
-    for (std::size_t i = 0; i < cells.size(); ++i) {
+    for (int i = 0; i < (int)(cells.size()); ++i) {
         const BoxId box = Structure::workspace.boxOfCells[i];
         if (box == -1) continue;
         instance.boxes.cells[instance.boxes.boxOf[box] +
@@ -406,21 +406,20 @@ inline InstanceId Structure::buildComponent(
         const auto [x, y] = board.pos(cell);
         if (!Structure::isNumber(board.board[x][y])) continue;
         int sum = Structure::numberValue(board.board[x][y]);
-        const std::uint32_t start =
-            static_cast<std::uint32_t>(Structure::workspace.allBoxIds.size());
+        const std::uint32_t start = Structure::workspace.allBoxIds.size();
         forEachAdjacent(x, y, board.rows, board.cols, [&](int nx, int ny) {
             if (basic.marks[nx][ny] == Basic::Mark::F) --sum;
             if (basic.marks[nx][ny] != Basic::Mark::H) return;
-            const BoxId box = static_cast<BoxId>(cellHash[nx][ny].lo);
+            const BoxId box = cellHash[nx][ny].lo;
             if (!Structure::workspace.boxUsed[box]) {
                 Structure::workspace.boxUsed[box] = 1;
                 Structure::workspace.allBoxIds.push_back(box);
             }
         });
-        for (std::size_t i = start; i < Structure::workspace.allBoxIds.size(); ++i)
+        for (int i = start; i < (int)(Structure::workspace.allBoxIds.size()); ++i)
             Structure::workspace.boxUsed[Structure::workspace.allBoxIds[i]] = 0;
-        shape.constraints_.push_back({sum, start, static_cast<std::uint8_t>(
-            Structure::workspace.allBoxIds.size() - start)});
+        const std::uint8_t count = Structure::workspace.allBoxIds.size() - start;
+        shape.constraints_.push_back({sum, start, count});
         instance.constraintCells.push_back(cell);
     }
     shape.boxIds_.insert(shape.boxIds_.end(), Structure::workspace.allBoxIds.begin(),
@@ -432,13 +431,13 @@ inline InstanceId Structure::buildComponent(
 inline U128 Structure::computeHash(const Shape& shape) {
     U128Hasher hasher;
     for (const Shape::Box& box : shape.boxes)
-        hasher.mix(static_cast<std::uint64_t>(box.size));
-    for (std::size_t i = 0; i < shape.constraints_.size(); ++i) {
+        hasher.mix((std::uint64_t)(box.size));
+    for (int i = 0; i < (int)(shape.constraints_.size()); ++i) {
         const Shape::Constraint& constraint = shape.constraints_[i];
-        hasher.mix(static_cast<std::uint64_t>(constraint.sum));
+        hasher.mix((std::uint64_t)(constraint.sum));
         for (std::uint32_t k = 0; k < constraint.count; ++k)
-            hasher.mix(static_cast<std::uint64_t>(
-                shape.boxIds_[constraint.offset + k]) + 0x9e3779b9ULL);
+            hasher.mix((std::uint64_t)(shape.boxIds_[constraint.offset + k]) +
+                       0x9e3779b9ULL);
     }
     return hasher.finalize();
 }
@@ -449,7 +448,7 @@ inline void Structure::update(
     const ObservedBoard::Delta& updates) {
     const int rows = board.rows;
     const int cols = board.cols;
-    auto& scratch = Structure::workspace.update;
+    Structure::Workspace::Update& scratch = Structure::workspace.update;
     if (scratch.dirty.rows() != rows || scratch.dirty.cols() != cols) {
         scratch.dirty.resize(rows, cols, 0);
         scratch.visited.resize(rows, cols, 0);
@@ -483,14 +482,14 @@ inline void Structure::update(
         markDirty(x, y);
         forEachAdjacent(x, y, rows, cols, [&](int nx, int ny) { markDirty(nx, ny); });
     }
-    for (std::size_t i = 0; i < scratch.dirtyCells.size(); ++i) {
+    for (int i = 0; i < (int)(scratch.dirtyCells.size()); ++i) {
         const CellLocation location = result.cellLoc[scratch.dirtyCells[i]];
         if (location.component == -1 || scratch.removed[location.component]) continue;
         invalidate(location.component);
     }
     scratch.visited.fill(0);
     auto hashAt = [&](int x, int y) { return Structure::cellSignature(x, y, board); };
-    for (std::size_t i = 0; i < scratch.dirtyCells.size(); ++i) {
+    for (int i = 0; i < (int)(scratch.dirtyCells.size()); ++i) {
         const CellId start = scratch.dirtyCells[i];
         const auto [x, y] = board.pos(start);
         if (basic.marks[x][y] != Basic::Mark::H || scratch.visited[x][y]) continue;
@@ -509,11 +508,11 @@ inline void Structure::update(
     delta.removedData.clear();
     delta.added.clear();
     delta.addedData.clear();
-    for (int i = static_cast<int>(result.components.size()) - 1; i >= 0; --i) {
+    for (int i = (int)(result.components.size()) - 1; i >= 0; --i) {
         if (!scratch.removed[i]) continue;
         delta.removed.push_back(i);
         delta.removedData.push_back(result.components[i]);
-        const ComponentId last = static_cast<ComponentId>(result.components.size()) - 1;
+        const ComponentId last = (ComponentId)(result.components.size()) - 1;
         if (i != last) {
             result.components[i] = std::move(result.components[last]);
             scratch.removed[i] = scratch.removed[last];
@@ -522,7 +521,7 @@ inline void Structure::update(
         result.components.pop_back();
     }
     for (InstanceId instance : scratch.staged) {
-        const ComponentId component = static_cast<ComponentId>(result.components.size());
+        const ComponentId component = result.components.size();
         result.components.push_back(std::move(instance));
         delta.added.push_back(component);
         delta.addedData.push_back(result.components.back());
@@ -540,13 +539,13 @@ inline void Structure::update(
 inline void Structure::applyDelta(Result& result, const Pool& pool,
                                   const Delta& delta, bool reverse) {
     if (reverse) {
-        for (std::size_t i = delta.addedData.size(); i-- > 0;) {
+        for (int i = delta.addedData.size(); i-- > 0;) {
             Structure::clearInstance(result.components.back(), pool, result.cellLoc);
             result.components.pop_back();
         }
-        for (std::size_t i = delta.removed.size(); i-- > 0;) {
+        for (int i = delta.removed.size(); i-- > 0;) {
             const ComponentId component = delta.removed[i];
-            const ComponentId tail = static_cast<ComponentId>(result.components.size());
+            const ComponentId tail = result.components.size();
             if (component != tail) {
                 result.components.push_back(std::move(result.components[component]));
                 Structure::remapInstance(result.components.back(), tail, pool,
@@ -561,7 +560,7 @@ inline void Structure::applyDelta(Result& result, const Pool& pool,
     }
     for (ComponentId component : delta.removed) {
         Structure::clearInstance(result.components[component], pool, result.cellLoc);
-        const ComponentId last = static_cast<ComponentId>(result.components.size()) - 1;
+        const ComponentId last = (ComponentId)(result.components.size()) - 1;
         if (component != last) {
             result.components[component] = std::move(result.components[last]);
             Structure::remapInstance(result.components[component], component, pool,
@@ -570,7 +569,7 @@ inline void Structure::applyDelta(Result& result, const Pool& pool,
         result.components.pop_back();
     }
     for (InstanceId instance : delta.addedData) {
-        const ComponentId component = static_cast<ComponentId>(result.components.size());
+        const ComponentId component = result.components.size();
         result.components.push_back(instance);
         Structure::remapInstance(result.components.back(), component, pool,
                                  result.cellLoc);

@@ -25,8 +25,8 @@ Grid<long double> materializeProbability(GameController::Analysis& an) {
 
 Probability::ObserveResult observe(GameController::Analysis& an, int x, int y) {
     const ObservedBoard::Result& state = an.state();
-    const auto& basic = an.basicMarks();
-    const auto& structure = an.structure();
+    const Basic::Result& basic = an.basicMarks();
+    const Structure::Result& structure = an.structure();
     return Exact::observe(state, basic, structure, an.probability(), an.dists(),
                           state.id(x, y));
 }

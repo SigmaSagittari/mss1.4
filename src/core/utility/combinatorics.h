@@ -35,11 +35,10 @@ inline long double combLog(int n, int k) {
         cache.n = n;
         cache.values.assign(1, 1.0L);
     }
-    while (static_cast<int>(cache.values.size()) <= k) {
-        const int i = static_cast<int>(cache.values.size());
+    while ((int)(cache.values.size()) <= k) {
+        const int i = cache.values.size();
         cache.values.push_back(
-            cache.values.back() * static_cast<long double>(n - i + 1) /
-            static_cast<long double>(i));
+            cache.values.back() * (n - i + 1) / i);
     }
     return cache.values[k];
 }

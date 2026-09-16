@@ -30,7 +30,8 @@ inline void probabilityCase() {
         "HMHMHMHMHMHMHMHMHMHMH",
         "HMHHHMHHHMHHHMHHHMHMH"}};
 
-    auto board = mss::ObservedBoard::analyze(kRows, kCols, kMines);
+    mss::ObservedBoard::Result board =
+        mss::ObservedBoard::analyze(kRows, kCols, kMines);
     std::vector<char> mines(kRows * kCols, 0);
     int mineCount = 0;
     for (int x = 1; x <= kRows; ++x) {
@@ -62,14 +63,15 @@ inline void probabilityCase() {
                   "probability case opened a mine");
             const long double clickProbability = analysis.probability.mineProbability(
                 board.id(x, y), board, analysis.basic, analysis.structure);
-            const auto stepStart = std::chrono::steady_clock::now();
+            const std::chrono::steady_clock::time_point stepStart =
+                std::chrono::steady_clock::now();
             int adjacentMines = 0;
             mss::forEachAdjacent(x, y, kRows, kCols, [&](int nx, int ny) {
                 adjacentMines += mines[(nx - 1) * kCols + ny - 1];
             });
             mss::ObservedBoard::Delta updates;
             updates.changes.push_back(
-                {board.id(x, y), static_cast<mss::ObservedBoard::CellState>(
+                {board.id(x, y), (mss::ObservedBoard::CellState)(
                                       adjacentMines)});
             analysis.update(board, updates);
             const double calculationMilliseconds =

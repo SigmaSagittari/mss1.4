@@ -26,10 +26,10 @@ private:
     static unsigned char byteAt(const Key& key, std::size_t bi) {
         // 读取定宽键第 bi 个低位字节。
         if constexpr (std::is_unsigned_v<Key>) {
-            return static_cast<unsigned char>(key >> (bi * 8));
+            return (unsigned char)(key >> (bi * 8));
         } else if constexpr (requires { key.lo; key.hi; }) {
-            if (bi < sizeof(key.lo)) return static_cast<unsigned char>(key.lo >> (bi * 8));
-            return static_cast<unsigned char>(key.hi >> ((bi - sizeof(key.lo)) * 8));
+            if (bi < sizeof(key.lo)) return (unsigned char)(key.lo >> (bi * 8));
+            return (unsigned char)(key.hi >> ((bi - sizeof(key.lo)) * 8));
         } else {
             static_assert(std::is_unsigned_v<Key>, "radix_sort::sortBy 的键必须是无符号整数或具有 lo/hi 的定宽键");
         }
@@ -74,7 +74,7 @@ public:
             std::array<std::size_t, kThreshold> order;
             constexpr std::size_t marker = std::size_t(1) << (sizeof(std::size_t) * 8 - 1);
             constexpr std::size_t indexMask = ~marker;
-            for (std::size_t i = 0; i < n; ++i) order[i] = i;
+            for (int i = 0; i < (int)(n); ++i) order[i] = i;
             std::sort(order.begin(), order.begin() + n, [&](std::size_t lhs, std::size_t rhs) {
                 const Key lhsKey = read(lhs);
                 const Key rhsKey = read(rhs);
@@ -82,7 +82,7 @@ public:
                 if (lessKey(rhsKey, lhsKey)) return false;
                 return lhs < rhs;
             });
-            for (std::size_t i = 0; i < n; ++i) {
+            for (int i = 0; i < (int)(n); ++i) {
                 if (order[i] & marker) continue;
                 std::size_t source = order[i];
                 order[i] |= marker;
@@ -102,19 +102,19 @@ public:
         // 每趟只保存“当前逻辑位置 -> 稳定目标逻辑位置”的置换。
         // 置换应用阶段必须用 swap；对同一份存储直接 write 会破坏非平凡环。
         std::array<std::size_t, 256> next;
-        for (std::size_t bi = 0; bi < keyBytes<Key>(); ++bi) {
+        for (int bi = 0; bi < (int)(keyBytes<Key>()); ++bi) {
             std::array<std::size_t, 256> count{};
-            for (std::size_t i = 0; i < n; ++i) ++count[byteAt(read(i), bi)];
+            for (int i = 0; i < (int)(n); ++i) ++count[byteAt(read(i), bi)];
             std::size_t offset = 0;
-            for (std::size_t b = 0; b < count.size(); ++b) {
+            for (int b = 0; b < (int)(count.size()); ++b) {
                 next[b] = offset;
                 offset += count[b];
             }
-            for (std::size_t i = 0; i < n; ++i)
+            for (int i = 0; i < (int)(n); ++i)
                 target[i] = next[byteAt(read(i), bi)]++;
             constexpr std::size_t marker = std::size_t(1) << (sizeof(std::size_t) * 8 - 1);
             constexpr std::size_t indexMask = ~marker;
-            for (std::size_t i = 0; i < n; ++i) {
+            for (int i = 0; i < (int)(n); ++i) {
                 if (target[i] & marker) continue;
                 std::size_t k = target[i];
                 target[i] |= marker;
@@ -135,7 +135,7 @@ public:
     template <typename Entry, typename... Accessor>
     static void sort(std::vector<Entry>& a, std::vector<Entry>& tmp, Accessor... accessor) {
         // 按多个无符号字段稳定升序排列条目。
-        const std::uint32_t n = static_cast<std::uint32_t>(a.size());
+        const std::uint32_t n = a.size();
         if (n <= kThreshold) {  // 小数组：比较排序更快
             std::stable_sort(a.begin(), a.end(), [&](const Entry& x, const Entry& y) {
                 return std::make_tuple(accessor(x)...) < std::make_tuple(accessor(y)...);
@@ -150,17 +150,17 @@ public:
 
         // 按某个字段的某个字节做一趟稳定的计数排序：计数 -> 前缀起始下标 -> 正序散射
         auto passByte = [&](auto get, unsigned int bi) {
-            for (auto& b : bucket) b = 0;
+            for (std::uint32_t& b : bucket) b = 0;
             for (std::uint32_t i = 0; i < n; ++i)
-                ++bucket[static_cast<unsigned char>(get(src[i]) >> (8 * bi))];
+                ++bucket[(unsigned char)(get(src[i]) >> (8 * bi))];
             std::uint32_t sum = 0;
-            for (auto& b : bucket) {
+            for (std::uint32_t& b : bucket) {
                 const std::uint32_t v = b;
                 b = sum;
                 sum += v;
             }
             for (std::uint32_t i = 0; i < n; ++i) {
-                const unsigned char byte = static_cast<unsigned char>(get(src[i]) >> (8 * bi));
+                const unsigned char byte = (unsigned char)(get(src[i]) >> (8 * bi));
                 dst[bucket[byte]++] = src[i];
             }
             std::swap(src, dst);
@@ -174,7 +174,7 @@ public:
         };
 
         // LSD：主序字段最后排 —— 反序遍历访问器（最不重要的先排）
-        auto gets = std::tuple(accessor...);
+        const std::tuple<Accessor...> gets(accessor...);
         [&]<std::size_t... I>(std::index_sequence<I...>) {
             constexpr std::size_t N = sizeof...(Accessor);
             (passField(std::get<N - 1 - I>(gets)), ...);

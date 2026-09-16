@@ -42,7 +42,7 @@ public:
     void for_each(Callback&& callback) const {
         // 按递增下标访问所有置位位；回调看到的是局部 word 提取出的下标，
         // 遍历期间不要通过同一个 bitset 改动位集合。
-        for (std::size_t wordIndex = 0; wordIndex < words_.size(); ++wordIndex) {
+        for (int wordIndex = 0; wordIndex < (int)(words_.size()); ++wordIndex) {
             std::uint64_t word = words_[wordIndex];
             while (word != 0) {
                 // word 是局部副本：提取和消去低位不改变 bitset 本身。

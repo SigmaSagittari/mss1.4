@@ -59,7 +59,7 @@ public:
 
     void mix(int v) {
         // 将有符号整数按项目约定转换后混入哈希器。
-        mix(static_cast<std::uint64_t>(v));
+        mix((std::uint64_t)(v));
     }
 
     // 返回当前累计状态形成的 128 位身份值。

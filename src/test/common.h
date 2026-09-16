@@ -41,7 +41,7 @@ private:
         }
         alignas(SYMBOL_INFO)
             unsigned char storage[sizeof(SYMBOL_INFO) + MAX_SYM_NAME]{};
-        auto* symbol = reinterpret_cast<PSYMBOL_INFO>(storage);
+        PSYMBOL_INFO symbol = reinterpret_cast<PSYMBOL_INFO>(storage);
         symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
         symbol->MaxNameLen = MAX_SYM_NAME;
         for (USHORT i = 0; i < count; ++i) {
@@ -103,7 +103,7 @@ struct GameRng {
 
     // 生成 [0,n) 范围内的测试随机下标。
     int below(int n) {
-        return static_cast<int>(next() % static_cast<std::uint64_t>(n));
+        return next() % n;
     }
 };
 
@@ -133,7 +133,7 @@ struct Game {
         // firstMoveSafe 只控制后续是否再次执行安全交换，不改变这个固定测试布局。
         std::vector<int> cells(board.rows * board.cols - 1);
         std::iota(cells.begin(), cells.end(), 1);
-        for (int i = static_cast<int>(cells.size()) - 1; i > 0; --i)
+        for (int i = (int)(cells.size()) - 1; i > 0; --i)
             std::swap(cells[i], cells[rng.below(i + 1)]);
         for (int i = 0; i < board.totalMines; ++i) mines[cells[i]] = 1;
         if (firstMoveSafe && mine(1, 1))
@@ -169,7 +169,7 @@ struct Game {
             const int digit = adjacentMines(cx, cy);
             ++opened;
             updates.changes.push_back(
-                {cell, static_cast<mss::ObservedBoard::CellState>(digit)});
+                {cell, (mss::ObservedBoard::CellState)(digit)});
             if (digit == 0)
                 mss::forEachAdjacent(cx, cy, board.rows, board.cols,
                                      [&](int nx, int ny) { pending.emplace_back(nx, ny); });

@@ -192,8 +192,8 @@ std::vector<CellId> PseudoReference::findPseudo5050(
     for (const InstanceId instanceId : structure.components) {
         const Structure::Instance& instance = shapes.getInstance(instanceId);
         const Structure::Shape& shape = shapes.get(instance.shape);
-        for (std::size_t i = 0; i < shape.constraintCount(); ++i) {
-            const auto constraint = shape.constraint(i);
+        for (int i = 0; i < (int)(shape.constraintCount()); ++i) {
+            const Structure::Shape::ConstraintView constraint = shape.constraint(i);
             if (constraint.sum != 1) continue;
             std::vector<CellId> cells;
             for (BoxId box : constraint.boxIds)
@@ -210,7 +210,7 @@ std::vector<CellId> PseudoReference::findPseudo5050(
             } else {
                 std::vector<Link> rooted =
                     findRootedLinks(cells, board, basic, structure, probability, dead,
-                                    static_cast<int>(cells.size()));
+                                    cells.size());
                 if (rooted.empty()) pseudoWitnesses.push_back(std::move(cells));
                 links.insert(links.end(), std::make_move_iterator(rooted.begin()),
                              std::make_move_iterator(rooted.end()));

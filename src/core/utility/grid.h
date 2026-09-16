@@ -12,6 +12,18 @@ namespace mss {
 template <typename T>
 class Grid {
 public:
+    struct Row {
+        Grid& grid;
+        int row;
+        T& operator[](int j) { return grid.at(row, j); }
+    };
+
+    struct ConstRow {
+        const Grid& grid;
+        int row;
+        const T& operator[](int j) const { return grid.at(row, j); }
+    };
+
     // 创建空网格，尺寸为 0×0。
     Grid() = default;
 
@@ -51,24 +63,14 @@ public:
     }
 
     // 支持 grid[i][j]。
-    auto operator[](int i) {
+    Row operator[](int i) {
         // 返回一行代理，使调用方可以使用 grid[i][j]。
-        struct Row {
-            Grid& grid;
-            int row;
-            T& operator[](int j) { return grid.at(row, j); }
-        };
         return Row{*this, i};
     }
 
-    auto operator[](int i) const {
+    ConstRow operator[](int i) const {
         // 返回只读行代理，使 const 网格仍支持 grid[i][j]。
-        struct Row {
-            const Grid& grid;
-            int row;
-            const T& operator[](int j) const { return grid.at(row, j); }
-        };
-        return Row{*this, i};
+        return ConstRow{*this, i};
     }
 
 private:

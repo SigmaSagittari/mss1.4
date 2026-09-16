@@ -58,11 +58,10 @@ inline void Probability::observePolyMultiply(
     int leftStart, std::span<const long double> left, int rightStart,
     std::span<const long double> right, ObservePoly& out) {
     // 卷积两个点开结果多项式并写入 out。
-    const int size = static_cast<int>(left.size()) +
-                     static_cast<int>(right.size()) - 1;
+    const int size = left.size() + right.size() - 1;
     out.coeffs.assign(size, 0.0L);
-    for (int i = 0; i < static_cast<int>(left.size()); ++i)
-        for (int j = 0; j < static_cast<int>(right.size()); ++j)
+    for (int i = 0; i < (int)(left.size()); ++i)
+        for (int j = 0; j < (int)(right.size()); ++j)
             out.coeffs[i + j] += left[i] * right[j];
     out.start = leftStart + rightStart;
 }
@@ -81,7 +80,7 @@ inline long double Probability::observeDenominator(
     const ObservePoly& polynomial, int totalMines, int tSum) {
     // 计算点开条件下满足总雷数的加权方案数。
     long double result = 0.0L;
-    for (int i = 0; i < static_cast<int>(polynomial.coeffs.size()); ++i) {
+    for (int i = 0; i < (int)(polynomial.coeffs.size()); ++i) {
         const int componentMines = polynomial.start + i;
         const int tMines = totalMines - componentMines;
         if (tMines >= 0 && tMines <= tSum)
@@ -96,7 +95,7 @@ inline void Probability::buildObserveTable(
     // 根据组件规模选择 DFS 或 Graph 后端生成点开转移表；xBox>=0 时排除被点击
     // Box 的具体格子，xBox=-1 表示该组件只通过邻居数字影响点开结果。
     out.clear();
-    if (static_cast<int>(shape.boxes.size()) < ShapeSolver::graphThreshold)
+    if (shape.boxes.size() < ShapeSolver::graphThreshold)
         return Probability::buildDfsTable(shape, adjacentBoxCells, xBox, out);
     Probability::buildGraphTable(shape, adjacentBoxCells, xBox, out);
 }
@@ -181,8 +180,8 @@ inline Probability::ObserveResult Probability::observe(
             structure.components[component]);
         const Structure::Shape& shape = shapes.get(instance.shape);
         ws.adjacentBoxCells.assign(shape.boxes.size(), 0);
-        for (std::size_t box = 0; box < shape.boxes.size(); ++box)
-            for (std::size_t i = instance.boxes.boxOf[box];
+        for (int box = 0; box < (int)(shape.boxes.size()); ++box)
+            for (int i = instance.boxes.boxOf[box];
                  i < instance.boxes.boxOf[box + 1]; ++i) {
                 const auto [cx, cy] = board.pos(instance.boxes.cells[i]);
                 if ((std::abs(cx - x) <= 1) && (std::abs(cy - y) <= 1) &&
@@ -192,7 +191,7 @@ inline Probability::ObserveResult Probability::observe(
         ws.nextDp.assign(9 * stride, 0.0L);
         Probability::buildObserveTable(
             shape, ws.adjacentBoxCells,
-            component == xComponent ? static_cast<int>(xBox) : -1,
+            component == xComponent ? xBox : -1,
             ws.transfers);
         for (const ObserveTransfer& transfer : ws.transfers)
             applyTransfer(transfer);
@@ -212,22 +211,23 @@ inline Probability::ObserveResult Probability::observe(
     // restWays 汇总未捕获组件与剩余 Unknown 的雷数，负责把局部点开事件重新
     // 条件化到整张盘面的 totalMines。
     for (ComponentId component = 0;
-         component < static_cast<ComponentId>(structure.components.size());
+         component < (int)(structure.components.size());
          ++component) {
         if (ws.seen[component]) continue;
         const DistributionId id = ShapeSolver::analyze(
             shapes.get(shapes.getInstance(structure.components[component]).shape),
             distributions);
-        const auto& distribution = distributions.get(id);
+        const ShapeSolver::Distribution::Result& distribution =
+            distributions.get(id);
         observePolyMultiplyInto(ws.rest, distribution.start(),
                                 distribution.ways(), ws.mult);
     }
     const int restMax = ws.rest.start +
-                        static_cast<int>(ws.rest.coeffs.size()) - 1;
+                        ws.rest.coeffs.size() - 1;
     ws.restWays.assign(tPool + restMax + 1, 0.0L);
-    for (std::size_t i = 0; i < ws.rest.coeffs.size(); ++i) {
+    for (int i = 0; i < (int)(ws.rest.coeffs.size()); ++i) {
         const long double ways = ws.rest.coeffs[i];
-        const int componentMines = ws.rest.start + static_cast<int>(i);
+        const int componentMines = ws.rest.start + i;
         for (int tMines = 0; tMines <= tPool; ++tMines)
             ws.restWays[componentMines + tMines] +=
                 ways * combLog(tPool, tMines);
@@ -240,7 +240,7 @@ inline Probability::ObserveResult Probability::observe(
                 ws.dp[neighborMines * stride + capturedMines];
             const int restMines = totalMines - capturedMines;
             if (ways == 0.0L || restMines < 0 ||
-                restMines >= static_cast<int>(ws.restWays.size()))
+                restMines >= (int)(ws.restWays.size()))
                 continue;
             neighborWays[neighborMines] += ways * ws.restWays[restMines];
         }
@@ -254,7 +254,8 @@ inline Probability::ObserveResult Probability::observe(
         const DistributionId id = ShapeSolver::analyze(
             shapes.get(shapes.getInstance(structure.components[component]).shape),
             distributions);
-        const auto& distribution = distributions.get(id);
+        const ShapeSolver::Distribution::Result& distribution =
+            distributions.get(id);
         observePolyMultiplyInto(ws.all, distribution.start(),
                                 distribution.ways(), ws.mult);
     }
@@ -281,11 +282,11 @@ inline void Probability::buildDfsTable(
         int componentMines = 0;
         std::array<long double, 9> convolution{};
         convolution[0] = 1.0L;
-        for (std::size_t boxId = 0; boxId < assignment.size(); ++boxId) {
+        for (int boxId = 0; boxId < (int)(assignment.size()); ++boxId) {
             const int mines = assignment[boxId];
             componentMines += mines;
             const int adjacent = adjacentBoxCells[boxId];
-            const bool isXBox = static_cast<int>(boxId) == xBox;
+            const bool isXBox = boxId == xBox;
             if (adjacent == 0 && !isXBox) continue;
             const int size = shape.boxes[boxId].size;
             const int pool = isXBox ? size - 1 : size;
@@ -352,7 +353,7 @@ struct Probability::GraphLayer {
             if (counts[i].componentMines == componentMines &&
                 counts[i].neighborMines == neighborMines)
                 return counts[i];
-        const int index = static_cast<int>(counts.size());
+        const int index = counts.size();
         counts.push_back({componentMines, neighborMines, 0.0L, -1});
         if (state.lastCount >= 0) counts[state.lastCount].next = index;
         else state.firstCount = index;
@@ -371,7 +372,7 @@ struct Probability::GraphLayer {
         nextLayer.counts.reserve(counts.size() * (plan.boxSize + 1));
         nextLayer.frontierValues.reserve(frontierValues.size() + plan.boxSize + 1);
         const int adjacent = adjacentBoxCells[plan.box];
-        const bool isXBox = static_cast<int>(plan.box) == xBox;
+        const bool isXBox = plan.box == xBox;
         const int size = plan.boxSize;
         const int pool = isXBox ? size - 1 : size;
         for (const State& state : states) {
@@ -389,10 +390,9 @@ struct Probability::GraphLayer {
                 U128Hasher hasher;
                 for (int source : plan.gather) {
                     const char value = source < 0
-                        ? static_cast<char>(mine)
+                        ? mine
                         : frontierValues[state.frontierOffset + source];
-                    hasher.mix(static_cast<std::uint64_t>(
-                        static_cast<unsigned char>(value)));
+                    hasher.mix((std::uint64_t)(unsigned char)(value));
                 }
                 const U128 hash = hasher.finalize();
                 State* target;
@@ -403,7 +403,7 @@ struct Probability::GraphLayer {
                     nextLayer.states.push_back({nextLayer.frontierValues.size(), -1, -1});
                     for (int source : plan.gather)
                         nextLayer.frontierValues.push_back(source < 0
-                            ? static_cast<char>(mine)
+                            ? mine
                             : frontierValues[state.frontierOffset + source]);
                     nextLayer.index.emplace(hash, id);
                     target = &nextLayer.states.back();

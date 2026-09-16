@@ -17,7 +17,7 @@ inline void radixSort() {
         std::uint32_t order;
     };
     auto checkSortedStable = [](const std::vector<Entry>& entries) {
-        for (std::size_t i = 1; i < entries.size(); ++i)
+        for (int i = 1; i < (int)(entries.size()); ++i)
             check(entries[i - 1].key < entries[i].key ||
                       (entries[i - 1].key == entries[i].key &&
                        entries[i - 1].order <= entries[i].order),

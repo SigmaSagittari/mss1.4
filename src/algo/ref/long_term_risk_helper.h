@@ -190,7 +190,7 @@ thread_local InfluenceTallyCache influenceTallyCache;
 
 template <typename Compute>
 long double cachedTally(TallyKind kind, int index, Compute&& compute) {
-    const int slot = static_cast<int>(kind);
+    const int slot = (int)(kind);
     if (influenceTallyCache.ready[slot][index]) return influenceTallyCache.values[slot][index];
     const long double value = compute();
     influenceTallyCache.values[slot][index] = value;
@@ -285,11 +285,11 @@ long double LongTermRiskReference::countWithForces(
     std::span<const CellId> safes) {
     // 调用方传入的是可回滚的可变状态，只在接口层以 const 视图传递；
     // 这里原地施加强制事实，返回前用 Delta 逆序恢复。
-    auto& forced = const_cast<ObservedBoard::Result&>(board);
-    auto& forcedBasic = const_cast<Basic::Result&>(basic);
-    auto& forcedStructure = const_cast<Structure::Result&>(structure);
-    auto& forcedProbability = forceWs.probability;
-    auto& boardDelta = forceWs.boardDelta;
+    ObservedBoard::Result& forced = const_cast<ObservedBoard::Result&>(board);
+    Basic::Result& forcedBasic = const_cast<Basic::Result&>(basic);
+    Structure::Result& forcedStructure = const_cast<Structure::Result&>(structure);
+    Probability::Result& forcedProbability = forceWs.probability;
+    ObservedBoard::Delta& boardDelta = forceWs.boardDelta;
     boardDelta.changes.clear();
     boardDelta.changes.reserve(mines.size() + safes.size());
     for (CellId cell : mines)
@@ -523,7 +523,7 @@ long double LongTermRiskReference::findInfluence(
     influence += (std::max)({(box(x, y)), box(x - 1, y), box(x, y - 1), box(x - 1, y - 1)});
     // enabler 贡献：点击 enabler 同样消除 50/50 风险（Java findInfluence(tile) 加
     // influenceEnablers）。全盘扫描未执行（full 为空）时忽略。
-    if (cell >= 0 && cell < static_cast<int>(full.enablers.size()))
+    if (cell >= 0 && cell < (int)(full.enablers.size()))
         influence += full.enablers[cell];
 
     // 钳制：50/50 影响不可能超过 P(雷) 或 P(安全) 对应的 tally。

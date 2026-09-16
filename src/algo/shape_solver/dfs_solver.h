@@ -59,8 +59,8 @@ inline void mss::ShapeSolver::DfsSolver::forEachAssignment(
     // 深度优先枚举满足全部约束的 Box 雷数赋值；每加入一个 Box 就用当前和与
     // 剩余容量剪枝，因此 callback 只看合法 assignment，不需要再次检查约束。
     AssignmentWorkspace& workspace = assignmentWorkspace();
-    const int boxCount = static_cast<int>(shape.boxes.size());
-    const int constraintCount = static_cast<int>(shape.constraintCount());
+    const int boxCount = shape.boxes.size();
+    const int constraintCount = shape.constraintCount();
 
     workspace.boxHead.assign(boxCount, -1);
     workspace.constraintNext.clear();
@@ -84,7 +84,7 @@ inline void mss::ShapeSolver::DfsSolver::forEachAssignment(
             workspace.constraintMaxAdd[constraint] += shape.boxes[box].size;
             workspace.constraintNext.push_back(workspace.boxHead[box]);
             workspace.constraintIds.push_back(constraint);
-            workspace.boxHead[box] = static_cast<int>(workspace.constraintIds.size()) - 1;
+            workspace.boxHead[box] = workspace.constraintIds.size() - 1;
         }
     }
 
@@ -130,7 +130,7 @@ inline void mss::ShapeSolver::DfsSolver::forEachAssignment(
         }
 
         const int mine = frame.nextMine++;
-        workspace.assignment[index] = static_cast<char>(mine);
+        workspace.assignment[index] = mine;
         bool valid = true;
         for (int link = workspace.boxHead[index]; link >= 0;
              link = workspace.constraintNext[link]) {
@@ -165,7 +165,7 @@ inline DistributionId mss::ShapeSolver::DfsSolver::analyze(
     const DistributionId cached = pool.find(shape.hash);
     if (cached >= 0) return cached;
 
-    const int boxCount = static_cast<int>(shape.boxes.size());
+    const int boxCount = shape.boxes.size();
     int maxMineCount = 0;
     for (const Structure::Shape::Box& box : shape.boxes)
         maxMineCount += box.size;

@@ -54,12 +54,11 @@ inline void Probability::polyMultiply(
     std::span<const long double> right, Poly& out) {
     // 卷积两个稀疏区间多项式；树节点用它合并左右组件，out 必须拥有自己的系数，
     // 不能继续借用任一输入视图。
-    const int size = static_cast<int>(left.size()) +
-                     static_cast<int>(right.size()) - 1;
+    const int size = left.size() + right.size() - 1;
     out.view = {};
     out.coeffs.assign(size, 0.0L);
-    for (int i = 0; i < static_cast<int>(left.size()); ++i)
-        for (int j = 0; j < static_cast<int>(right.size()); ++j)
+    for (int i = 0; i < (int)(left.size()); ++i)
+        for (int j = 0; j < (int)(right.size()); ++j)
             out.coeffs[i + j] += left[i] * right[j];
     out.start = leftStart + rightStart;
 }
@@ -69,8 +68,8 @@ inline long double Probability::denominator(
     // 用组件雷数多项式与 Unknown 的 C(tSum,tMines) 组合数相乘，得到全局条件化
     // 分母；同一分母同时归一化组件和组件外格子的概率。
     long double result = 0.0L;
-    const auto coefficients = polynomial.coefficients();
-    for (int i = 0; i < static_cast<int>(coefficients.size()); ++i) {
+    const std::span<const long double> coefficients = polynomial.coefficients();
+    for (int i = 0; i < (int)(coefficients.size()); ++i) {
         const int componentMines = polynomial.start + i;
         const int tMines = totalMines - componentMines;
         if (tMines >= 0 && tMines <= tSum)
@@ -86,8 +85,8 @@ inline long double Probability::unknownMineProbability(
     assert_(denom > 0.0L,
             "Probability::unknownMineProbability: 分母为零");
     long double result = 0.0L;
-    const auto coefficients = polynomial.coefficients();
-    for (int i = 0; i < static_cast<int>(coefficients.size()); ++i) {
+    const std::span<const long double> coefficients = polynomial.coefficients();
+    for (int i = 0; i < (int)(coefficients.size()); ++i) {
         const int componentMines = polynomial.start + i;
         const int tMines = totalMines - 1 - componentMines;
         if (tMines >= 0 && tMines <= tSum - 1)
@@ -135,7 +134,7 @@ inline void Probability::analyze(
     ws.identity.start = 0;
     ws.identity.coeffs.assign(1, 1.0L);
     ws.componentBoxCounts.resize(componentCount);
-    for (std::size_t i = 0; i < componentCount; ++i)
+    for (int i = 0; i < (int)(componentCount); ++i)
         ws.componentBoxCounts[i] =
             shapes.get(shapes.getInstance(structure.components[i]).shape)
                 .boxes.size();
@@ -161,15 +160,16 @@ inline void Probability::analyze(
     const std::size_t treeSize = 2 * leafBase;
     if (ws.tree.size() < treeSize) ws.tree.resize(treeSize);
     if (ws.outside.size() < treeSize) ws.outside.resize(treeSize);
-    for (std::size_t i = 0; i < leafBase; ++i) {
-        if (i < componentCount) {
-            const auto& distribution = distributions.get(ws.distributions[i]);
+    for (int i = 0; i < (int)(leafBase); ++i) {
+        if (i < (int)(componentCount)) {
+            const ShapeSolver::Distribution::Result& distribution =
+                distributions.get(ws.distributions[i]);
             ws.tree[leafBase + i].setView(distribution.start(), distribution.ways());
         } else {
             ws.tree[leafBase + i].setView(ws.identity.start, ws.identity.coeffs);
         }
     }
-    for (std::size_t i = leafBase - 1; i > 0; --i) {
+    for (int i = (int)(leafBase) - 1; i > 0; --i) {
         const Poly& left = ws.tree[i << 1];
         const Poly& right = ws.tree[i << 1 | 1];
         polyMultiply(left.start, left.coefficients(), right.start,
@@ -186,7 +186,7 @@ inline void Probability::analyze(
         ws.tree[1], totalMines, tSum, candidates);
     tCellProbability = limitProbability(tCellProbability);
     ws.outside[1].setView(ws.identity.start, ws.identity.coeffs);
-    for (std::size_t i = 1; i < leafBase; ++i) {
+    for (int i = 1; i < (int)(leafBase); ++i) {
         const Poly& right = ws.tree[i << 1 | 1];
         polyMultiply(ws.outside[i].start, ws.outside[i].coefficients(),
                      right.start, right.coefficients(), ws.outside[i << 1]);
@@ -196,16 +196,18 @@ inline void Probability::analyze(
     }
 
     std::size_t boxOffset = 0;
-    for (ComponentId cid = 0; cid < static_cast<ComponentId>(componentCount); ++cid) {
-        const auto& distribution = distributions.get(ws.distributions[cid]);
-        const auto ways = distribution.ways();
+    for (int cid = 0; cid < (int)(componentCount); ++cid) {
+        const ShapeSolver::Distribution::Result& distribution =
+            distributions.get(ws.distributions[cid]);
+        const std::span<const long double> ways = distribution.ways();
         const Poly& others = ws.outside[leafBase + cid];
         ws.entryProbabilities.assign(ways.size(), 0.0L);
-        for (std::size_t i = 0; i < ways.size(); ++i) {
-            const int componentMines = distribution.start() + (int)i;
+        for (int i = 0; i < (int)(ways.size()); ++i) {
+            const int componentMines = distribution.start() + i;
             long double numerator = 0.0L;
-            const auto otherCoefficients = others.coefficients();
-            for (int k = 0; k < static_cast<int>(otherCoefficients.size()); ++k) {
+            const std::span<const long double> otherCoefficients =
+                others.coefficients();
+            for (int k = 0; k < (int)(otherCoefficients.size()); ++k) {
                 const int tMines = totalMines - componentMines - others.start - k;
                 if (tMines >= 0 && tMines <= tSum)
                     numerator += otherCoefficients[k] * combLog(tSum, tMines);
@@ -214,13 +216,13 @@ inline void Probability::analyze(
         }
         const Structure::Shape& shape =
             shapes.get(shapes.getInstance(structure.components[cid]).shape);
-        for (std::size_t box = 0; box < shape.boxes.size(); ++box) {
+        for (int box = 0; box < (int)(shape.boxes.size()); ++box) {
             long double probability = 0.0L;
-            for (std::size_t i = 0; i < ways.size(); ++i)
+            for (int i = 0; i < (int)(ways.size()); ++i)
                 probability += ws.entryProbabilities[i] *
                                distribution.perBoxExpectation(i)[box];
             result.boxProbabilities_[boxOffset + box] =
-                probability / static_cast<long double>(shape.boxes[box].size);
+                probability / shape.boxes[box].size;
         }
         boxOffset += shape.boxes.size();
     }

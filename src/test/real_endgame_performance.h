@@ -182,7 +182,8 @@ inline void real_endgame_performance(const int l, const int r,
             }
             const long double possibilities = analysis.probability.candidates();
             if (noSafe && noFiftyFifty && l <= possibilities && possibilities <= r) {
-                const auto multimaskStarted = std::chrono::steady_clock::now();
+                const std::chrono::steady_clock::time_point multimaskStarted =
+                    std::chrono::steady_clock::now();
                 const mss::BruteForce::Result multimaskResult = mss::BruteForce::solve(
                     game.board, analysis.basic, analysis.structure, analysis.shapes,
                     {false, 1});
@@ -195,7 +196,8 @@ inline void real_endgame_performance(const int l, const int r,
                 bool same = true;
                 bool sameValue = true;
                 if (compareCommon) {
-                    const auto commonStarted = std::chrono::steady_clock::now();
+                    const std::chrono::steady_clock::time_point commonStarted =
+                        std::chrono::steady_clock::now();
                     commonResult = mss::BruteForce::solve(
                         game.board, analysis.basic, analysis.structure, analysis.shapes,
                         {false, 1, mss::BruteForce::Config::Route::Common});
@@ -364,7 +366,7 @@ inline void real_endgame_performance(const int l, const int r,
                 else if (state == mss::ObservedBoard::CellState::ForcedSafe)
                     std::cout << 'S';
                 else
-                    std::cout << static_cast<int>(state);
+                    std::cout << (int)(state);
             }
             std::cout << '\n';
         }

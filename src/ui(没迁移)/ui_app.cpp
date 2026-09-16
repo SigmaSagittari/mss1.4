@@ -18,7 +18,7 @@ struct ImportBoard {
 bool parseDigits(const std::string& str, size_t from, size_t to, int& out) {
     out = 0;
     if (to <= from) return false;
-    for (size_t i = from; i < to; ++i) {
+    for (int i = from; i < (int)(to); ++i) {
         if (str[i] < '0' || str[i] > '9') return false;
         out = out * 10 + (str[i] - '0');
         if (out > 100000) return false;
@@ -29,9 +29,9 @@ bool parseDigits(const std::string& str, size_t from, size_t to, int& out) {
 bool parseBoardText(const std::string& text, ImportBoard& out, std::string& error) {
     // 去 UTF-8 BOM。
     std::string s = text;
-    if (s.size() >= 3 && static_cast<unsigned char>(s[0]) == 0xEF &&
-        static_cast<unsigned char>(s[1]) == 0xBB &&
-        static_cast<unsigned char>(s[2]) == 0xBF)
+    if (s.size() >= 3 && (unsigned char)(s[0]) == 0xEF &&
+        (unsigned char)(s[1]) == 0xBB &&
+        (unsigned char)(s[2]) == 0xBF)
         s.erase(0, 3);
 
     // 分行（兼容 CRLF / LF）；末尾空行忽略。
@@ -91,27 +91,27 @@ bool parseBoardText(const std::string& text, ImportBoard& out, std::string& erro
         error = "雷数超出范围（须为 0~行×列−1）";
         return false;
     }
-    if (lines.size() - 1 != static_cast<size_t>(out.rows)) {
+    if (lines.size() - 1 != out.rows) {
         error = "盘面行数与首行声明不符";
         return false;
     }
 
-    const size_t cellCount = static_cast<size_t>(out.rows) * static_cast<size_t>(out.cols);
+    const size_t cellCount = out.rows * out.cols;
     out.cells.assign(cellCount, Cell::Hidden);
     for (int i = 0; i < out.rows; ++i) {
-        std::string row = lines[static_cast<size_t>(i) + 1];
+        std::string row = lines[i + 1];
         while (!row.empty() && (row.back() == '\r' || row.back() == ' ' || row.back() == '\t'))
             row.pop_back();
-        if (row.size() != static_cast<size_t>(out.cols)) {
+        if (row.size() != out.cols) {
             error = "第 " + std::to_string(i + 1) + " 行长度应为 " + std::to_string(out.cols) +
                     "（实际 " + std::to_string(row.size()) + "）";
             return false;
         }
         for (int j = 0; j < out.cols; ++j) {
-            const char ch = row[static_cast<size_t>(j)];
-            const size_t idx = static_cast<size_t>(i) * static_cast<size_t>(out.cols) + j;
+            const char ch = row[j];
+            const size_t idx = i * out.cols + j;
             if (ch >= '0' && ch <= '8') {
-                out.cells[idx] = static_cast<Cell>(ch - '0');
+                out.cells[idx] = (Cell)(ch - '0');
             } else if (ch == 'H' || ch == 'F') {  // F 只作前端标记，分析一律未开
                 out.cells[idx] = Cell::Hidden;
             } else {
@@ -257,7 +257,7 @@ bool UiApp::bodySeed(const std::string& body, const std::string& key, unsigned& 
         if (pos == std::string::npos) return false;
         size_t colon = body.find(':', pos);
         if (colon == std::string::npos) return false;
-        out = static_cast<unsigned>(std::strtoul(body.c_str() + colon + 1, nullptr, 10));
+        out = std::strtoul(body.c_str() + colon + 1, nullptr, 10);
         return true;
     }
 
@@ -270,7 +270,7 @@ bool UiApp::bodyString(const std::string& body, const std::string& key, std::str
         size_t q = body.find('"', colon + 1);
         if (q == std::string::npos) return false;
         out.clear();
-        for (size_t i = q + 1; i < body.size(); ++i) {
+        for (int i = q + 1; i < (int)(body.size()); ++i) {
             const char ch = body[i];
             if (ch == '"') return true;
             if (ch == '\\' && i + 1 < body.size()) {
@@ -291,13 +291,13 @@ bool UiApp::bodyString(const std::string& body, const std::string& key, std::str
     }
 
 int UiApp::queryInt(const HttpRequest& req, const std::string& key, int def){
-        auto it = req.query.find(key);
+        const std::map<std::string, std::string>::const_iterator it = req.query.find(key);
         if (it == req.query.end()) return def;
         return std::atoi(it->second.c_str());
     }
 
 HttpResponse UiApp::jsonState() const{
-        const auto& gi = game_->info();
+        const GameController::game_info& gi = game_->info();
         std::ostringstream os;
         os << "{\"status\":\"" << statusText() << "\""
            << ",\"rows\":" << gi.rows << ",\"cols\":" << gi.cols
@@ -318,9 +318,9 @@ HttpResponse UiApp::jsonState() const{
     }
 
 int UiApp::cellValue(int x, int y) const{
-        const auto& gi = game_->info();
+        const GameController::game_info& gi = game_->info();
         if (gi.status == GameController::Status::Lost && gi.layout[x][y]) {
-            auto [ex, ey] = game_->exploded();
+            const auto [ex, ey] = game_->exploded();
             return (x == ex && y == ey) ? -4 : -3;
         }
         if (gi.revealed[x][y]) return game_->adjacentMines(x, y);
@@ -355,12 +355,12 @@ HttpResponse UiApp::jsonReveal(const HttpRequest& req){
         int x = bodyInt(req.body, "x");
         int y = bodyInt(req.body, "y");
         if (x >= 1 && x <= game_->info().rows && y >= 1 && y <= game_->info().cols) {
-            const auto t0 = std::chrono::steady_clock::now();
+            const std::chrono::steady_clock::time_point t0 =
+                std::chrono::steady_clock::now();
             game_->reveal(x, y);
-            computedMs_ = static_cast<int>(
-                std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::steady_clock::now() - t0)
-                    .count());
+            computedMs_ = std::chrono::duration_cast<std::chrono::milliseconds>(
+                              std::chrono::steady_clock::now() - t0)
+                              .count();
         }
         return jsonState();
     }
@@ -395,12 +395,14 @@ HttpResponse UiApp::jsonConfig(const HttpRequest& req){
     }
 
 HttpResponse UiApp::jsonProbability(){
-        auto& an = game_->analysis();
+        GameController::Analysis& an = game_->analysis();
         const Grid<long double> grid = Interactive::materializeProbability(an);
 
         // 输出钳制：极端盘面（如编辑出的无解盘面）引擎可能产生 inf/nan，
         // 不许泄漏进 JSON（否则前端 res.json() 解析失败、概率整个消失）。
-        auto safe = [](long double v) { return std::isfinite(v) ? static_cast<double>(v) : 0.0; };
+        auto safe = [](long double v) -> double {
+            return std::isfinite(v) ? v : 0.0;
+        };
 
         // 循环按分析视图尺寸（导入可改变盘面尺寸，游戏行/列会截断）。
         const int rows = an.state().rows;
@@ -427,7 +429,7 @@ HttpResponse UiApp::jsonProbability(){
 HttpResponse UiApp::jsonDetail(const HttpRequest& req){
         int x = queryInt(req, "x", 0);
         int y = queryInt(req, "y", 0);
-        const auto& gi = game_->info();
+        const GameController::game_info& gi = game_->info();
         if (x < 1 || x > gi.rows || y < 1 || y > gi.cols)
             return json("{\"text\":\"（悬停在格子上查看）\"}");
         return json("{\"text\":" + jsonString(getDetailInfo(x, y)) + "}");
@@ -436,11 +438,12 @@ HttpResponse UiApp::jsonDetail(const HttpRequest& req){
 HttpResponse UiApp::jsonJavaEvaluate(){
         if (!analyzerActive_)
             return {409, "application/json; charset=utf-8", "{\"error\":\"Java analysis requires analyzer mode\"}"};
-        auto& an = game_->analysis();
+        GameController::Analysis& an = game_->analysis();
         // 无解盘面：引擎会产 NaN/Inf，直接显式报错，不静默钳 0 掩盖。
         if (an.probability().candidates == 0.0L)
             return json("{\"error\":\"盘面无可行的雷位方案（候选方案数 0），无法评估\"}");
-        const auto started = std::chrono::steady_clock::now();
+        const std::chrono::steady_clock::time_point started =
+            std::chrono::steady_clock::now();
         const LongTermRiskReference::Config riskConfig{};
         const JavaEvaluate::Config evaluateConfig{};
         const LongTermRiskReference::Influence risk = LongTermRiskReference::findInfluence(
@@ -449,8 +452,10 @@ HttpResponse UiApp::jsonJavaEvaluate(){
         const JavaEvaluate::Result result = JavaEvaluate::solve(
             an.state(), an.basicMarks(), an.structure(), an.probability(), an.shapes(),
             an.dists(), risk, {}, evaluateConfig);
-        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - started).count();
+        const std::chrono::milliseconds::rep elapsed =
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - started)
+                .count();
         // 数值异常（NaN/Inf）也要显式报错，而不是钳 0。
         if (!std::isfinite(result.weight))
             return json("{\"error\":\"概率引擎数值异常（NaN/Inf），盘面可能无解或数值溢出\"}");
@@ -461,40 +466,40 @@ HttpResponse UiApp::jsonJavaEvaluate(){
         // influence 输出归一化占比（= tally / 方案数），供前端直接显示百分比。
         const long double candidates = an.probability().candidates;
         auto influenceRatio = [&](long double influence) {
-            return static_cast<double>(influence / candidates);
+            return influence / candidates;
         };
         std::ostringstream os;
         os << std::setprecision(12)
            << "{\"x\":" << result.x << ",\"y\":" << result.y
-           << ",\"weight\":" << static_cast<double>(result.weight)
+           << ",\"weight\":" << result.weight
            << ",\"elapsedMs\":" << elapsed << ",\"pseudos\":[";
-        for (std::size_t i = 0; i < risk.pseudos.size(); ++i) {
+        for (int i = 0; i < (int)(risk.pseudos.size()); ++i) {
             if (i) os << ',';
             const auto [x, y] = an.state().pos(risk.pseudos[i]);
             os << "[" << x << ',' << y << "]";
         }
         os << "],\"dead\":[";
-        for (std::size_t i = 0; i < result.deadCells.size(); ++i) {
+        for (int i = 0; i < (int)(result.deadCells.size()); ++i) {
             if (i) os << ',';
             const auto [x, y] = an.state().pos(result.deadCells[i]);
             os << "[" << x << ',' << y << "]";
         }
         os << "],\"candidates\":[";
-        for (std::size_t i = 0; i < result.candidates.size(); ++i) {
+        for (int i = 0; i < (int)(result.candidates.size()); ++i) {
             if (i) os << ',';
             const JavaEvaluate::Candidate& c = result.candidates[i];
             os << "{\"x\":" << c.x << ",\"y\":" << c.y
-               << ",\"safety\":" << static_cast<double>(c.safety)
+               << ",\"safety\":" << c.safety
                << ",\"influence\":" << influenceRatio(c.influence)
-               << ",\"clears\":" << static_cast<double>(c.expectedClears)
-               << ",\"weight\":" << static_cast<double>(c.weight) << '}';
+               << ",\"clears\":" << c.expectedClears
+               << ",\"weight\":" << c.weight << '}';
         }
         os << "]}";
         return json(os.str());
 }
 
 std::string UiApp::getDetailInfo(int x, int y){
-        const auto& gi = game_->info();
+        const GameController::game_info& gi = game_->info();
         std::vector<std::string> lines;
         lines.push_back("格子 (" + std::to_string(x) + ", " + std::to_string(y) + ")");
         lines.push_back("总雷数: " + std::to_string(gi.mines) +
@@ -512,7 +517,7 @@ std::string UiApp::getDetailInfo(int x, int y){
         long double p = Interactive::mineProbability(game_->analysis(), x, y);
         std::ostringstream ps;
         ps << std::setprecision(5) << "雷概率: "
-           << static_cast<double>(p) << "  (" << static_cast<double>(p * 100) << "%)";
+           << p << "  (" << p * 100 << "%)";
         lines.push_back(ps.str());
 
         // 点开结果分布（observe）：爆炸 + 各数字概率（仅未翻开格有意义）。
@@ -521,7 +526,7 @@ std::string UiApp::getDetailInfo(int x, int y){
             const Probability::ObserveResult obr = Interactive::observe(game_->analysis(), x, y);
             auto fmtPct = [](long double v) {
                 std::ostringstream os;
-                os << std::setprecision(5) << static_cast<double>(v * 100.0L) << '%';
+                os << std::setprecision(5) << v * 100.0L << '%';
                 return os.str();
             };
             lines.push_back("点开: 爆炸 " + fmtPct(obr.explosion));
@@ -535,12 +540,12 @@ std::string UiApp::getDetailInfo(int x, int y){
         lines.push_back(cs.str());
         std::ostringstream tp;
         tp << std::setprecision(5)
-           << "非前沿雷概率: " << static_cast<double>(Interactive::tCellProbability(game_->analysis()));
+           << "非前沿雷概率: " << Interactive::tCellProbability(game_->analysis());
         lines.push_back(tp.str());
         lines.push_back("计算耗时: " + std::to_string(computedMs_) + " ms");
 
         std::string out;
-        for (size_t i = 0; i < lines.size(); ++i) {
+        for (int i = 0; i < (int)(lines.size()); ++i) {
             if (i) out += "\n";
             out += lines[i];
         }
@@ -549,7 +554,7 @@ std::string UiApp::getDetailInfo(int x, int y){
 
 HttpResponse UiApp::jsonAnalyzer(const HttpRequest& req){
         const bool active = req.body.find("true") != std::string::npos;
-        auto& state = game_->analysis().state();
+        ObservedBoard::Result& state = game_->analysis().state();
         if (active) {
             if (!analyzerActive_) editSaved_ = std::make_unique<ObservedBoard::Result>(state);
             analyzerActive_ = true;
@@ -569,10 +574,10 @@ HttpResponse UiApp::jsonEdit(const HttpRequest& req){
         const int x = bodyInt(req.body, "x");
         const int y = bodyInt(req.body, "y");
         const int v = bodyInt(req.body, "v");
-        auto& state = game_->analysis().state();
+        ObservedBoard::Result& state = game_->analysis().state();
         if (x >= 1 && x <= state.rows && y >= 1 && y <= state.cols && v >= 0 && v <= 9) {
             const Cell old = state.board[x][y];
-            const Cell next = (v == 9) ? Cell::Hidden : static_cast<Cell>(v);
+            const Cell next = (v == 9) ? Cell::Hidden : (Cell)(v);
             if (old != next) {
                 state.board[x][y] = next;
                 if (!game_->analysis().initFromState()) {
@@ -591,7 +596,7 @@ HttpResponse UiApp::jsonExport(){
         std::ostringstream os;
         if (analyzerActive_) {
             // 分析模式：导出分析视图（数字 / Hidden；F 是前端标记，服务端不存）。
-            const auto& st = game_->analysis().state();
+            const ObservedBoard::Result& st = game_->analysis().state();
             os << st.rows << "x" << st.cols << "/" << st.totalMines << "\n";
             for (int x = 1; x <= st.rows; ++x) {
                 for (int y = 1; y <= st.cols; ++y) {
@@ -602,7 +607,7 @@ HttpResponse UiApp::jsonExport(){
             }
         } else {
             // 实战：数字 / 未开 H / 标旗 F；失败后露出的雷按 F 导出（保住已知雷）。
-            const auto& gi = game_->info();
+            const GameController::game_info& gi = game_->info();
             os << gi.rows << "x" << gi.cols << "/" << gi.mines << "\n";
             for (int x = 1; x <= gi.rows; ++x) {
                 for (int y = 1; y <= gi.cols; ++y) {
@@ -636,15 +641,15 @@ HttpResponse UiApp::jsonImport(const HttpRequest& req){
         }
 
         ObservedBoard::Result next(parsed.rows, parsed.cols, parsed.mines);
-        const size_t cellCount = static_cast<size_t>(parsed.rows) * static_cast<size_t>(parsed.cols);
-        for (size_t idx = 0; idx < cellCount; ++idx) {
-            const int x = static_cast<int>(idx / static_cast<size_t>(parsed.cols)) + 1;
-            const int y = static_cast<int>(idx % static_cast<size_t>(parsed.cols)) + 1;
+        const int cellCount = parsed.rows * parsed.cols;
+        for (int idx = 0; idx < cellCount; ++idx) {
+            const int x = idx / parsed.cols + 1;
+            const int y = idx % parsed.cols + 1;
             next.board[x][y] = parsed.cells[idx];
         }
 
         // 覆盖分析视图；不合法（数字矛盾 / 雷数不可行）则回滚。
-        auto& state = game_->analysis().state();
+        ObservedBoard::Result& state = game_->analysis().state();
         ObservedBoard::Result old = state;
         state = std::move(next);
         if (!game_->analysis().initFromState() ||

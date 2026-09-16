@@ -54,23 +54,39 @@ public:
     static std::vector<BoxId> makeOrder(const Graph& graph,
                                         OrderAlgo algo);
 
+    // 一个消元步骤的完整转移计划：处理一个 Box，读取旧 frontier，生成新
+    // frontier，并记录本步刚好闭合的 Box。
     struct StepPlan {
         struct Check {
+            // 该约束要求的总雷数。
             int sum = 0;
+            // 该约束中尚未处理的 Box 最多还能贡献的雷数。
             int remainingSize = 0;
+            // 该约束中已经处理的 Box 在旧 frontierValues 中的 slot 下标。
             std::array<int, 8> readSlots{};
+            // readSlots 中实际有效的下标数量。
             int readCount = 0;
         };
 
         struct Closing {
+            // 已闭合 Box 的 ID。
             BoxId box = 0;
+            // 该 Box 在旧 frontier 中的 slot；当前正在处理的 Box 用 -1 表示，
+            // 因为它的雷数来自本步骤的 mine，而不是旧 frontier。
             int oldSlot = -1;
         };
 
+        // 本步骤正在分配雷数的 Box。
         BoxId box = 0;
+        // box 中的格子数；mine 的取值范围首先是 [0, boxSize]。
         int boxSize = 0;
+        // 所有包含 box 的约束；advance 用它们从旧 frontier 计算 mine 的合法范围。
         std::vector<Check> checks;
+        // 新 frontier 的来源，按新 frontier 顺序排列：非负值表示复制旧
+        // frontierValues 的对应 slot，-1 表示插入本步骤的 mine。
         std::vector<int> gather;
+        // 本步骤结束时闭合的所有 Box；它们不再进入新 frontier，但要生成
+        // 对应的 momentValues。
         std::vector<Closing> closings;
     };
 

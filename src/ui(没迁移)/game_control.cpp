@@ -89,8 +89,8 @@ void GameController::generate(){
         std::vector<int> cells(total);
         for (int i = 0; i < total; ++i) cells[i] = i;
         for (int i = total - 1; i > 0; --i) {
-            const std::uint64_t j = rng_.next() % static_cast<std::uint64_t>(i + 1);
-            std::swap(cells[i], cells[static_cast<int>(j)]);
+            const std::uint64_t j = rng_.next() % (i + 1);
+            std::swap(cells[i], cells[j]);
         }
         for (int k = 0; k < mines_ && k < total; ++k)
             layout_.at(cells[k] / cols_ + 1, cells[k] % cols_ + 1) = 1;
@@ -131,7 +131,7 @@ void GameController::revealFlood(int x, int y, ObservedBoard::Delta& updates){
         if (revealed_[x][y] || layout_[x][y]) return;
         revealed_[x][y] = 1;
         ++revealedCount_;
-        const Cell v = static_cast<Cell>(adjacentMines(x, y));
+        const Cell v = (Cell)(adjacentMines(x, y));
         updates.upd.push_back({analysis_.state().id(x, y), v});
         if (v == Cell::Num0)
             forEachAdjacent(x, y, rows_, cols_, [&](int nx, int ny) { revealFlood(nx, ny, updates); });
@@ -144,7 +144,7 @@ void GameController::relocateMine(int x, int y){
                 if (!layout_[i][j] && !(i == x && j == y)) empty.emplace_back(i, j);
         if (empty.empty()) return;
         const std::uint64_t pick = rng_.next() % empty.size();
-        const auto [nx, ny] = empty[static_cast<int>(pick)];
+        const auto [nx, ny] = empty[pick];
         layout_[x][y] = 0;
         layout_[nx][ny] = 1;
     }

@@ -17,7 +17,7 @@ inline void harness() {
     //basic();
     // Bruteforce：逐格/多掩码残局搜索的结果一致性与边界回归。
     //bruteforce();
-    // FlatHashTable：平坦哈希表与 libcuckoo 的固定操作序列性能对比。
+    // FlatHashTable：平坦哈希表的增长、查找和 clear 后复用回归。
     //flatHashtable();
     // ObservedBoard：棋盘观测、翻开更新和边界状态的功能回归。
     //observedBoard();
