@@ -195,6 +195,7 @@ struct ShapeSolver::GraphSolver::Layer {
                     target = &nextLayer.states.back();
                 }
                 const long double factor = ShapeSolver::binom(plan.boxSize, mine);
+                const bool factorIsOne = factor == 1.0L;
                 for (int sourceIndex = state.firstCount; sourceIndex >= 0; sourceIndex = counts[sourceIndex].next) {
                     const Count &source = counts[sourceIndex];
                     const int mineCount = source.mineCount + mine;
@@ -212,10 +213,14 @@ struct ShapeSolver::GraphSolver::Layer {
                         nextLayer.momentValues.resize(nextLayer.momentValues.size() + nextLayer.momentBoxes.size(), 0.0L);
                     }
                     Count &targetCount = nextLayer.counts[targetIndex];
-                    const long double ways = source.ways * factor;
+                    const long double ways = factorIsOne ? source.ways : source.ways * factor;
                     targetCount.ways += ways;
-                    for (int slot = 0; slot < (int)(momentBoxes.size()); ++slot)
-                        nextLayer.momentValues[targetCount.momentOffset + slot] += momentValues[source.momentOffset + slot] * factor;
+                    if (factorIsOne)
+                        for (int slot = 0; slot < (int)(momentBoxes.size()); ++slot)
+                            nextLayer.momentValues[targetCount.momentOffset + slot] += momentValues[source.momentOffset + slot];
+                    else
+                        for (int slot = 0; slot < (int)(momentBoxes.size()); ++slot)
+                            nextLayer.momentValues[targetCount.momentOffset + slot] += momentValues[source.momentOffset + slot] * factor;
                     for (int i = 0; i < (int)(plan.closings.size()); ++i) {
                         const StepPlan::Closing &closing = plan.closings[i];
                         const long double boxMine = closing.oldSlot < 0 ? mine : frontierValue(state, closing.oldSlot);
@@ -282,22 +287,6 @@ inline DistributionId ShapeSolver::GraphSolver::analyze(const Structure::Shape &
     const Graph graph = Graph::fromShape(shape);
     const std::vector<BoxId> order = makeOrder(graph, algo);
     std::vector<char> selected(graph.offsets.size() - 1, 0);
-    for (int step = 0; step < (int)(order.size()); ++step) {
-        const BoxId box = order[step];
-        if (step != 0) {
-            bool attached = false;
-            for (BoxId neighbor : graph.neighbors(box))
-                if (selected[neighbor]) {
-                    attached = true;
-                    break;
-                }
-            if (!attached) {
-                warn_("Graph order contains a disconnected prefix");
-                break;
-            }
-        }
-        selected[box] = 1;
-    }
     const int maxWidth = orderScore(graph, order).first;
     std::cout << "[graph] boxes=" << shape.boxes.size() << " constraints=" << shape.constraintCount() << " max_width=" << maxWidth << '\n'
               << std::flush;
