@@ -41,10 +41,10 @@
     <ClInclude Include="src\algo\bruteforce\bruteforce.h">
       <Filter>src\algo\bruteforce</Filter>
     </ClInclude>
-    <ClInclude Include="src\algo\bruteforce\bruteforce_bitwise.h">
+    <ClInclude Include="src\algo\bruteforce\bruteforce_common.h">
       <Filter>src\algo\bruteforce</Filter>
     </ClInclude>
-    <ClInclude Include="src\algo\bruteforce\bruteforce_common.h">
+    <ClInclude Include="src\algo\bruteforce\bruteforce_multimask.h">
       <Filter>src\algo\bruteforce</Filter>
     </ClInclude>
     <ClInclude Include="src\algo\bruteforce\bruteforce_normal.h">

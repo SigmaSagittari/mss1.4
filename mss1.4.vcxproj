@@ -95,8 +95,8 @@
   <ItemGroup>
     <ClInclude Include="src\algo\basic.h" />
     <ClInclude Include="src\algo\bruteforce\bruteforce.h" />
-    <ClInclude Include="src\algo\bruteforce\bruteforce_bitwise.h" />
     <ClInclude Include="src\algo\bruteforce\bruteforce_common.h" />
+    <ClInclude Include="src\algo\bruteforce\bruteforce_multimask.h" />
     <ClInclude Include="src\algo\bruteforce\bruteforce_normal.h" />
     <ClInclude Include="src\algo\observed_board.h" />
     <ClInclude Include="src\algo\probability\global_solver.h" />
@@ -117,7 +117,6 @@
     <ClInclude Include="src\core\utility\flat_hashtable.h" />
     <ClInclude Include="src\core\utility\grid.h" />
     <ClInclude Include="src\core\utility\hash.h" />
-    <ClInclude Include="src\core\utility\pingpong_hashtable.h" />
     <ClInclude Include="src\core\utility\radix_sort.h" />
     <ClInclude Include="src\core\utility\rng.h" />
     <ClInclude Include="src\test\basic.h" />
