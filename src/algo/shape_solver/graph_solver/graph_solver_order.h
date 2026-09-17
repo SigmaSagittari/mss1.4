@@ -72,8 +72,11 @@ inline std::pair<int, int> ShapeSolver::GraphSolver::orderScore(const Graph &gra
     // 评估一个 Box 顺序的峰值边界宽度和累计边界面积；makeOrder 用它比较
     // 局部排列和模拟退火结果，优先降低 Graph DP 的峰值状态数。
     const int boxCount = order.size();
-    std::vector<int> remaining(graph.offsets.size() - 1);
-    std::vector<char> selected(remaining.size(), 0);
+    // 当前线程串行复用评分 scratch，避免 SA 每轮重复申请。
+    static thread_local std::vector<int> remaining;
+    static thread_local std::vector<char> selected;
+    remaining.resize(graph.offsets.size() - 1);
+    selected.assign(remaining.size(), 0);
     for (BoxId box = 0; box < boxCount; ++box)
         remaining[box] = graph.neighbors(box).size();
 
@@ -270,10 +273,15 @@ inline std::vector<BoxId> ShapeSolver::GraphSolver::makeSAOrder(const Graph &gra
     constexpr double endTemperature = 0.1;
     const double cooling = std::pow(endTemperature / startTemperature, 1.0 / (iterations - 1));
     std::vector<BoxId> bestOrder = seed;
+    // 当前线程复用 SA 的两个候选缓冲；接受候选时交换缓冲所有权。
+    static thread_local std::vector<BoxId> current;
+    static thread_local std::vector<BoxId> candidate;
+    current.reserve(boxCount);
+    candidate.reserve(boxCount);
     std::pair<int, int> bestScore = orderScore(graph, bestOrder);
     for (int round = 0; round < rounds; ++round) {
         std::uint64_t state = 0x9e3779b97f4a7c15ULL + round * 0x6a09e667f3bcc909ULL;
-        std::vector<BoxId> current = seed;
+        current = seed;
         for (int perturb = 0; perturb < round; ++perturb) {
             const int left = nextRandom(state) % boxCount;
             const int right = nextRandom(state) % boxCount;
@@ -283,7 +291,7 @@ inline std::vector<BoxId> ShapeSolver::GraphSolver::makeSAOrder(const Graph &gra
         int currentEnergy = energy(currentScore);
         double temperature = startTemperature;
         for (int iteration = 0; iteration < iterations; ++iteration) {
-            std::vector<BoxId> candidate = current;
+            candidate = current;
             const int left = nextRandom(state) % boxCount;
             const int right = nextRandom(state) % boxCount;
             const bool swap = nextRandom(state) % 2 == 0;
@@ -309,7 +317,7 @@ inline std::vector<BoxId> ShapeSolver::GraphSolver::makeSAOrder(const Graph &gra
                 bestScore = candidateScore;
             }
             if (accept) {
-                current = std::move(candidate);
+                current.swap(candidate);
                 currentScore = candidateScore;
                 currentEnergy = candidateEnergy;
             }

@@ -115,6 +115,14 @@ struct ShapeSolver::GraphSolver::Layer {
         int lastCount = -1;
     };
 
+    struct MomentValue {
+        long double value;
+
+        // 由首次贡献完整写入，避免 vector::resize 为每个 long double 先清零。
+        MomentValue() {
+        }
+    };
+
     // 当前 DP 层的所有不同 frontier；State::frontierOffset 指向它们在
     // frontierWords 中的 packed 值。
     std::vector<State> states;
@@ -125,7 +133,7 @@ struct ShapeSolver::GraphSolver::Layer {
     std::vector<BoxId> momentBoxes;
     // 按 Count 分段存储已闭合 Box 的加权雷数总和；Count::momentOffset 指向
     // 当前 Count 的段首。
-    std::vector<long double> momentValues;
+    std::vector<MomentValue> momentValues;
     // 按唯一 frontier 分段存储各活跃 Box 的雷数，每个 slot 占 4 bit；
     // State::frontierOffset 指向当前 State 的 word 段首。
     std::vector<std::uint64_t> frontierWords;
@@ -195,6 +203,7 @@ struct ShapeSolver::GraphSolver::Layer {
                     target = &nextLayer.states.back();
                 }
                 const long double factor = ShapeSolver::binom(plan.boxSize, mine);
+                // factor 为 1 时跳过乘法。
                 const bool factorIsOne = factor == 1.0L;
                 for (int sourceIndex = state.firstCount; sourceIndex >= 0; sourceIndex = counts[sourceIndex].next) {
                     const Count &source = counts[sourceIndex];
@@ -202,7 +211,9 @@ struct ShapeSolver::GraphSolver::Layer {
                     int targetIndex = target->firstCount;
                     while (targetIndex >= 0 && nextLayer.counts[targetIndex].mineCount != mineCount)
                         targetIndex = nextLayer.counts[targetIndex].next;
-                    if (targetIndex < 0) {
+                    // 新 Count 的首次贡献直接写入未初始化块，后续贡献才累加。
+                    const bool firstContribution = targetIndex < 0;
+                    if (firstContribution) {
                         targetIndex = nextLayer.counts.size();
                         nextLayer.counts.push_back({mineCount, 0.0L, nextLayer.momentValues.size(), -1});
                         if (target->lastCount >= 0)
@@ -210,21 +221,30 @@ struct ShapeSolver::GraphSolver::Layer {
                         else
                             target->firstCount = targetIndex;
                         target->lastCount = targetIndex;
-                        nextLayer.momentValues.resize(nextLayer.momentValues.size() + nextLayer.momentBoxes.size(), 0.0L);
+                        nextLayer.momentValues.resize(nextLayer.momentValues.size() + nextLayer.momentBoxes.size());
                     }
                     Count &targetCount = nextLayer.counts[targetIndex];
                     const long double ways = factorIsOne ? source.ways : source.ways * factor;
                     targetCount.ways += ways;
-                    if (factorIsOne)
-                        for (int slot = 0; slot < (int)(momentBoxes.size()); ++slot)
-                            nextLayer.momentValues[targetCount.momentOffset + slot] += momentValues[source.momentOffset + slot];
-                    else
-                        for (int slot = 0; slot < (int)(momentBoxes.size()); ++slot)
-                            nextLayer.momentValues[targetCount.momentOffset + slot] += momentValues[source.momentOffset + slot] * factor;
+                    if (factorIsOne) {
+                        for (int slot = 0; slot < (int)(momentBoxes.size()); ++slot) {
+                            const long double contribution = momentValues[source.momentOffset + slot].value;
+                            MomentValue &targetValue = nextLayer.momentValues[targetCount.momentOffset + slot];
+                            targetValue.value = firstContribution ? contribution : targetValue.value + contribution;
+                        }
+                    } else {
+                        for (int slot = 0; slot < (int)(momentBoxes.size()); ++slot) {
+                            const long double contribution = momentValues[source.momentOffset + slot].value * factor;
+                            MomentValue &targetValue = nextLayer.momentValues[targetCount.momentOffset + slot];
+                            targetValue.value = firstContribution ? contribution : targetValue.value + contribution;
+                        }
+                    }
                     for (int i = 0; i < (int)(plan.closings.size()); ++i) {
                         const StepPlan::Closing &closing = plan.closings[i];
                         const long double boxMine = closing.oldSlot < 0 ? mine : frontierValue(state, closing.oldSlot);
-                        nextLayer.momentValues[targetCount.momentOffset + momentBoxes.size() + i] += boxMine * ways;
+                        const long double contribution = boxMine * ways;
+                        MomentValue &targetValue = nextLayer.momentValues[targetCount.momentOffset + momentBoxes.size() + i];
+                        targetValue.value = firstContribution ? contribution : targetValue.value + contribution;
                     }
                 }
             }
@@ -270,7 +290,7 @@ inline ShapeSolver::Distribution::Result ShapeSolver::GraphSolver::materialize(c
             long double value = 0;
             for (int slot = 0; slot < (int)(layer.momentBoxes.size()); ++slot)
                 if (layer.momentBoxes[slot] == box)
-                    value = layer.momentValues[count.momentOffset + slot] / count.ways;
+                    value = layer.momentValues[count.momentOffset + slot].value / count.ways;
             moments[offset + box] = value;
         }
     }
@@ -286,12 +306,9 @@ inline DistributionId ShapeSolver::GraphSolver::analyze(const Structure::Shape &
         return cached;
     const Graph graph = Graph::fromShape(shape);
     const std::vector<BoxId> order = makeOrder(graph, algo);
-    std::vector<char> selected(graph.offsets.size() - 1, 0);
-    const int maxWidth = orderScore(graph, order).first;
-    std::cout << "[graph] boxes=" << shape.boxes.size() << " constraints=" << shape.constraintCount() << " max_width=" << maxWidth << '\n'
-              << std::flush;
-    Layer current;
-    Layer next;
+    // 当前线程复用两层 DP 容量；reset 只清空逻辑元素。
+    static thread_local Layer current;
+    static thread_local Layer next;
     current.reset();
     next.reset();
     walkSteps(shape, order, [&](const StepPlan &plan) {
