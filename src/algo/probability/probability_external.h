@@ -9,6 +9,7 @@
 #include "algo/observed_board.h"
 #include "algo/shape_solver/shape_solver.h"
 #include "algo/structure.h"
+#include "core/workspace.h"
 
 namespace mss {
 
@@ -17,7 +18,7 @@ struct Probability {
     // 概率层把每个结构组件的分布与组件外的 Unknown 组合起来，按总雷数做全局条件化。
     // Result 内的 span 指向 Result 自己的连续存储；移动后只能使用目标对象。
 
-    struct ObserveTransfer;
+    using ObserveTransfer = workspace::ProbabilityObserve::Transfer;
     struct ObserveResult;
 
   public:
@@ -80,10 +81,9 @@ struct Probability {
     };
 
   private:
-    struct ObservePoly;
-    struct ObserveWorkspace;
-    struct GraphLayer;
-    static thread_local ObserveWorkspace observeWorkspace;
+    using ObservePoly = workspace::ProbabilityObserve::Poly;
+    using ObserveWorkspace = workspace::ProbabilityObserve::Buffers;
+    using GraphLayer = workspace::ProbabilityObserve::BuildGraphTable::Layer;
 
     // 卷积两个点开专用多项式。
     static void observePolyMultiply(int leftStart, std::span<const long double> left, int rightStart, std::span<const long double> right,
@@ -99,9 +99,8 @@ struct Probability {
     static void buildGraphTable(const Structure::Shape &shape, std::span<const int> adjacentBoxCells, int xBox,
                                 std::vector<ObserveTransfer> &out);
 
-    struct Poly;
-    struct Workspace;
-    static thread_local Workspace globalWorkspace;
+    using Poly = workspace::Probability::Analyze::Poly;
+    using Workspace = workspace::Probability::Analyze::Buffers;
     // 卷积全局概率使用的两个生成函数多项式。
     static void polyMultiply(int leftStart, std::span<const long double> left, int rightStart, std::span<const long double> right,
                              Poly &out);

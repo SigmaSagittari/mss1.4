@@ -11,6 +11,7 @@
 #include "core/utility/dynamic_bitset.h"
 #include "core/utility/flat_hashtable.h"
 #include "core/utility/hash.h"
+#include "core/workspace.h"
 
 namespace mss {
 
@@ -53,13 +54,10 @@ struct BruteForce {
     struct CommonSession;
     struct Session;
     template <typename Mask> struct MultiMaskSession;
-    struct ScratchBuffers;
+    using ScratchBuffers = workspace::BruteForceNormal::Scratch;
     template <typename Mask> struct MultiMaskSolver;
 
     inline static constexpr int multiMaskCandidateThreshold = 512;
-
-    static thread_local ScratchBuffers scratch;
-    static thread_local FlatHashTable<U128, int, U128Hash> cache;
 
     // 读取某个方案下点击候选格后显示的数字。
     static int revealAt(const CommonSession &common, const Session &session, ConfigId config, CandidateId candidate);

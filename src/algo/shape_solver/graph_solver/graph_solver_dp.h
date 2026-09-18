@@ -89,75 +89,8 @@ inline void ShapeSolver::GraphSolver::walkSteps(const Structure::Shape &shape, c
     }
 }
 
-struct ShapeSolver::GraphSolver::Layer {
-  public:
-    // 一个 frontier 在某个累计雷数下的 DP 数据；同一 frontier 的多个 Count
-    // 通过 next 串成链。
-    struct Count {
-        // 已处理 Box 的累计雷数。
-        int mineCount = 0;
-        // 当前 frontier 和 mineCount 下所有具体布局的权重总和。
-        long double ways = 0;
-        // 该 Count 在 momentValues 中的连续数据起点。
-        std::size_t momentOffset = 0;
-        // 同一 State 的下一个 Count；-1 表示链尾。
-        int next = -1;
-    };
-
-    // 一个 frontier 状态；firstCount/lastCount 是 counts 链的首尾下标。
-    struct State {
-        // 该 State 的 packed frontier 在 frontierWords 中的连续数据起点；长度
-        // 由当前 DP 层的 frontier 宽度决定。
-        std::size_t frontierOffset = 0;
-        // 该 frontier 的第一个 Count 在 counts 中的下标；-1 表示为空。
-        int firstCount = -1;
-        // 该 frontier 的最后一个 Count 在 counts 中的下标；用于 O(1) 追加。
-        int lastCount = -1;
-    };
-
-    struct MomentValue {
-        long double value;
-
-        // 由首次贡献完整写入，避免 vector::resize 为每个 long double 先清零。
-        MomentValue() {
-        }
-    };
-
-    // 当前 DP 层的所有不同 frontier；State::frontierOffset 指向它们在
-    // frontierWords 中的 packed 值。
-    std::vector<State> states;
-    // 所有 State 共享的 Count 池；State 的 firstCount/lastCount 指向其中的链。
-    std::vector<Count> counts;
-    // 已闭合 Box 的 ID 列表；momentValues 中每个 Count 的第 i 个值对应
-    // momentBoxes[i]。
-    std::vector<BoxId> momentBoxes;
-    // 按 Count 分段存储已闭合 Box 的加权雷数总和；Count::momentOffset 指向
-    // 当前 Count 的段首。
-    std::vector<MomentValue> momentValues;
-    // 按唯一 frontier 分段存储各活跃 Box 的雷数，每个 slot 占 4 bit；
-    // State::frontierOffset 指向当前 State 的 word 段首。
-    std::vector<std::uint64_t> frontierWords;
-    // frontier 哈希到 states 下标的索引；每个 frontier 只有一个 State。
-    FlatHashTable<U128, std::size_t, U128Hash> index;
-
-    std::uint64_t frontierValue(const State &state, int slot) const {
-        const std::uint64_t word = frontierWords[state.frontierOffset + slot / 16];
-        return (word >> ((slot & 15) * 4)) & 0xf;
-    }
-
-    void reset() {
-        // 清空 Graph DP 层并恢复“空 frontier、0 个累计雷、1 种方式”的初始状态。
-        states.clear();
-        counts.clear();
-        momentBoxes.clear();
-        momentValues.clear();
-        frontierWords.clear();
-        index.clear();
-        states.push_back({0, 0, 0});
-        counts.push_back({0, 1.0L, 0, -1});
-    }
-
-    void advance(const StepPlan &plan, Layer &nextLayer) const {
+template <typename Plan>
+inline void workspace::GraphSolverDp::Layer::advance(const Plan &plan, Layer &nextLayer) const {
         // 执行一步 Graph DP：按当前 Box 可取的雷数转移，按
         // (frontier assignment, total mine count) 合并等价状态，并累计 ways
         // 与每个关闭 Box 的雷数矩。
@@ -167,12 +100,12 @@ struct ShapeSolver::GraphSolver::Layer {
         nextLayer.frontierWords.clear();
         nextLayer.index.clear();
         nextLayer.momentBoxes = momentBoxes;
-        for (const StepPlan::Closing &closing : plan.closings)
+        for (const typename Plan::Closing &closing : plan.closings)
             nextLayer.momentBoxes.push_back(closing.box);
         for (const State &state : states) {
             int minMine = 0;
             int maxMine = plan.boxSize;
-            for (const StepPlan::Check &check : plan.checks) {
+            for (const typename Plan::Check &check : plan.checks) {
                 int partial = 0;
                 for (int i = 0; i < check.readCount; ++i)
                     partial += frontierValue(state, check.readSlots[i]);
@@ -240,7 +173,7 @@ struct ShapeSolver::GraphSolver::Layer {
                         }
                     }
                     for (int i = 0; i < (int)(plan.closings.size()); ++i) {
-                        const StepPlan::Closing &closing = plan.closings[i];
+                        const typename Plan::Closing &closing = plan.closings[i];
                         const long double boxMine = closing.oldSlot < 0 ? mine : frontierValue(state, closing.oldSlot);
                         const long double contribution = boxMine * ways;
                         MomentValue &targetValue = nextLayer.momentValues[targetCount.momentOffset + momentBoxes.size() + i];
@@ -249,8 +182,7 @@ struct ShapeSolver::GraphSolver::Layer {
                 }
             }
         }
-    }
-};
+}
 
 inline ShapeSolver::Distribution::Result ShapeSolver::GraphSolver::materialize(const Layer &layer, int boxCount) {
     // 将 Graph DP 的最终层展开为公开的按总雷数分布结果；moment/ways 的比值
@@ -307,8 +239,8 @@ inline DistributionId ShapeSolver::GraphSolver::analyze(const Structure::Shape &
     const Graph graph = Graph::fromShape(shape);
     const std::vector<BoxId> order = makeOrder(graph, algo);
     // 当前线程复用两层 DP 容量；reset 只清空逻辑元素。
-    static thread_local Layer current;
-    static thread_local Layer next;
+    Layer &current = workspace::GraphSolverDp::current;
+    Layer &next = workspace::GraphSolverDp::next;
     current.reset();
     next.reset();
     walkSteps(shape, order, [&](const StepPlan &plan) {

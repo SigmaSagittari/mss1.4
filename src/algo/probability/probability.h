@@ -10,44 +10,11 @@
 
 namespace mss {
 
-// 生成函数的稀疏区间表示：coeffs[i] 对应 x^(start + i)。
-struct Probability::Poly {
-    int start = 0;
-    std::vector<long double> coeffs;
-    std::span<const long double> view;
-
-    // 返回当前多项式的有效系数视图：叶节点借用组件分布的 ways，卷积节点使用
-    // 自己的 coeffs；调用方只需依赖这个统一入口。
-    std::span<const long double> coefficients() const {
-        return view.empty() ? std::span<const long double>(coeffs) : view;
-    }
-
-    // 将多项式切换为指定指数起点和外部系数视图；清空自有 coeffs 表示该节点
-    // 只是借用叶节点/恒等多项式的存储。
-    void setView(int newStart, std::span<const long double> newCoefficients) {
-        start = newStart;
-        coeffs.clear();
-        view = newCoefficients;
-    }
-};
-
-struct Probability::Workspace {
-    Poly identity;
-    std::vector<DistributionId> distributions;
-    std::vector<std::size_t> componentBoxCounts;
-    std::vector<long double> entryProbabilities;
-    std::vector<Poly> tree;
-    std::vector<Poly> outside;
-};
-
 // 根据盘面约束计算全局雷概率并返回结果。
 // candidates 是满足总雷数的加权方案数，不是去重后的整数布局数；组件 ways 已经
 // 把同一 Box 雷数对应的具体格子布局数量计入权重。
 
 // 高性能复用入口：result 由本函数完全重建，内部容量可跨次调用复用。
-
-//==============================================================================
-inline thread_local Probability::Workspace Probability::globalWorkspace;
 
 inline void Probability::polyMultiply(int leftStart, std::span<const long double> left, int rightStart, std::span<const long double> right,
                                       Poly &out) {
@@ -107,7 +74,7 @@ inline void Probability::analyze(const ObservedBoard::Result &board, const Basic
     // 再用 outside 树为每个组件排除自身，避免为每个组件重复卷积其余组件。
     // 设计目的：globalWorkspace 按线程复用多项式和临时数组，避免热路径反复分配；
     // 分析结果本身拥有自己的存储，不依赖该工作区的生命周期。
-    Workspace &ws = globalWorkspace;
+    Workspace &ws = workspace::Probability::globalWorkspace;
     ws.distributions.clear();
     for (InstanceId instanceId : structure.components) {
         const Structure::Instance &instance = shapes.getInstance(instanceId);

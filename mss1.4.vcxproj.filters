@@ -92,6 +92,9 @@
     <ClInclude Include="src\core\types.h">
       <Filter>src\core</Filter>
     </ClInclude>
+    <ClInclude Include="src\core\workspace.h">
+      <Filter>src\core</Filter>
+    </ClInclude>
     <ClInclude Include="src\core\utility\combinatorics.h">
       <Filter>src\core\utility</Filter>
     </ClInclude>

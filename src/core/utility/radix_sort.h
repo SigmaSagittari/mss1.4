@@ -8,6 +8,8 @@
 #include <utility>
 #include <vector>
 
+#include "core/workspace.h"
+
 namespace mss {
 
 // 通用 LSD 基数排序：语义命名空间（纯空壳，无状态）。
@@ -76,7 +78,8 @@ struct radix_sort {
         if (n <= 1)
             return;
 
-        static thread_local std::vector<std::size_t> target;
+        std::vector<std::size_t> &target =
+            workspace::RadixSort::sortBy<Reader, Swapper>.target;
         target.resize(n);
 
         if (n <= kThreshold) {
@@ -161,7 +164,8 @@ struct radix_sort {
         }
 
         tmp.resize(a.size());
-        static thread_local std::array<std::uint32_t, 256> bucket;
+        std::array<std::uint32_t, 256> &bucket =
+            workspace::RadixSort::sort<Entry, Accessor...>.bucket;
         Entry *src = a.data();
         Entry *dst = tmp.data();
 

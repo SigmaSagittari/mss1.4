@@ -181,8 +181,8 @@ inline BruteForce::Result BruteForce::solve(const ObservedBoard::Result &board, 
         MultiMaskSession<u512> session = MultiMaskSolver<u512>::buildSession(common);
         return MultiMaskSolver<u512>::solve(common, session, config);
     }
-    scratch.reset();
-    cache.clear();
+    workspace::BruteForceNormal::scratch.reset();
+    workspace::BruteForceNormal::cache.clear();
     Session session = buildSession(common);
     session.unopened.resize(common.candidateCount);
     session.unopened.setAll();
@@ -192,19 +192,19 @@ inline BruteForce::Result BruteForce::solve(const ObservedBoard::Result &board, 
     if (config.checkAllMoves) {
         // 该模式直接把根节点每个候选的可赢数写入 result；递归中的负数只作为
         // 未达到阈值时的上界参与剪枝，不会进入公开的 Move::wins。
-        solve<true, true>(common, session, configs, 1, 0, cache, result);
+        solve<true, true>(common, session, configs, 1, 0, workspace::BruteForceNormal::cache, result);
     } else {
         result.moves.resize(1);
         // 单步模式把 minWins 传入递归：正返回值才是推荐步的可赢数；负返回值
         // 表示当前残局最多只能赢 abs(value) 局，故公开结果必须保持为空。
-        const int wins = solve<false, true>(common, session, configs, config.minWins, 0, cache, result);
+        const int wins = solve<false, true>(common, session, configs, config.minWins, 0, workspace::BruteForceNormal::cache, result);
         if (wins >= config.minWins)
             result.moves[0].wins = wins;
         else
             result.moves.clear();
     }
     result.nodes = session.nodes;
-    cache.clear();
+    workspace::BruteForceNormal::cache.clear();
     return result;
 }
 

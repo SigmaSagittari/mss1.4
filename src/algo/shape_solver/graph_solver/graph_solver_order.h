@@ -73,8 +73,9 @@ inline std::pair<int, int> ShapeSolver::GraphSolver::orderScore(const Graph &gra
     // 局部排列和模拟退火结果，优先降低 Graph DP 的峰值状态数。
     const int boxCount = order.size();
     // 当前线程串行复用评分 scratch，避免 SA 每轮重复申请。
-    static thread_local std::vector<int> remaining;
-    static thread_local std::vector<char> selected;
+    workspace::GraphSolverOrder::OrderScore &orderWorkspace = workspace::GraphSolverOrder::orderScore;
+    std::vector<int> &remaining = orderWorkspace.remaining;
+    std::vector<char> &selected = orderWorkspace.selected;
     remaining.resize(graph.offsets.size() - 1);
     selected.assign(remaining.size(), 0);
     for (BoxId box = 0; box < boxCount; ++box)
@@ -274,8 +275,9 @@ inline std::vector<BoxId> ShapeSolver::GraphSolver::makeSAOrder(const Graph &gra
     const double cooling = std::pow(endTemperature / startTemperature, 1.0 / (iterations - 1));
     std::vector<BoxId> bestOrder = seed;
     // 当前线程复用 SA 的两个候选缓冲；接受候选时交换缓冲所有权。
-    static thread_local std::vector<BoxId> current;
-    static thread_local std::vector<BoxId> candidate;
+    workspace::GraphSolverOrder::MakeSAOrder &saWorkspace = workspace::GraphSolverOrder::makeSAOrder;
+    std::vector<BoxId> &current = saWorkspace.current;
+    std::vector<BoxId> &candidate = saWorkspace.candidate;
     current.reserve(boxCount);
     candidate.reserve(boxCount);
     std::pair<int, int> bestScore = orderScore(graph, bestOrder);

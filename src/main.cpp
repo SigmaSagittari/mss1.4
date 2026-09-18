@@ -24,7 +24,7 @@
  *   C 风格的 (int) 等既有写法不因个人偏好改写；不使用异常、new/delete 表达式或宏式业务逻辑。
  *
  * 性能与资源
- * - 热路径优先复用 thread_local 工作区、clear/resize/reserve 和调用方提供的临时 buffer；避免循环内分配。
+ * - 热路径优先复用线程工作区、clear/resize/reserve 和调用方提供的临时 buffer；避免循环内分配。
  * - 整数句柄、紧凑的 uint8_t/char 存储、FlatHashTable、DynamicBitset 属于既有性能模型，不随意换回通用容器。
  * - 算法专用阈值放在所属模块；跨层共享的魔法数字才放 core/config.h；改动性能必须用测试或基准验证。
  * - FlatHashTable 只支持插入/查找，不支持删除；clear 保留容量，调用方必须遵守这个生命周期约定。

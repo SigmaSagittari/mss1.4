@@ -5,6 +5,7 @@
 
 #include "algo/observed_board.h"
 #include "core/types.h"
+#include "core/workspace.h"
 
 namespace mss {
 
@@ -197,8 +198,10 @@ inline void Basic::update(Result &result, Delta &delta, const ObservedBoard::Res
 
     const int rows = board.rows;
     const int cols = board.cols;
-    static thread_local std::vector<CellId> pending;
-    static thread_local std::vector<unsigned char> queued;
+    using UpdateWorkspace = workspace::Basic::Update;
+    UpdateWorkspace &updateWorkspace = workspace::Basic::update;
+    std::vector<CellId> &pending = updateWorkspace.pending;
+    std::vector<unsigned char> &queued = updateWorkspace.queued;
     pending.clear();
     const std::size_t queueSize = (rows + 1) * (cols + 1);
     if (queued.size() != queueSize)

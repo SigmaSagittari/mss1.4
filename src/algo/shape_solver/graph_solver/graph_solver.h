@@ -14,6 +14,7 @@
 #include "algo/shape_solver/shape_solver_common.h"
 #include "core/assert.h"
 #include "core/utility/rng.h"
+#include "core/workspace.h"
 
 namespace mss {
 
@@ -84,7 +85,7 @@ struct ShapeSolver::GraphSolver {
     template <typename Callback> static void walkSteps(const Structure::Shape &shape, const std::vector<BoxId> &order, Callback &&callback);
 
   private:
-    struct Layer;
+    using Layer = workspace::GraphSolverDp::Layer;
     static ShapeSolver::Distribution::Result materialize(const Layer &layer, int boxCount);
 
   public:

@@ -112,6 +112,7 @@
     <ClInclude Include="src\core\assert.h" />
     <ClInclude Include="src\core\config.h" />
     <ClInclude Include="src\core\types.h" />
+    <ClInclude Include="src\core\workspace.h" />
     <ClInclude Include="src\core\utility\combinatorics.h" />
     <ClInclude Include="src\core\utility\dynamic_bitset.h" />
     <ClInclude Include="src\core\utility\flat_hashtable.h" />

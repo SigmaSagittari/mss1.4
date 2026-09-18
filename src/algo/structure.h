@@ -10,6 +10,7 @@
 #include "core/types.h"
 #include "core/utility/flat_hashtable.h"
 #include "core/utility/hash.h"
+#include "core/workspace.h"
 
 namespace mss {
 
@@ -122,35 +123,9 @@ struct Structure {
 
     using ShapePool = Pool;
 
-    struct Workspace {
-        struct Analyze {
-            Grid<char> visited;
-            Grid<U128> cellHash;
-            std::vector<CellId> cells;
-        } analyze;
-
-        struct Update {
-            Grid<char> visited;
-            Grid<U128> cellHash;
-            std::vector<CellId> cells;
-            Grid<char> dirty;
-            std::vector<CellId> dirtyCells;
-            std::vector<char> removed;
-            std::vector<InstanceId> staged;
-        } update;
-
-        FlatHashTable<U128, BoxId, U128Hash> hashBox;
-        std::vector<BoxId> boxOfCells;
-        std::vector<std::array<CellId, 9>> buckets;
-        std::vector<std::uint8_t> bucketSize;
-        std::vector<BoxId> boxCursor;
-        std::vector<char> boxUsed;
-        std::vector<BoxId> allBoxIds;
-    };
+    using Workspace = workspace::Structure::Buffers;
 
   private:
-    static thread_local Workspace workspace;
-
     // 判断观测状态是否为已翻开的数字。
     static bool isNumber(ObservedBoard::CellState state);
     // 将数字观测状态转换为整数值。
@@ -237,8 +212,6 @@ inline void Structure::clearInstance(InstanceId instance, const Structure::Pool 
         cellLoc[cell] = CellLocation{};
 }
 
-inline thread_local Structure::Workspace Structure::workspace;
-
 inline ShapeId Structure::Pool::internShape(Shape shape) {
     shape.hash = Structure::computeHash(shape);
     if (const ShapeId *found = shapeIndex_.find(shape.hash))
@@ -280,13 +253,13 @@ inline Structure::Result Structure::analyze(const ObservedBoard::Result &board, 
     Result result;
     result.cellLoc.assign((rows + 1) * (cols + 1), CellLocation{});
 
-    if (Structure::workspace.analyze.visited.rows() != rows || Structure::workspace.analyze.visited.cols() != cols) {
-        Structure::workspace.analyze.visited.resize(rows, cols, 0);
-        Structure::workspace.analyze.cellHash.resize(rows, cols, U128{});
-        Structure::workspace.analyze.cells.reserve(rows * cols / 2);
+    if (workspace::Structure::workspace.analyze.visited.rows() != rows || workspace::Structure::workspace.analyze.visited.cols() != cols) {
+        workspace::Structure::workspace.analyze.visited.resize(rows, cols, 0);
+        workspace::Structure::workspace.analyze.cellHash.resize(rows, cols, U128{});
+        workspace::Structure::workspace.analyze.cells.reserve(rows * cols / 2);
     } else {
-        Structure::workspace.analyze.visited.fill(0);
-        Structure::workspace.analyze.cellHash.fill(U128{});
+        workspace::Structure::workspace.analyze.visited.fill(0);
+        workspace::Structure::workspace.analyze.cellHash.fill(U128{});
     }
     for (int x = 1; x <= rows; ++x)
         for (int y = 1; y <= cols; ++y)
@@ -294,17 +267,17 @@ inline Structure::Result Structure::analyze(const ObservedBoard::Result &board, 
                 const std::uint64_t position = Structure::positionSeed(x, y, rows, cols);
                 const U128 seed{splitmix64(position), splitmix64(position + 0x9e3779b97f4a7c15ULL)};
                 forEachAdjacent(x, y, rows, cols, [&](int nx, int ny) {
-                    Structure::workspace.analyze.cellHash[nx][ny] += seed;
+                    workspace::Structure::workspace.analyze.cellHash[nx][ny] += seed;
                 });
             }
     for (int x = 1; x <= rows; ++x)
         for (int y = 1; y <= cols; ++y)
-            if (basic.marks[x][y] == Basic::Mark::H && !Structure::workspace.analyze.visited[x][y]) {
-                Structure::workspace.analyze.cells.clear();
-                Structure::collectComponent(board.id(x, y), board, basic, Structure::workspace.analyze.visited,
-                                            Structure::workspace.analyze.cells);
-                result.components.push_back(Structure::buildComponent(Structure::workspace.analyze.cells, board, basic,
-                                                                      Structure::workspace.analyze.cellHash, pool));
+            if (basic.marks[x][y] == Basic::Mark::H && !workspace::Structure::workspace.analyze.visited[x][y]) {
+                workspace::Structure::workspace.analyze.cells.clear();
+                Structure::collectComponent(board.id(x, y), board, basic, workspace::Structure::workspace.analyze.visited,
+                                            workspace::Structure::workspace.analyze.cells);
+                result.components.push_back(Structure::buildComponent(workspace::Structure::workspace.analyze.cells, board, basic,
+                                                                      workspace::Structure::workspace.analyze.cellHash, pool));
             }
     for (ComponentId component = 0; component < (int)(result.components.size()); ++component)
         Structure::remapInstance(result.components[component], component, pool, result.cellLoc);
@@ -337,8 +310,8 @@ inline void Structure::collectComponent(CellId start, const ObservedBoard::Resul
 
 inline InstanceId Structure::buildComponent(const std::vector<CellId> &cells, const ObservedBoard::Result &board,
                                             const Basic::Result &basic, Grid<U128> &cellHash, Pool &pool) {
-    Structure::workspace.hashBox.clear();
-    Structure::workspace.boxOfCells.assign(cells.size(), -1);
+    workspace::Structure::workspace.hashBox.clear();
+    workspace::Structure::workspace.boxOfCells.assign(cells.size(), -1);
     Shape shape;
     for (int i = 0; i < (int)(cells.size()); ++i) {
         const auto [x, y] = board.pos(cells[i]);
@@ -346,69 +319,69 @@ inline InstanceId Structure::buildComponent(const std::vector<CellId> &cells, co
             continue;
         const U128 hash = cellHash[x][y];
         BoxId box;
-        if (const BoxId *found = Structure::workspace.hashBox.find(hash))
+        if (const BoxId *found = workspace::Structure::workspace.hashBox.find(hash))
             box = *found;
         else {
             box = shape.boxes.size();
             shape.boxes.push_back({0});
-            Structure::workspace.hashBox.emplace(hash, box);
+            workspace::Structure::workspace.hashBox.emplace(hash, box);
         }
         ++shape.boxes[box].size;
-        Structure::workspace.boxOfCells[i] = box;
+        workspace::Structure::workspace.boxOfCells[i] = box;
         cellHash[x][y] = U128{(std::uint64_t)(box), 0};
     }
-    Structure::workspace.bucketSize.assign(shape.boxes.size(), 0);
-    if (Structure::workspace.buckets.size() < shape.boxes.size())
-        Structure::workspace.buckets.resize(shape.boxes.size());
+    workspace::Structure::workspace.bucketSize.assign(shape.boxes.size(), 0);
+    if (workspace::Structure::workspace.buckets.size() < shape.boxes.size())
+        workspace::Structure::workspace.buckets.resize(shape.boxes.size());
     std::size_t numberCells = 0;
     for (int i = 0; i < (int)(cells.size()); ++i) {
-        const BoxId box = Structure::workspace.boxOfCells[i];
+        const BoxId box = workspace::Structure::workspace.boxOfCells[i];
         if (box == -1) {
             ++numberCells;
             continue;
         }
-        Structure::workspace.buckets[box][Structure::workspace.bucketSize[box]++] = cells[i];
+        workspace::Structure::workspace.buckets[box][workspace::Structure::workspace.bucketSize[box]++] = cells[i];
     }
     Instance instance;
     instance.boxes.boxOf.resize(shape.boxes.size() + 1);
     for (int box = 0; box < (int)(shape.boxes.size()); ++box)
-        instance.boxes.boxOf[box + 1] = instance.boxes.boxOf[box] + Structure::workspace.bucketSize[box];
+        instance.boxes.boxOf[box + 1] = instance.boxes.boxOf[box] + workspace::Structure::workspace.bucketSize[box];
     instance.boxes.cells.resize(instance.boxes.boxOf.back());
-    Structure::workspace.boxCursor.assign(shape.boxes.size(), 0);
+    workspace::Structure::workspace.boxCursor.assign(shape.boxes.size(), 0);
     for (int i = 0; i < (int)(cells.size()); ++i) {
-        const BoxId box = Structure::workspace.boxOfCells[i];
+        const BoxId box = workspace::Structure::workspace.boxOfCells[i];
         if (box == -1)
             continue;
-        instance.boxes.cells[instance.boxes.boxOf[box] + Structure::workspace.boxCursor[box]++] = cells[i];
+        instance.boxes.cells[instance.boxes.boxOf[box] + workspace::Structure::workspace.boxCursor[box]++] = cells[i];
     }
     shape.constraints_.reserve(numberCells);
     instance.constraintCells.reserve(numberCells);
-    Structure::workspace.boxUsed.assign(shape.boxes.size(), 0);
-    Structure::workspace.allBoxIds.clear();
+    workspace::Structure::workspace.boxUsed.assign(shape.boxes.size(), 0);
+    workspace::Structure::workspace.allBoxIds.clear();
     for (CellId cell : cells) {
         const auto [x, y] = board.pos(cell);
         if (!Structure::isNumber(board.board[x][y]))
             continue;
         int sum = Structure::numberValue(board.board[x][y]);
-        const std::uint32_t start = Structure::workspace.allBoxIds.size();
+        const std::uint32_t start = workspace::Structure::workspace.allBoxIds.size();
         forEachAdjacent(x, y, board.rows, board.cols, [&](int nx, int ny) {
             if (basic.marks[nx][ny] == Basic::Mark::F)
                 --sum;
             if (basic.marks[nx][ny] != Basic::Mark::H)
                 return;
             const BoxId box = cellHash[nx][ny].lo;
-            if (!Structure::workspace.boxUsed[box]) {
-                Structure::workspace.boxUsed[box] = 1;
-                Structure::workspace.allBoxIds.push_back(box);
+            if (!workspace::Structure::workspace.boxUsed[box]) {
+                workspace::Structure::workspace.boxUsed[box] = 1;
+                workspace::Structure::workspace.allBoxIds.push_back(box);
             }
         });
-        for (int i = start; i < (int)(Structure::workspace.allBoxIds.size()); ++i)
-            Structure::workspace.boxUsed[Structure::workspace.allBoxIds[i]] = 0;
-        const std::uint8_t count = Structure::workspace.allBoxIds.size() - start;
+        for (int i = start; i < (int)(workspace::Structure::workspace.allBoxIds.size()); ++i)
+            workspace::Structure::workspace.boxUsed[workspace::Structure::workspace.allBoxIds[i]] = 0;
+        const std::uint8_t count = workspace::Structure::workspace.allBoxIds.size() - start;
         shape.constraints_.push_back({sum, start, count});
         instance.constraintCells.push_back(cell);
     }
-    shape.boxIds_.insert(shape.boxIds_.end(), Structure::workspace.allBoxIds.begin(), Structure::workspace.allBoxIds.end());
+    shape.boxIds_.insert(shape.boxIds_.end(), workspace::Structure::workspace.allBoxIds.begin(), workspace::Structure::workspace.allBoxIds.end());
     instance.shape = pool.internShape(std::move(shape));
     return pool.internInstance(std::move(instance));
 }
@@ -430,7 +403,7 @@ inline void Structure::update(Result &result, Delta &delta, const ObservedBoard:
                               const ObservedBoard::Delta &updates) {
     const int rows = board.rows;
     const int cols = board.cols;
-    Structure::Workspace::Update &scratch = Structure::workspace.update;
+    Structure::Workspace::Update &scratch = workspace::Structure::workspace.update;
     if (scratch.dirty.rows() != rows || scratch.dirty.cols() != cols) {
         scratch.dirty.resize(rows, cols, 0);
         scratch.visited.resize(rows, cols, 0);

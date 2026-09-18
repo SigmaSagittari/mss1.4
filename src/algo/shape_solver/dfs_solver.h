@@ -5,33 +5,14 @@
 #include <vector>
 
 #include "algo/shape_solver/shape_solver_common.h"
+#include "core/workspace.h"
 
 namespace mss {
 
 struct ShapeSolver::DfsSolver {
   private:
-    struct AssignmentWorkspace {
-        struct Frame {
-            int index = 0;
-            int nextMine = 0;
-            int appliedIndex = -1;
-            int appliedMine = 0;
-            long double ways = 0;
-        };
-
-        std::vector<int> boxHead;
-        std::vector<int> constraintNext;
-        std::vector<int> constraintIds;
-        std::vector<int> constraintSum;
-        std::vector<int> constraintMaxAdd;
-        std::vector<int> currentSum;
-        std::vector<int> assignedSize;
-        std::vector<char> assignment;
-        std::vector<Frame> frames;
-    };
-
-    static thread_local AssignmentWorkspace workspace;
-    static AssignmentWorkspace &assignmentWorkspace();
+    using AssignmentWorkspace = workspace::DfsSolver::ForEachAssignment;
+    using AnalyzeWorkspace = workspace::DfsSolver::Analyze;
 
   public:
     // 回调收到一个 Box->雷数赋值及其具体布局权重；weight 是各 Box 内 C(size,k)
@@ -41,19 +22,11 @@ struct ShapeSolver::DfsSolver {
     static DistributionId analyze(const Structure::Shape &shape, Distribution::Pool &pool);
 };
 
-//==============================================================================
-inline thread_local ShapeSolver::DfsSolver::AssignmentWorkspace ShapeSolver::DfsSolver::workspace;
-
-inline ShapeSolver::DfsSolver::AssignmentWorkspace &ShapeSolver::DfsSolver::assignmentWorkspace() {
-    // 返回当前线程专用的 DFS 分配工作区。
-    return workspace;
-}
-
 template <typename Callback>
 inline void mss::ShapeSolver::DfsSolver::forEachAssignment(const Structure::Shape &shape, Callback &&callback) {
     // 深度优先枚举满足全部约束的 Box 雷数赋值；每加入一个 Box 就用当前和与
     // 剩余容量剪枝，因此 callback 只看合法 assignment，不需要再次检查约束。
-    AssignmentWorkspace &workspace = assignmentWorkspace();
+    AssignmentWorkspace &workspace = workspace::DfsSolver::forEachAssignment;
     const int boxCount = shape.boxes.size();
     const int constraintCount = shape.constraintCount();
 
@@ -158,8 +131,9 @@ inline DistributionId mss::ShapeSolver::DfsSolver::analyze(const Structure::Shap
     for (const Structure::Shape::Box &box : shape.boxes)
         maxMineCount += box.size;
 
-    thread_local std::vector<long double> ways;
-    thread_local std::vector<long double> moments;
+    AnalyzeWorkspace &analyzeWorkspace = workspace::DfsSolver::analyze;
+    std::vector<long double> &ways = analyzeWorkspace.ways;
+    std::vector<long double> &moments = analyzeWorkspace.moments;
     ways.assign(maxMineCount + 1, 0.0L);
     moments.assign((maxMineCount + 1) * boxCount, 0.0L);
     forEachAssignment(shape, [&](std::span<const char> assignment, long double weight) {

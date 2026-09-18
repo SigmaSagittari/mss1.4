@@ -9,6 +9,7 @@
 #include "algo/shape_solver/shape_solver.h"
 #include "algo/structure.h"
 #include "core/types.h"
+#include "core/workspace.h"
 
 namespace mss {
 
@@ -26,7 +27,7 @@ namespace mss {
 // 约束：
 //   - 只读算法层接口，不改 basic/structure/probability；countWithForces
 //     临时复制盘面 + 强制事实后全量重建，天然无副作用。
-//   - 全程无文件级可变全局（无 static/thread_local 命名空间状态）。
+//   - 工作区集中放在 core/workspace.h；本头只保留算法接口和局部引用。
 //   - 数值口径与 Java 一致：tally 用"方案数"单位（long double），阈值
 //     （0.025 / 0.9 / 0.6）与魔法数原样保留；等值比较用相对容差。
 // ─────────────────────────────────────────────────────────────
@@ -135,12 +136,7 @@ struct CellList {
     }
 };
 
-struct ForceWorkspace {
-    Probability::Result probability;
-    ObservedBoard::Delta boardDelta;
-};
-
-thread_local ForceWorkspace forceWs;
+using ForceWorkspace = workspace::LongTermRisk::ForceWorkspace<Probability::Result, ObservedBoard::Delta>;
 
 enum class TallyKind : unsigned char {
     FullHorizontal,
@@ -151,43 +147,20 @@ enum class TallyKind : unsigned char {
     CellBox,
 };
 
-struct InfluenceTallyCache {
-    std::array<std::vector<long double>, 6> values;
-    std::array<std::vector<unsigned char>, 6> ready;
-    const void *owner = nullptr;
-    const ObservedBoard::Result *board = nullptr;
-    const Basic::Result *basic = nullptr;
-    const Structure::Result *structure = nullptr;
-    const Probability::Result *probability = nullptr;
-    const Structure::ShapePool *shapes = nullptr;
-    const ShapeSolver::Distribution::Pool *distributions = nullptr;
-
-    void reset(int rows, int cols) {
-        const int size = (rows + 1) * (cols + 1);
-        for (int i = 0; i < 6; ++i) {
-            values[i].resize(size);
-            ready[i].assign(size, 0);
-        }
-        owner = nullptr;
-    }
-
-    bool reusable(const ObservedBoard::Result &board_, const Basic::Result &basic_, const Structure::Result &structure_,
-                  const Probability::Result &probability_, const Structure::ShapePool &shapes_,
-                  const ShapeSolver::Distribution::Pool &distributions_, const LongTermRiskReference::Influence &full) const {
-        return owner == full.tiles.data() && board == &board_ && basic == &basic_ && structure == &structure_ &&
-               probability == &probability_ && shapes == &shapes_ && distributions == &distributions_;
-    }
-};
-
-thread_local InfluenceTallyCache influenceTallyCache;
+using InfluenceTallyCache = workspace::LongTermRisk::InfluenceTallyCache<
+    LongTermRiskReference::Influence, ObservedBoard::Result, Basic::Result, Structure::Result, Probability::Result, Structure::ShapePool,
+    ShapeSolver::Distribution::Pool>;
 
 template <typename Compute> long double cachedTally(TallyKind kind, int index, Compute &&compute) {
+    InfluenceTallyCache &cache = workspace::LongTermRisk::influenceTallyCache<
+        LongTermRiskReference::Influence, ObservedBoard::Result, Basic::Result, Structure::Result, Probability::Result, Structure::ShapePool,
+        ShapeSolver::Distribution::Pool>;
     const int slot = (int)(kind);
-    if (influenceTallyCache.ready[slot][index])
-        return influenceTallyCache.values[slot][index];
+    if (cache.ready[slot][index])
+        return cache.values[slot][index];
     const long double value = compute();
-    influenceTallyCache.values[slot][index] = value;
-    influenceTallyCache.ready[slot][index] = 1;
+    cache.values[slot][index] = value;
+    cache.ready[slot][index] = 1;
     return value;
 }
 
@@ -274,8 +247,9 @@ long double LongTermRiskReference::countWithForces(const ObservedBoard::Result &
     ObservedBoard::Result &forced = const_cast<ObservedBoard::Result &>(board);
     Basic::Result &forcedBasic = const_cast<Basic::Result &>(basic);
     Structure::Result &forcedStructure = const_cast<Structure::Result &>(structure);
-    Probability::Result &forcedProbability = forceWs.probability;
-    ObservedBoard::Delta &boardDelta = forceWs.boardDelta;
+    ForceWorkspace &force = workspace::LongTermRisk::forceWorkspace<Probability::Result, ObservedBoard::Delta>;
+    Probability::Result &forcedProbability = force.probability;
+    ObservedBoard::Delta &boardDelta = force.boardDelta;
     boardDelta.changes.clear();
     boardDelta.changes.reserve(mines.size() + safes.size());
     for (CellId cell : mines)
@@ -309,14 +283,17 @@ LongTermRiskReference::Influence LongTermRiskReference::findInfluence(const Obse
     const int size = (board.rows + 1) * (board.cols + 1);
     out.tiles.assign(size, 0.0L);
     out.enablers.assign(size, 0.0L);
-    influenceTallyCache.reset(board.rows, board.cols);
-    influenceTallyCache.owner = out.tiles.data();
-    influenceTallyCache.board = &board;
-    influenceTallyCache.basic = &basic;
-    influenceTallyCache.structure = &structure;
-    influenceTallyCache.probability = &probability;
-    influenceTallyCache.shapes = &shapes;
-    influenceTallyCache.distributions = &distributions;
+    InfluenceTallyCache &tallyCache = workspace::LongTermRisk::influenceTallyCache<
+        LongTermRiskReference::Influence, ObservedBoard::Result, Basic::Result, Structure::Result, Probability::Result, Structure::ShapePool,
+        ShapeSolver::Distribution::Pool>;
+    tallyCache.reset(board.rows, board.cols);
+    tallyCache.owner = out.tiles.data();
+    tallyCache.board = &board;
+    tallyCache.basic = &basic;
+    tallyCache.structure = &structure;
+    tallyCache.probability = &probability;
+    tallyCache.shapes = &shapes;
+    tallyCache.distributions = &distributions;
     if (probability.candidates() == 0.0L)
         return out;
     const int minesLeft = board.totalMines - basic.mineSum;
@@ -444,7 +421,10 @@ long double LongTermRiskReference::findInfluence(CellId cell, const ObservedBoar
         return 0.0L;
     const int minesLeft = board.totalMines - basic.mineSum;
     const auto [x, y] = board.pos(cell);
-    const bool useTallyCache = influenceTallyCache.reusable(board, basic, structure, probability, shapes, distributions, full);
+    InfluenceTallyCache &tallyCache = workspace::LongTermRisk::influenceTallyCache<
+        LongTermRiskReference::Influence, ObservedBoard::Result, Basic::Result, Structure::Result, Probability::Result, Structure::ShapePool,
+        ShapeSolver::Distribution::Pool>;
+    const bool useTallyCache = tallyCache.reusable(board, basic, structure, probability, shapes, distributions, full);
 
     // 横：含本格的两对（Java getHorizontal(tile) 与 getHorizontal(x-1, y)）；
     // 源格 = 对左右两列 (col-1, col+2)、三行 (row-1..row+1)。

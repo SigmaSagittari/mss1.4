@@ -233,55 +233,9 @@ template <typename Mask> struct BruteForce::MultiMaskSolver {
     using Result = BruteForce::Result;
     inline static constexpr int kJavaLiteConfigThreshold = 10000;
 
-    struct Layer {
-        std::vector<int> deaths;
-        std::vector<int> order;
-        std::vector<int> suffix;
-        std::array<std::vector<ConfigId>, 9> groups;
-        std::vector<std::pair<int, int>> groupList;
-        std::vector<U128> safeHashes;
-        std::vector<int> safeGroupIds;
-        std::vector<int> safeGroupSizes;
-        std::vector<int> safeGroupOffsets;
-        std::vector<ConfigId> safeGroupedConfigs;
-        std::vector<std::span<ConfigId>> safeGroupList;
-    };
+    using Layer = workspace::BruteForceMultiMask::Layer<Mask>;
+    using Scratch = workspace::BruteForceMultiMask::Scratch<Mask>;
 
-    struct Scratch {
-        // 返回指定递归深度的可复用临时缓冲层。
-        Layer &layer(int depth) {
-            if ((int)(layers.size()) <= depth)
-                layers.emplace_back();
-            return layers[depth];
-        }
-
-        // 清空本轮搜索留下的临时容器，同时保留已分配容量。
-        void reset() {
-            for (Layer &layer : layers) {
-                layer.deaths.clear();
-                layer.order.clear();
-                layer.suffix.clear();
-                for (std::vector<ConfigId> &group : layer.groups)
-                    group.clear();
-                layer.groupList.clear();
-                layer.safeHashes.clear();
-                layer.safeGroupIds.clear();
-                layer.safeGroupSizes.clear();
-                layer.safeGroupOffsets.clear();
-                layer.safeGroupedConfigs.clear();
-                layer.safeGroupList.clear();
-            }
-            safeGroupTable.clear();
-        }
-
-        std::deque<Layer> layers;
-        FlatHashTable<U128, int, U128Hash> safeGroupTable;
-        std::array<std::array<int, Mask::kBitCount>, 9> javaLiteMineCounts{};
-        std::array<int, 9> javaLiteGroupSizes{};
-    };
-
-    inline static thread_local Scratch scratch;
-    inline static thread_local FlatHashTable<U128, int, U128Hash> cache;
     // 把完整方案表转换成多 word 雷掩码和揭示数字表。
     static Session buildSession(const Common &common);
     // 读取某个方案下点击候选格后的揭示数字。
@@ -337,8 +291,8 @@ inline int BruteForce::MultiMaskSolver<Mask>::javaLiteScore(const BruteForce::Co
                                                             std::span<const ConfigId> configs, int candidate) {
     // 在死亡数相同的候选中，按“点击后各数字分支还能暴露多少低风险格”排序；
     // 这只改变搜索顺序，不改变 solve 的返回值协议。
-    std::array<std::array<int, Mask::kBitCount>, 9> &mineCounts = scratch.javaLiteMineCounts;
-    std::array<int, 9> &groupSizes = scratch.javaLiteGroupSizes;
+    std::array<std::array<int, Mask::kBitCount>, 9> &mineCounts = workspace::BruteForceMultiMask::scratch<Mask>.javaLiteMineCounts;
+    std::array<int, 9> &groupSizes = workspace::BruteForceMultiMask::scratch<Mask>.javaLiteGroupSizes;
     for (std::array<int, Mask::kBitCount> &counts : mineCounts)
         counts.fill(0);
     groupSizes.fill(0);
@@ -382,7 +336,7 @@ template <typename Mask>
 inline std::vector<int> &BruteForce::MultiMaskSolver<Mask>::orderCandidates(const BruteForce::CommonSession &common,
                                                                             const BruteForce::MultiMaskSession<Mask> &session,
                                                                             std::span<const ConfigId> configs, int depth) {
-    Layer &buf = scratch.layer(depth);
+    Layer &buf = workspace::BruteForceMultiMask::scratch<Mask>.layer(depth);
     std::vector<int> &deaths = buf.deaths;
     deaths.assign(common.candidateCount, 0);
     for (ConfigId config : configs)
@@ -433,7 +387,7 @@ inline int BruteForce::MultiMaskSolver<Mask>::solve(const BruteForce::CommonSess
         // 方案总数不足 need，-n 表示这是本节点可达到的最大上界。
         if (need > n)
             return -n;
-        Layer &buf = scratch.layer(depth);
+        Layer &buf = workspace::BruteForceMultiMask::scratch<Mask>.layer(depth);
         result.moves.resize(common.candidateCount);
         int best = 0;
         std::array<std::vector<ConfigId>, 9> &groups = buf.groups;
@@ -486,7 +440,7 @@ inline int BruteForce::MultiMaskSolver<Mask>::solve(const BruteForce::CommonSess
             if (-*cached < need)
                 return *cached;
         }
-        Layer &buf = scratch.layer(depth);
+        Layer &buf = workspace::BruteForceMultiMask::scratch<Mask>.layer(depth);
         const int m = common.candidateCount;
         std::vector<int> &deaths = buf.deaths;
         Mask safeMask = s.unopened;
@@ -527,7 +481,7 @@ inline int BruteForce::MultiMaskSolver<Mask>::solve(const BruteForce::CommonSess
             }
             std::vector<std::span<ConfigId>> &groupList = buf.safeGroupList;
             groupList.clear();
-            FlatHashTable<U128, int, U128Hash> &groupTable = scratch.safeGroupTable;
+            FlatHashTable<U128, int, U128Hash> &groupTable = workspace::BruteForceMultiMask::scratch<Mask>.safeGroupTable;
             std::vector<int> &groupIds = buf.safeGroupIds;
             std::vector<int> &groupSizes = buf.safeGroupSizes;
             std::vector<int> &groupOffsets = buf.safeGroupOffsets;
@@ -698,20 +652,20 @@ inline BruteForce::Result BruteForce::MultiMaskSolver<Mask>::solve(const BruteFo
     BruteForce::Result result;
     result.possibilities = common.possibilityCount;
     session.unopened = Mask::all(common.candidateCount);
-    scratch.reset();
-    cache.clear();
+    workspace::BruteForceMultiMask::scratch<Mask>.reset();
+    workspace::BruteForceMultiMask::cache<Mask>.clear();
     std::vector<ConfigId> configs(common.possibilityCount);
     for (int i = 0; i < (int)(configs.size()); ++i)
         configs[i] = i;
     if (config.checkAllMoves) {
         // 该模式直接暴露根节点各候选的可赢数；递归负值只是阈值失败上界，
         // 不能写进公开的 Move::wins。
-        solve<true, true>(common, session, configs, 1, 0, cache, result);
+        solve<true, true>(common, session, configs, 1, 0, workspace::BruteForceMultiMask::cache<Mask>, result);
     } else {
         result.moves.resize(1);
         // 这里把 minWins 交给递归做阈值剪枝；只有正返回值才形成推荐步，
         // 负值说明最多只能赢 abs(value) 局，因此清空公开动作结果。
-        const int wins = solve<false, true>(common, session, configs, config.minWins, 0, cache, result);
+        const int wins = solve<false, true>(common, session, configs, config.minWins, 0, workspace::BruteForceMultiMask::cache<Mask>, result);
         if (wins >= config.minWins)
             result.moves[0].wins = wins;
         else

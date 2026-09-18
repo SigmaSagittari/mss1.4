@@ -17,12 +17,6 @@
 
 namespace mss {
 
-struct Probability::ObserveTransfer {
-    int neighborMines = 0;
-    int componentMines = 0;
-    long double ways = 0.0L;
-};
-
 // 点开一个隐藏格后的结果分布。
 // 下标 0..8 为显示数字，下标 9 为爆炸。
 struct Probability::ObserveResult {
@@ -32,27 +26,6 @@ struct Probability::ObserveResult {
 // 计算点开 cell 后的结果分布。
 // cell 必须是 Hidden；结果下标 9 表示爆炸，0..8 表示点开后数字。
 // distributions 可被补充组件分布缓存；其内容不代表 observe 的临时状态。
-
-//==============================================================================
-struct Probability::ObservePoly {
-    int start = 0;
-    std::vector<long double> coeffs;
-};
-
-struct Probability::ObserveWorkspace {
-    ObservePoly rest;
-    ObservePoly all;
-    ObservePoly mult;
-    std::vector<ComponentId> captured;
-    std::vector<char> seen;
-    std::vector<int> adjacentBoxCells;
-    std::vector<long double> dp;
-    std::vector<long double> nextDp;
-    std::vector<long double> restWays;
-    std::vector<ObserveTransfer> transfers;
-};
-
-inline thread_local Probability::ObserveWorkspace Probability::observeWorkspace;
 
 inline void Probability::observePolyMultiply(int leftStart, std::span<const long double> left, int rightStart,
                                              std::span<const long double> right, ObservePoly &out) {
@@ -112,7 +85,7 @@ inline Probability::ObserveResult Probability::observe(const ObservedBoard::Resu
         return result;
     }
 
-    ObserveWorkspace &ws = observeWorkspace;
+    ObserveWorkspace &ws = workspace::ProbabilityObserve::observeWorkspace;
     const bool xInUnknown = basic.marks[x][y] == Mark::Unknown;
     const CellLocation xLocation = structure.cellLoc[cell];
     const bool xInBox = xLocation.component >= 0;
@@ -240,7 +213,9 @@ inline void Probability::buildDfsTable(const Structure::Shape &shape, std::span<
     int maxMineCount = 0;
     for (const Structure::Shape::Box &box : shape.boxes)
         maxMineCount += box.size;
-    thread_local std::vector<std::array<long double, 9>> accumulated;
+    using Workspace = workspace::ProbabilityObserve::BuildDfsTable;
+    Workspace &dfsWorkspace = workspace::ProbabilityObserve::buildDfsWorkspace;
+    std::vector<std::array<long double, 9>> &accumulated = dfsWorkspace.accumulated;
     accumulated.assign(maxMineCount + 1, {});
     ShapeSolver::DfsSolver::forEachAssignment(shape, [&](std::span<const char> assignment, long double weight) {
         int componentMines = 0;
@@ -280,125 +255,77 @@ inline void Probability::buildDfsTable(const Structure::Shape &shape, std::span<
                 out.push_back({neighborMines, componentMines, accumulated[componentMines][neighborMines]});
 }
 
-struct Probability::GraphLayer {
-    struct Count {
-        int componentMines = 0;
-        int neighborMines = 0;
-        long double ways = 0.0L;
-        int next = -1;
-    };
-    struct State {
-        std::size_t frontierOffset = 0;
-        int firstCount = -1;
-        int lastCount = -1;
-    };
-    std::vector<State> states;
-    std::vector<Count> counts;
-    std::vector<char> frontierValues;
-    FlatHashTable<U128, std::size_t, U128Hash> index;
-    void reset() {
-        // 清空 Graph DP 层并恢复只含空状态的初始层。
-        states.clear();
-        counts.clear();
-        frontierValues.clear();
-        index.clear();
-        states.push_back({0, 0, 0});
-        counts.push_back({0, 0, 1.0L, -1});
-    }
-    Count &findOrAddCount(State &state, int componentMines, int neighborMines) {
-        // 在状态的计数链中查找或创建指定雷数对。
-        for (int i = state.firstCount; i >= 0; i = counts[i].next)
-            if (counts[i].componentMines == componentMines && counts[i].neighborMines == neighborMines)
-                return counts[i];
-        const int index = counts.size();
-        counts.push_back({componentMines, neighborMines, 0.0L, -1});
-        if (state.lastCount >= 0)
-            counts[state.lastCount].next = index;
-        else
-            state.firstCount = index;
-        state.lastCount = index;
-        return counts.back();
-    }
-    void advance(const ShapeSolver::GraphSolver::StepPlan &plan, GraphLayer &nextLayer, std::span<const int> adjacentBoxCells,
-                 int xBox) const {
-        // 按一步 Box 计划推进点开专用 Graph DP，并累计转移权重。
-        nextLayer.states.clear();
-        nextLayer.counts.clear();
-        nextLayer.frontierValues.clear();
-        nextLayer.index.clear();
-        nextLayer.states.reserve(states.size() * (plan.boxSize + 1));
-        nextLayer.counts.reserve(counts.size() * (plan.boxSize + 1));
-        nextLayer.frontierValues.reserve(frontierValues.size() + plan.boxSize + 1);
-        const int adjacent = adjacentBoxCells[plan.box];
-        const bool isXBox = plan.box == xBox;
-        const int size = plan.boxSize;
-        const int pool = isXBox ? size - 1 : size;
-        for (const State &state : states) {
-            int minMine = 0;
-            int maxMine = plan.boxSize;
-            for (const ShapeSolver::GraphSolver::StepPlan::Check &check : plan.checks) {
-                int partial = 0;
-                for (int i = 0; i < check.readCount; ++i)
-                    partial += frontierValues[state.frontierOffset + check.readSlots[i]];
-                minMine = (std::max)(minMine, check.sum - partial - check.remainingSize);
-                maxMine = (std::min)(maxMine, check.sum - partial);
+template <typename Plan>
+inline void workspace::ProbabilityObserve::BuildGraphTable::Layer::advance(
+    const Plan &plan, workspace::ProbabilityObserve::BuildGraphTable::Layer &nextLayer, std::span<const int> adjacentBoxCells,
+    int xBox) const {
+    // 按一步 Box 计划推进点开专用 Graph DP，并累计转移权重。
+    nextLayer.states.clear();
+    nextLayer.counts.clear();
+    nextLayer.frontierValues.clear();
+    nextLayer.index.clear();
+    nextLayer.states.reserve(states.size() * (plan.boxSize + 1));
+    nextLayer.counts.reserve(counts.size() * (plan.boxSize + 1));
+    nextLayer.frontierValues.reserve(frontierValues.size() + plan.boxSize + 1);
+    const int adjacent = adjacentBoxCells[plan.box];
+    const bool isXBox = plan.box == xBox;
+    const int size = plan.boxSize;
+    const int pool = isXBox ? size - 1 : size;
+    for (const State &state : states) {
+        int minMine = 0;
+        int maxMine = plan.boxSize;
+        for (const typename Plan::Check &check : plan.checks) {
+            int partial = 0;
+            for (int i = 0; i < check.readCount; ++i)
+                partial += frontierValues[state.frontierOffset + check.readSlots[i]];
+            minMine = (std::max)(minMine, check.sum - partial - check.remainingSize);
+            maxMine = (std::min)(maxMine, check.sum - partial);
+        }
+        for (int mine = minMine; mine <= maxMine; ++mine) {
+            U128Hasher hasher;
+            for (int source : plan.gather) {
+                const char value = source < 0 ? mine : frontierValues[state.frontierOffset + source];
+                hasher.mix((std::uint64_t)(unsigned char)(value));
             }
-            for (int mine = minMine; mine <= maxMine; ++mine) {
-                U128Hasher hasher;
-                for (int source : plan.gather) {
-                    const char value = source < 0 ? mine : frontierValues[state.frontierOffset + source];
-                    hasher.mix((std::uint64_t)(unsigned char)(value));
+            const U128 hash = hasher.finalize();
+            State *target;
+            if (const std::size_t *found = nextLayer.index.find(hash))
+                target = &nextLayer.states[*found];
+            else {
+                const std::size_t id = nextLayer.states.size();
+                nextLayer.states.push_back({nextLayer.frontierValues.size(), -1, -1});
+                for (int source : plan.gather)
+                    nextLayer.frontierValues.push_back(source < 0 ? mine : frontierValues[state.frontierOffset + source]);
+                nextLayer.index.emplace(hash, id);
+                target = &nextLayer.states.back();
+            }
+            if (!isXBox && adjacent == 0) {
+                const long double factor = ShapeSolver::binom(size, mine);
+                for (int sourceIndex = state.firstCount; sourceIndex >= 0; sourceIndex = counts[sourceIndex].next) {
+                    const Count &source = counts[sourceIndex];
+                    Count &destination = nextLayer.findOrAddCount(*target, source.componentMines + mine, source.neighborMines);
+                    destination.ways += source.ways * factor;
                 }
-                const U128 hash = hasher.finalize();
-                State *target;
-                if (const std::size_t *found = nextLayer.index.find(hash))
-                    target = &nextLayer.states[*found];
-                else {
-                    const std::size_t id = nextLayer.states.size();
-                    nextLayer.states.push_back({nextLayer.frontierValues.size(), -1, -1});
-                    for (int source : plan.gather)
-                        nextLayer.frontierValues.push_back(source < 0 ? mine : frontierValues[state.frontierOffset + source]);
-                    nextLayer.index.emplace(hash, id);
-                    target = &nextLayer.states.back();
-                }
-                if (!isXBox && adjacent == 0) {
-                    const long double factor = ShapeSolver::binom(size, mine);
-                    for (int sourceIndex = state.firstCount; sourceIndex >= 0; sourceIndex = counts[sourceIndex].next) {
-                        const Count &source = counts[sourceIndex];
-                        Count &destination = nextLayer.findOrAddCount(*target, source.componentMines + mine, source.neighborMines);
-                        destination.ways += source.ways * factor;
-                    }
+                continue;
+            }
+            const int maxAdjacent = (std::min)(adjacent, mine);
+            for (int neighborMines = 0; neighborMines <= maxAdjacent; ++neighborMines) {
+                const int remaining = mine - neighborMines;
+                if (remaining > pool - adjacent)
                     continue;
-                }
-                const int maxAdjacent = (std::min)(adjacent, mine);
-                for (int neighborMines = 0; neighborMines <= maxAdjacent; ++neighborMines) {
-                    const int remaining = mine - neighborMines;
-                    if (remaining > pool - adjacent)
+                const long double factor = ShapeSolver::binom(adjacent, neighborMines) * ShapeSolver::binom(pool - adjacent, remaining);
+                for (int sourceIndex = state.firstCount; sourceIndex >= 0; sourceIndex = counts[sourceIndex].next) {
+                    const Count &source = counts[sourceIndex];
+                    if (source.neighborMines + neighborMines > 8)
                         continue;
-                    const long double factor = ShapeSolver::binom(adjacent, neighborMines) * ShapeSolver::binom(pool - adjacent, remaining);
-                    for (int sourceIndex = state.firstCount; sourceIndex >= 0; sourceIndex = counts[sourceIndex].next) {
-                        const Count &source = counts[sourceIndex];
-                        if (source.neighborMines + neighborMines > 8)
-                            continue;
-                        Count &destination =
-                            nextLayer.findOrAddCount(*target, source.componentMines + mine, source.neighborMines + neighborMines);
-                        destination.ways += source.ways * factor;
-                    }
+                    Count &destination =
+                        nextLayer.findOrAddCount(*target, source.componentMines + mine, source.neighborMines + neighborMines);
+                    destination.ways += source.ways * factor;
                 }
             }
         }
     }
-    void emit(std::vector<Probability::ObserveTransfer> &out) const {
-        // 将 Graph DP 的非零状态转换成公开的点开转移表。
-        for (const State &state : states)
-            for (int index = state.firstCount; index >= 0; index = counts[index].next) {
-                const Count &count = counts[index];
-                if (count.ways == 0.0L)
-                    continue;
-                out.push_back({count.neighborMines, count.componentMines, count.ways});
-            }
-    }
-};
+}
 
 inline void Probability::buildGraphTable(const Structure::Shape &shape, std::span<const int> adjacentBoxCells, int xBox,
                                          std::vector<Probability::ObserveTransfer> &out) {

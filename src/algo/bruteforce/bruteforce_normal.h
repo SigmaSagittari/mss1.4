@@ -9,44 +9,23 @@
 
 namespace mss {
 
-struct BruteForce::ScratchBuffers {
-    struct Layer {
-        std::vector<int> deaths;
-        std::vector<int> safeCells;
-        std::vector<int> order;
-        std::vector<int> suffix;
-        std::array<std::vector<ConfigId>, 9> groups;
-        std::vector<std::pair<int, int>> groupList;
-        std::vector<U128> safeHashes;
-        std::vector<int> safeGroupIds;
-        std::vector<int> safeGroupSizes;
-        std::vector<int> safeGroupOffsets;
-        std::vector<ConfigId> safeGroupedConfigs;
-        std::vector<std::span<ConfigId>> safeGroupList;
-    };
-    Layer &layer(int depth);
-    void reset();
-    FlatHashTable<U128, int, U128Hash> safeGroupTable;
-    std::deque<Layer> layers;
-};
-
 //==============================================================================
 
-inline BruteForce::ScratchBuffers::Layer &BruteForce::ScratchBuffers::layer(int depth) {
+inline workspace::BruteForceNormal::Scratch::Layer &workspace::BruteForceNormal::Scratch::layer(int depth) {
     // 取得指定搜索深度的普通后端临时缓冲层。
     if ((int)(layers.size()) <= depth)
         layers.emplace_back();
     return layers[depth];
 }
 
-inline void BruteForce::ScratchBuffers::reset() {
+inline void workspace::BruteForceNormal::Scratch::reset() {
     // 清空所有搜索临时容器并保留容量，供下一次残局搜索复用。
     for (Layer &l : layers) {
         l.deaths.clear();
         l.safeCells.clear();
         l.order.clear();
         l.suffix.clear();
-        for (std::vector<ConfigId> &g : l.groups)
+        for (std::vector<std::uint32_t> &g : l.groups)
             g.clear();
         l.groupList.clear();
         l.safeHashes.clear();
@@ -58,9 +37,6 @@ inline void BruteForce::ScratchBuffers::reset() {
     }
     safeGroupTable.clear();
 }
-
-inline thread_local BruteForce::ScratchBuffers BruteForce::scratch;
-inline thread_local FlatHashTable<U128, int, U128Hash> BruteForce::cache;
 
 inline int BruteForce::revealAt(const CommonSession &common, const Session &session, ConfigId config, CandidateId candidate) {
     // 读取普通后端缓存的方案/候选揭示数字。
@@ -106,7 +82,7 @@ inline int BruteForce::solve(const CommonSession &common, Session &s, std::span<
         // 方案总数本身不足 need，直接返回失败上界 -n。
         if (need > n)
             return -n;
-        ScratchBuffers::Layer &buf = scratch.layer(depth);
+        ScratchBuffers::Layer &buf = workspace::BruteForceNormal::scratch.layer(depth);
         const int m = common.candidates.size();
         std::vector<int> &deaths = buf.deaths;
         deaths.assign(m, 0);
@@ -164,7 +140,7 @@ inline int BruteForce::solve(const CommonSession &common, Session &s, std::span<
             if (-*cached < need)
                 return *cached;
         }
-        ScratchBuffers::Layer &buf = scratch.layer(depth);
+        ScratchBuffers::Layer &buf = workspace::BruteForceNormal::scratch.layer(depth);
         const int m = common.candidates.size();
         std::vector<int> &deaths = buf.deaths;
         deaths.assign(m, 0);
@@ -197,7 +173,7 @@ inline int BruteForce::solve(const CommonSession &common, Session &s, std::span<
             }
             std::vector<std::span<ConfigId>> &groupList = buf.safeGroupList;
             groupList.clear();
-            FlatHashTable<U128, int, U128Hash> &groupTable = scratch.safeGroupTable;
+            FlatHashTable<U128, int, U128Hash> &groupTable = workspace::BruteForceNormal::scratch.safeGroupTable;
             std::vector<int> &groupIds = buf.safeGroupIds;
             std::vector<int> &groupSizes = buf.safeGroupSizes;
             std::vector<int> &groupOffsets = buf.safeGroupOffsets;
