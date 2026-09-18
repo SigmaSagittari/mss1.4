@@ -133,7 +133,7 @@ int UiApp::run(){
             writeRunLog("failed: port " + std::to_string(port_) + " busy");
             return 1;
         }
-        game_ = std::make_unique<GameController>(9, 9, 10, std::random_device{}());
+        game_ = std::make_unique<GameController>(9, 9, 10, 0);
         const std::string url = "http://127.0.0.1:" + std::to_string(port_) + "/";
         std::cout << "MSS 扫雷 UI 已启动: " << url << "\n";
         std::cout << "按 Ctrl+C 退出。\n";
@@ -343,7 +343,7 @@ HttpResponse UiApp::jsonNew(const HttpRequest& req){
         int maxMines = rows * cols - 1;
         int mines = std::clamp(bodyInt(req.body, "mines"), 1, maxMines);
         unsigned seed;
-        if (!bodySeed(req.body, "seed", seed)) seed = std::random_device{}();
+        if (!bodySeed(req.body, "seed", seed)) seed = 0;
         game_ = std::make_unique<GameController>(rows, cols, mines, seed);
         // 新局丢弃分析会话（编辑快照/分析态随旧局失效）。
         editSaved_.reset();

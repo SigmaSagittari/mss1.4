@@ -9,7 +9,7 @@
 #include <utility>
 #include <vector>
 
-#include "algo/probability/probability.h"
+#include "algo/probability/probability_external.h"
 #include "algo/shape_solver/dfs_solver.h"
 #include "algo/shape_solver/graph_solver/graph_solver.h"
 #include "core/assert.h"
@@ -98,7 +98,7 @@ inline void Probability::buildObserveTable(const Structure::Shape &shape, std::s
 inline Probability::ObserveResult Probability::observe(const ObservedBoard::Result &board, const Basic::Result &basic,
                                                        const Structure::Result &structure, const Structure::Pool &shapes,
                                                        const Result &probability, ShapeSolver::Distribution::Pool &distributions,
-                                                       CellId cell) {
+                                                       CellId cell, const ShapeSolver::OrderAlgo &algo) {
     // 设计目的：这里严格对当前 board/basic/structure/probability 做条件化；这些对象
     // 必须来自同一次分析刷新，才能让点开结果与当前盘面保持一致。
     using Mark = Basic::Mark;
@@ -196,7 +196,7 @@ inline Probability::ObserveResult Probability::observe(const ObservedBoard::Resu
         if (ws.seen[component])
             continue;
         const DistributionId id =
-            ShapeSolver::analyze(shapes.get(shapes.getInstance(structure.components[component]).shape), distributions);
+            ShapeSolver::analyze(shapes.get(shapes.getInstance(structure.components[component]).shape), distributions, algo);
         const ShapeSolver::Distribution::Result &distribution = distributions.get(id);
         observePolyMultiplyInto(ws.rest, distribution.start(), distribution.ways(), ws.mult);
     }
@@ -224,7 +224,7 @@ inline Probability::ObserveResult Probability::observe(const ObservedBoard::Resu
     ws.all.start = ws.rest.start;
     for (const ComponentId component : ws.captured) {
         const DistributionId id =
-            ShapeSolver::analyze(shapes.get(shapes.getInstance(structure.components[component]).shape), distributions);
+            ShapeSolver::analyze(shapes.get(shapes.getInstance(structure.components[component]).shape), distributions, algo);
         const ShapeSolver::Distribution::Result &distribution = distributions.get(id);
         observePolyMultiplyInto(ws.all, distribution.start(), distribution.ways(), ws.mult);
     }

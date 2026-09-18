@@ -340,17 +340,23 @@ inline std::vector<BoxId> ShapeSolver::GraphSolver::makeAutoOrder(const Graph &g
         best = candidate;
         bestScore = candidateScore;
     }
+    return best;
+}
+
+inline std::vector<BoxId> ShapeSolver::GraphSolver::makeAutoSAOrder(const Graph &graph) {
+    std::vector<BoxId> best = makeAutoOrder(graph);
+    std::pair<int, int> bestScore = orderScore(graph, best);
     if (bestScore.first <= 15)
         return best;
 
-    candidate = makeSAOrder(graph, makeGreedyOrder(graph, -1, true));
-    candidateScore = orderScore(graph, candidate);
+    std::vector<BoxId> candidate = makeSAOrder(graph, makeGreedyOrder(graph, -1, true));
+    const std::pair<int, int> candidateScore = orderScore(graph, candidate);
     if (candidateScore < bestScore)
         best = std::move(candidate);
     return best;
 }
 
-inline std::vector<BoxId> ShapeSolver::GraphSolver::makeOrder(const Graph &graph, OrderAlgo algo) {
+inline std::vector<BoxId> ShapeSolver::GraphSolver::makeOrder(const Graph &graph, const OrderAlgo &algo) {
     const BoxId initial = farthestBox(graph, 0);
     switch (algo) {
     case OrderAlgo::Adjacent:
@@ -361,6 +367,8 @@ inline std::vector<BoxId> ShapeSolver::GraphSolver::makeOrder(const Graph &graph
         return makeSAOrder(graph, makeGreedyOrder(graph, -1, true));
     case OrderAlgo::Auto:
         return makeAutoOrder(graph);
+    case OrderAlgo::AutoSA:
+        return makeAutoSAOrder(graph);
     }
     std::abort();
 }

@@ -53,13 +53,13 @@
     <ClInclude Include="src\algo\observed_board.h">
       <Filter>src\algo</Filter>
     </ClInclude>
-    <ClInclude Include="src\algo\probability\global_solver.h">
+    <ClInclude Include="src\algo\probability\probability.h">
       <Filter>src\algo\probability</Filter>
     </ClInclude>
     <ClInclude Include="src\algo\probability\observe.h">
       <Filter>src\algo\probability</Filter>
     </ClInclude>
-    <ClInclude Include="src\algo\probability\probability.h">
+    <ClInclude Include="src\algo\probability\probability_external.h">
       <Filter>src\algo\probability</Filter>
     </ClInclude>
     <ClInclude Include="src\algo\shape_solver\dfs_solver.h">

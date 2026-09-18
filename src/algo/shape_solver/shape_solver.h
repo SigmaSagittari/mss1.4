@@ -60,11 +60,11 @@ inline void ShapeSolver::Distribution::Pool::clear() {
     index_.clear();
 }
 
-inline DistributionId ShapeSolver::analyze(const Structure::Shape &shape, ShapeSolver::Distribution::Pool &pool) {
+inline DistributionId ShapeSolver::analyze(const Structure::Shape &shape, ShapeSolver::Distribution::Pool &pool, const OrderAlgo &algo) {
     // 根据 Box 数量选择分布求解后端。
     if (shape.boxes.size() < graphThreshold)
         return ShapeSolver::DfsSolver::analyze(shape, pool);
-    return ShapeSolver::GraphSolver::analyze(shape, pool, ShapeSolver::GraphSolver::OrderAlgo::Auto);
+    return ShapeSolver::GraphSolver::analyze(shape, pool, algo);
 }
 
 } // namespace mss

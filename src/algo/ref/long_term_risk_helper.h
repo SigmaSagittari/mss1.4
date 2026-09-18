@@ -4,8 +4,8 @@
 #include <vector>
 
 #include "algo/basic.h"
-#include "algo/probability/global_solver.h"
 #include "algo/probability/probability.h"
+#include "algo/probability/probability_external.h"
 #include "algo/shape_solver/shape_solver.h"
 #include "algo/structure.h"
 #include "core/types.h"

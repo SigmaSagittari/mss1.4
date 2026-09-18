@@ -13,6 +13,15 @@
 namespace mss {
 
 struct ShapeSolver {
+    // 图 DP 的消元顺序策略；只影响状态峰值和耗时，不影响最终分布。
+    enum class OrderAlgo {
+        Adjacent, // 只按相邻关系贪心，开销最低，但顺序质量较差。
+        Window3, // 比较局部三步窗口，开销略高，通常能得到更好的顺序。
+        SA, // 反复优化候选顺序，开销最高，顺序质量接近最优。
+        Auto, // 组合 Adjacent 和 Window3；默认策略，足以应付所有随机盘面。
+        AutoSA, // 在 Auto 结果仍不理想时追加 SA，面向人工构造的极端盘面。
+    };
+
     // 一个 Distribution 按组件 Box 数量统计：ways[k] 是恰有 k 雷的具体布局权重，
     // perBoxExpectation(k)[box] 是在该条件下该 Box 的期望雷数；外层 Probability
     // 再用 ways 与其它组件多项式卷积，才能得到全局而非组件内的概率。
@@ -87,7 +96,7 @@ struct ShapeSolver {
 
     // 按组件规模选择 DFS 或 Graph 后端并返回缓存句柄；两者必须产出同一分布，
     // 阈值只为控制状态爆炸和运行时间。
-    static DistributionId analyze(const Structure::Shape &shape, Distribution::Pool &pool);
+    static DistributionId analyze(const Structure::Shape &shape, Distribution::Pool &pool, const OrderAlgo &algo = OrderAlgo::Auto);
 
     // 返回 n 个格子中选 k 个雷的组合数。
     static long double binom(int n, int k);

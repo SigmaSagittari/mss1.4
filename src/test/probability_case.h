@@ -39,7 +39,7 @@ inline void probabilityCase() {
     check(mineCount == kMines, "probability case mine count is incorrect");
 
     const TimeBox timebox(kTimeoutSeconds);
-    Analysis analysis(board);
+    Analysis analysis(board, mss::ShapeSolver::OrderAlgo::AutoSA);
     long long totalSteps = 0;
     double totalCalculationMilliseconds = 0.0;
     bool timedOut = false;

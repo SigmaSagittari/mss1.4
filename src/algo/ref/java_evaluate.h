@@ -4,9 +4,9 @@
 #include <vector>
 
 #include "algo/basic.h"
-#include "algo/probability/global_solver.h"
-#include "algo/probability/observe.h"
 #include "algo/probability/probability.h"
+#include "algo/probability/observe.h"
+#include "algo/probability/probability_external.h"
 #include "algo/ref/long_term_risk_helper.h"
 #include "algo/ref/pseudo_helper.h"
 #include "algo/shape_solver/shape_solver.h"

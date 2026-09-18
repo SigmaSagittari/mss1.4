@@ -99,9 +99,9 @@
     <ClInclude Include="src\algo\bruteforce\bruteforce_multimask.h" />
     <ClInclude Include="src\algo\bruteforce\bruteforce_normal.h" />
     <ClInclude Include="src\algo\observed_board.h" />
-    <ClInclude Include="src\algo\probability\global_solver.h" />
-    <ClInclude Include="src\algo\probability\observe.h" />
     <ClInclude Include="src\algo\probability\probability.h" />
+    <ClInclude Include="src\algo\probability\observe.h" />
+    <ClInclude Include="src\algo\probability\probability_external.h" />
     <ClInclude Include="src\algo\shape_solver\dfs_solver.h" />
     <ClInclude Include="src\algo\shape_solver\graph_solver\graph_solver.h" />
     <ClInclude Include="src\algo\shape_solver\graph_solver\graph_solver_dp.h" />

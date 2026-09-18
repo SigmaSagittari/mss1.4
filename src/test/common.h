@@ -11,8 +11,8 @@
 #include <vector>
 
 #include "algo/basic.h"
-#include "algo/probability/global_solver.h"
 #include "algo/probability/probability.h"
+#include "algo/probability/probability_external.h"
 #include "algo/shape_solver/shape_solver.h"
 #include "algo/structure.h"
 #include "core/types.h"
@@ -183,6 +183,7 @@ struct Game {
 };
 
 struct Analysis {
+    const mss::ShapeSolver::OrderAlgo orderAlgo;
     mss::Basic::Result basic;
     mss::Structure::ShapePool shapes;
     mss::Structure::Result structure;
@@ -192,9 +193,9 @@ struct Analysis {
     mss::Structure::Delta structureDelta;
 
     // 从当前观测盘面建立生产分析管线的测试副本。
-    explicit Analysis(const mss::ObservedBoard::Result &board)
-        : basic(mss::Basic::analyze(board)), structure(mss::Structure::analyze(board, basic, shapes)) {
-        probability = mss::Probability::analyze(board, basic, structure, shapes, distributions);
+    explicit Analysis(const mss::ObservedBoard::Result &board, const mss::ShapeSolver::OrderAlgo &algo = mss::ShapeSolver::OrderAlgo::Auto)
+        : orderAlgo(algo), basic(mss::Basic::analyze(board)), structure(mss::Structure::analyze(board, basic, shapes)) {
+        probability = mss::Probability::analyze(board, basic, structure, shapes, distributions, orderAlgo);
     }
 
     void update(mss::ObservedBoard::Result &board, mss::ObservedBoard::Delta &updates) {
@@ -202,9 +203,43 @@ struct Analysis {
         mss::ObservedBoard::update(board, updates);
         mss::Basic::update(basic, basicDelta, board, updates);
         mss::Structure::update(structure, structureDelta, board, basic, shapes, updates);
-        mss::Probability::analyze(board, basic, structure, shapes, distributions, probability);
+        mss::Probability::analyze(board, basic, structure, shapes, distributions, probability, orderAlgo);
     }
 };
+
+// 输出便于复现的调试对局：宽、高、雷数按输入格式排列，H/F 分别表示隐藏和旗标。
+inline void printGame(const Game &game, const Analysis &analysis) {
+    std::cout << game.board.cols << 'x' << game.board.rows << 'x' << game.board.totalMines << '\n';
+    for (int x = 1; x <= game.board.rows; ++x) {
+        for (int y = 1; y <= game.board.cols; ++y) {
+            const mss::ObservedBoard::CellState state = game.board.board[x][y];
+            switch (state) {
+            case mss::ObservedBoard::CellState::Num0:
+            case mss::ObservedBoard::CellState::Num1:
+            case mss::ObservedBoard::CellState::Num2:
+            case mss::ObservedBoard::CellState::Num3:
+            case mss::ObservedBoard::CellState::Num4:
+            case mss::ObservedBoard::CellState::Num5:
+            case mss::ObservedBoard::CellState::Num6:
+            case mss::ObservedBoard::CellState::Num7:
+            case mss::ObservedBoard::CellState::Num8:
+                std::cout << (int)(state);
+                break;
+            case mss::ObservedBoard::CellState::Hidden:
+                std::cout << (analysis.basic.marks[x][y] == mss::Basic::Mark::F ? 'F' : 'H');
+                break;
+            case mss::ObservedBoard::CellState::ForcedMine:
+                std::cout << 'F';
+                break;
+            case mss::ObservedBoard::CellState::ForcedSafe:
+                std::cout << 'H';
+                break;
+            }
+        }
+        std::cout << '\n';
+    }
+    std::cout << '\n' << "Hide Flag\n";
+}
 
 inline std::vector<mss::CellId> hiddenSafeCells(const Game &game, const Analysis &analysis) {
     // 收集当前已被 Basic 推断为安全但仍未翻开的格子。
@@ -307,7 +342,7 @@ inline bool generateGame(const TestConfig &config, GameRng &rng, Policy &&movePo
             game.reveal(1, 1, updates);
             mss::ObservedBoard::update(game.board, updates);
         }
-        Analysis analysis(game.board);
+        Analysis analysis(game.board, mss::ShapeSolver::OrderAlgo::Auto);
         auto chooseMove = [&](const Game &current, const Analysis &currentAnalysis) {
             Move next = movePolicy(current, currentAnalysis);
             if (next.x == -1 && next.y == -1)

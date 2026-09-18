@@ -298,7 +298,7 @@ inline ShapeSolver::Distribution::Result ShapeSolver::GraphSolver::materialize(c
 }
 
 inline DistributionId ShapeSolver::GraphSolver::analyze(const Structure::Shape &shape, ShapeSolver::Distribution::Pool &pool,
-                                                        ShapeSolver::GraphSolver::OrderAlgo algo) {
+                                                        const ShapeSolver::GraphSolver::OrderAlgo &algo) {
     // 构建消元图、执行 Graph DP，并把结果写入分布缓存；先查缓存，命中时不再
     // 重算同一 Shape，未命中时用 algo 控制消元顺序的优化策略。
     const DistributionId cached = pool.find(shape.hash);

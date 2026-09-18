@@ -23,12 +23,7 @@ struct ShapeSolver::GraphSolver {
     // 不改变最终分布。该后端由 ShapeSolver::analyze 在 Box 较多时选用。
 
   public:
-    enum class OrderAlgo {
-        Adjacent,
-        Window3,
-        SA,
-        Auto,
-    };
+    using OrderAlgo = ShapeSolver::OrderAlgo;
 
     struct Graph {
         std::vector<int> offsets;
@@ -45,9 +40,10 @@ struct ShapeSolver::GraphSolver {
     static std::vector<BoxId> makeWindow3Order(const Graph &graph, std::vector<BoxId> order);
     static std::vector<BoxId> makeSAOrder(const Graph &graph, std::vector<BoxId> seed);
     static std::vector<BoxId> makeAutoOrder(const Graph &graph);
+    static std::vector<BoxId> makeAutoSAOrder(const Graph &graph);
 
   public:
-    static std::vector<BoxId> makeOrder(const Graph &graph, OrderAlgo algo);
+    static std::vector<BoxId> makeOrder(const Graph &graph, const OrderAlgo &algo);
 
     // 一个消元步骤的完整转移计划：处理一个 Box，读取旧 frontier，生成新
     // frontier，并记录本步刚好闭合的 Box。
@@ -93,7 +89,7 @@ struct ShapeSolver::GraphSolver {
 
   public:
     // Graph DP 后端的普通分布求解。
-    static DistributionId analyze(const Structure::Shape &shape, Distribution::Pool &pool, OrderAlgo algo);
+    static DistributionId analyze(const Structure::Shape &shape, Distribution::Pool &pool, const OrderAlgo &algo);
 };
 
 } // namespace mss
