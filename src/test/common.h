@@ -16,6 +16,7 @@
 #include "algo/shape_solver/shape_solver.h"
 #include "algo/structure.h"
 #include "core/types.h"
+#include "core/utility/grid.h"
 
 #ifdef _WIN32
 #include <dbghelp.h>
@@ -109,20 +110,20 @@ struct GameConfig {
 
 struct Game {
     mss::ObservedBoard::Result board;
-    std::vector<char> mines;
+    mss::RawGrid<char> mines;
     int opened = 0;
 
     // 按测试配置创建空雷盘和全 Hidden 观测盘面。
-    explicit Game(const GameConfig &config) : board(config.rows, config.cols, config.mines), mines(config.rows * config.cols, 0) {
+    explicit Game(const GameConfig &config) : board(config.rows, config.cols, config.mines), mines(config.rows, config.cols, 0) {
     }
 
-    // 将 1-based 棋盘坐标转换为雷数组下标。
-    int flat(int x, int y) const {
-        return (x - 1) * board.cols + y - 1;
+    char &mineByFlat(int cell) {
+        return mines[cell / board.cols][cell % board.cols];
     }
+
     // 查询指定测试格是否有雷。
     bool mine(int x, int y) const {
-        return mines[flat(x, y)] != 0;
+        return mines[x - 1][y - 1] != 0;
     }
 
     void placeMines(GameRng &rng, bool firstMoveSafe = false) {
@@ -133,12 +134,12 @@ struct Game {
         for (int i = (int)(cells.size()) - 1; i > 0; --i)
             std::swap(cells[i], cells[rng.below(i + 1)]);
         for (int i = 0; i < board.totalMines; ++i)
-            mines[cells[i]] = 1;
+            mineByFlat(cells[i]) = 1;
         if (firstMoveSafe && mine(1, 1))
             for (int x = 1; x <= board.rows; ++x)
                 for (int y = 1; y <= board.cols; ++y)
                     if (!mine(x, y)) {
-                        std::swap(mines[flat(1, 1)], mines[flat(x, y)]);
+                        std::swap(mines[0][0], mines[x - 1][y - 1]);
                         return;
                     }
     }
@@ -156,15 +157,15 @@ struct Game {
         // 模拟安全点击和零区域泛洪，并把新数字写入观测 Delta。
         if (mine(x, y))
             return false;
-        std::vector<char> queued((board.rows + 1) * (board.cols + 1), 0);
+        mss::Grid<char> queued(board.rows, board.cols, 0);
         std::deque<std::pair<int, int>> pending{{x, y}};
         while (!pending.empty()) {
             const auto [cx, cy] = pending.front();
             pending.pop_front();
             const mss::CellId cell = board.id(cx, cy);
-            if (queued[cell] || board.board[cx][cy] != mss::ObservedBoard::CellState::Hidden || mine(cx, cy))
+            if (queued[cx][cy] || board.board[cx][cy] != mss::ObservedBoard::CellState::Hidden || mine(cx, cy))
                 continue;
-            queued[cell] = 1;
+            queued[cx][cy] = 1;
             const int digit = adjacentMines(cx, cy);
             ++opened;
             updates.changes.push_back({cell, (mss::ObservedBoard::CellState)(digit)});

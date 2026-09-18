@@ -28,13 +28,12 @@ inline long double ShapeSolver::binom(int n, int k) {
 }
 
 inline ShapeSolver::Distribution::Result::Result(int start, int boxCount, std::vector<long double> ways,
-                                                 std::vector<long double> perBoxExpectations)
+                                                 RawGrid<long double> perBoxExpectations)
     : start_(start), boxCount_(boxCount), ways_(std::move(ways)), perBoxExpectationData_(std::move(perBoxExpectations)) {
     // 为每个总雷数建立指向连续期望值数组的 span。
     perBoxExpectations_.reserve(ways_.size());
-    const std::span<const long double> allExpectations = perBoxExpectationData_;
     for (int i = 0; i < (int)(ways_.size()); ++i)
-        perBoxExpectations_.push_back(allExpectations.subspan(i * boxCount_, boxCount_));
+        perBoxExpectations_.emplace_back(perBoxExpectationData_[i], boxCount_);
 }
 
 inline DistributionId ShapeSolver::Distribution::Pool::find(U128 hash) const {

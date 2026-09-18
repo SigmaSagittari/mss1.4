@@ -38,32 +38,23 @@ inline void workspace::BruteForceNormal::Scratch::reset() {
     safeGroupTable.clear();
 }
 
-inline int BruteForce::revealAt(const CommonSession &common, const Session &session, ConfigId config, CandidateId candidate) {
-    // 读取普通后端缓存的方案/候选揭示数字。
-    return session.reveal[(std::size_t)(config)*common.candidateCount + candidate];
-}
-
-inline bool BruteForce::mineAt(const CommonSession &common, const Session &session, ConfigId config, CandidateId candidate) {
-    // 读取普通后端缓存的方案/候选雷标记。
-    return session.mine[(std::size_t)(config)*common.candidateCount + candidate] != 0;
-}
-
 inline BruteForce::Session BruteForce::buildSession(const CommonSession &common) {
-    // 构建普通后端的“方案×候选格”扁平雷表和揭示数字表；这是空间换时间，
+    // 构建普通后端的“方案×候选格”雷表和揭示数字表；这是空间换时间，
     // 让 solve 的递归只处理方案分组，不重复沿 links 计算揭示数字。
     Session session;
-    session.mine.assign((std::size_t)(common.possibilityCount) * common.candidateCount, 0);
-    for (int config = 0; config < common.possibilityCount; ++config)
-        for (std::uint32_t i = common.mineOffsets[config]; i < common.mineOffsets[config + 1]; ++i)
-            session.mine[(std::size_t)(config)*common.candidateCount + common.mineCells[i]] = 1;
-    session.reveal.assign((std::size_t)(common.possibilityCount) * common.candidateCount, 0);
+    session.mineByConfig.resize(common.possibilityCount, common.candidateCount, 0);
+    for (int config = 0; config < common.possibilityCount; ++config) {
+        for (int i = 0; i < common.minesPerConfig; ++i)
+            session.mineByConfig[config][common.mineCandidateIds[config][i]] = 1;
+    }
+    session.revealByConfig.resize(common.possibilityCount, common.candidateCount, 0);
     for (int config = 0; config < common.possibilityCount; ++config)
         for (int candidate = 0; candidate < common.candidateCount; ++candidate) {
             int value = common.candidates[candidate].fixedMines;
             const CommonSession::Candidate &current = common.candidates[candidate];
             for (std::uint32_t i = 0; i < current.linksCount; ++i)
-                value += mineAt(common, session, config, common.links[current.linksOffset + i]);
-            session.reveal[(std::size_t)(config)*common.candidateCount + candidate] = value;
+                value += session.mineByConfig[config][common.links[current.linksOffset + i]];
+            session.revealByConfig[config][candidate] = value;
         }
     return session;
 }
@@ -86,19 +77,20 @@ inline int BruteForce::solve(const CommonSession &common, Session &s, std::span<
         const int m = common.candidates.size();
         std::vector<int> &deaths = buf.deaths;
         deaths.assign(m, 0);
-        for (ConfigId ci : configs)
-            for (std::uint32_t i = common.mineOffsets[ci]; i < common.mineOffsets[ci + 1]; ++i)
-                ++deaths[common.mineCells[i]];
+        for (ConfigId ci : configs) {
+            for (int i = 0; i < common.minesPerConfig; ++i)
+                ++deaths[common.mineCandidateIds[ci][i]];
+        }
         int best = 0;
         std::array<std::vector<ConfigId>, 9> &groups = buf.groups;
-        s.unopened.for_each([&](std::size_t j) {
+        s.unopenedCandidates.for_each([&](std::size_t j) {
             const CandidateId candidate = (CandidateId)j;
             for (std::vector<ConfigId> &g : groups)
                 g.clear();
             for (ConfigId ci : configs)
-                if (!mineAt(common, s, ci, candidate))
-                    groups[revealAt(common, s, ci, candidate)].push_back(ci);
-            s.unopened.reset(j);
+                if (!s.mineByConfig[ci][candidate])
+                    groups[s.revealByConfig[ci][candidate]].push_back(ci);
+            s.unopenedCandidates.reset(j);
             int wins = 0;
             for (int r = 0; r < 9; ++r)
                 if (!groups[r].empty()) {
@@ -106,7 +98,7 @@ inline int BruteForce::solve(const CommonSession &common, Session &s, std::span<
                     if (value > 0)
                         wins += value;
                 }
-            s.unopened.set(j);
+            s.unopenedCandidates.set(j);
             result.moves.push_back({common.candidates[j].x, common.candidates[j].y, wins});
             best = (std::max)(best, wins);
         });
@@ -121,7 +113,7 @@ inline int BruteForce::solve(const CommonSession &common, Session &s, std::span<
             if constexpr (IsRoot)
                 if (n == 1)
                     for (int j = 0; j < (int)(common.candidates.size()); ++j)
-                        if (!mineAt(common, s, configs[0], j)) {
+                        if (!s.mineByConfig[configs[0]][j]) {
                             result.moves[0].x = common.candidates[j].x;
                             result.moves[0].y = common.candidates[j].y;
                             break;
@@ -144,12 +136,13 @@ inline int BruteForce::solve(const CommonSession &common, Session &s, std::span<
         const int m = common.candidates.size();
         std::vector<int> &deaths = buf.deaths;
         deaths.assign(m, 0);
-        for (ConfigId ci : configs)
-            for (std::uint32_t i = common.mineOffsets[ci]; i < common.mineOffsets[ci + 1]; ++i)
-                ++deaths[common.mineCells[i]];
+        for (ConfigId ci : configs) {
+            for (int i = 0; i < common.minesPerConfig; ++i)
+                ++deaths[common.mineCandidateIds[ci][i]];
+        }
         std::vector<int> &safeCells = buf.safeCells;
         safeCells.clear();
-        s.unopened.for_each([&](std::size_t j) {
+        s.unopenedCandidates.for_each([&](std::size_t j) {
             if (deaths[j] == 0)
                 safeCells.push_back((int)j);
         });
@@ -161,14 +154,14 @@ inline int BruteForce::solve(const CommonSession &common, Session &s, std::span<
                 result.moves[0].y = common.candidates[safeCells[0]].y;
             }
             for (int j : safeCells)
-                s.unopened.reset(j);
+                s.unopenedCandidates.reset(j);
             std::vector<U128> &hashes = buf.safeHashes;
             hashes.clear();
             const std::size_t keyLen = safeCells.size();
             for (ConfigId ci : configs) {
                 U128Hasher hasher;
                 for (int i = 0; i < (int)(keyLen); ++i)
-                    hasher.mix((std::uint64_t)(revealAt(common, s, ci, safeCells[i])) * (keyLen + 1) + i);
+                hasher.mix((std::uint64_t)(s.revealByConfig[ci][safeCells[i]]) * (keyLen + 1) + i);
                 hashes.push_back(hasher.finalize());
             }
             std::vector<std::span<ConfigId>> &groupList = buf.safeGroupList;
@@ -231,7 +224,7 @@ inline int BruteForce::solve(const CommonSession &common, Session &s, std::span<
                 wins += value;
             }
             for (int j : safeCells)
-                s.unopened.set(j);
+                s.unopenedCandidates.set(j);
             if (bailed) {
                 // 当前安全集合无法达到 need；upper 是尚未展开分支也不可能超过的总上界。
                 saveFail(key, upper, n, table);
@@ -243,7 +236,7 @@ inline int BruteForce::solve(const CommonSession &common, Session &s, std::span<
 
         std::vector<int> &order = buf.order;
         order.clear();
-        s.unopened.for_each([&](std::size_t j) {
+        s.unopenedCandidates.for_each([&](std::size_t j) {
             order.push_back((int)j);
         });
         std::sort(order.begin(), order.end(), [&](int a, int b) {
@@ -264,8 +257,8 @@ inline int BruteForce::solve(const CommonSession &common, Session &s, std::span<
                 g.clear();
             int groupCount = 0;
             for (ConfigId ci : configs)
-                if (!mineAt(common, s, ci, j)) {
-                    const int r = revealAt(common, s, ci, j);
+                if (!s.mineByConfig[ci][j]) {
+                    const int r = s.revealByConfig[ci][j];
                     if (groups[r].empty())
                         ++groupCount;
                     groups[r].push_back(ci);
@@ -289,7 +282,7 @@ inline int BruteForce::solve(const CommonSession &common, Session &s, std::span<
             suffix.assign(groupList.size() + 1, 0);
             for (int i = (int)(groupList.size()) - 1; i >= 0; --i)
                 suffix[i] = suffix[i + 1] + groupList[i].second;
-            s.unopened.reset(j);
+            s.unopenedCandidates.reset(j);
             int wins = 0;
             bool bailed = false;
             int moveUpper = 0;
@@ -309,7 +302,7 @@ inline int BruteForce::solve(const CommonSession &common, Session &s, std::span<
                 }
                 wins += value;
             }
-            s.unopened.set(j);
+            s.unopenedCandidates.set(j);
             if (bailed)
                 upper = (std::max)(upper, moveUpper);
             if (!bailed && wins > best) {
@@ -329,7 +322,7 @@ inline int BruteForce::solve(const CommonSession &common, Session &s, std::span<
         if (best == 0 && upper == 0) {
             if constexpr (IsRoot)
                 for (int j = 0; j < m; ++j)
-                    if (!mineAt(common, s, configs[0], j)) {
+                    if (!s.mineByConfig[configs[0]][j]) {
                         result.moves[0].x = common.candidates[j].x;
                         result.moves[0].y = common.candidates[j].y;
                         break;

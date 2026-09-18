@@ -10,6 +10,7 @@
 #include "algo/structure.h"
 #include "core/utility/dynamic_bitset.h"
 #include "core/utility/flat_hashtable.h"
+#include "core/utility/grid.h"
 #include "core/utility/hash.h"
 #include "core/workspace.h"
 
@@ -19,21 +20,28 @@ struct BruteForce {
     struct Config {
         enum class Route { Automatic, Common };
 
-        // 调用方必须显式填写这两个字段；它们没有默认值，未初始化会直接改变搜索结果。
+        // 是否在根节点求出每一个候选格的精确可赢数。
         bool checkAllMoves;
+        // 单推荐格模式要求当前动作至少能保证的胜局数。
         int minWins;
+        // Automatic 使用候选数阈值选择后端；Common 强制使用普通后端。
         Route route = Route::Automatic;
     };
 
     struct Result {
         struct Move {
+            // 候选格的实际棋盘坐标。
             int x = 0;
             int y = 0;
+            // 点击此格后仍能保证继续赢下去的完整雷位方案数。
             int wins = 0;
         };
 
+        // buildCommonSession 枚举得到的完整雷位方案总数。
         int possibilities = 0;
+        // 递归 solve 实际访问的节点数。
         long long nodes = 0;
+        // 根节点输出的动作；单推荐格模式最多保留一个动作。
         std::vector<Move> moves;
     };
 
@@ -48,7 +56,9 @@ struct BruteForce {
                         const Structure::Pool &shapes, const Config &config);
 
   private:
+    // ConfigId 是完整雷位方案在 CommonSession 中的下标。
     using ConfigId = std::uint32_t;
+    // CandidateId 是候选格在 CommonSession::candidates 中的稠密下标。
     using CandidateId = std::uint32_t;
 
     struct CommonSession;
@@ -59,10 +69,6 @@ struct BruteForce {
 
     inline static constexpr int multiMaskCandidateThreshold = 512;
 
-    // 读取某个方案下点击候选格后显示的数字。
-    static int revealAt(const CommonSession &common, const Session &session, ConfigId config, CandidateId candidate);
-    // 判断某个候选格在指定雷位方案中是否为雷。
-    static bool mineAt(const CommonSession &common, const Session &session, ConfigId config, CandidateId candidate);
     // 为当前方案集合生成无序缓存键；递归分组会改变 span 顺序，但同一集合的
     // 子问题结果必须命中同一个缓存项。
     static U128 hashConfigs(std::span<const ConfigId> configs);
@@ -80,27 +86,51 @@ struct BruteForce {
 };
 
 struct BruteForce::CommonSession {
-    // CommonSession 将候选格压成稠密下标；mineCells/mineOffsets 是按方案分段的 CSR 布局。
+    // 候选格压成稠密 CandidateId 后，每个候选格保存其棋盘位置和揭示数字所需的邻接信息。
     struct Candidate {
+        // 候选格的 1-based 棋盘坐标。
         int x = 0;
         int y = 0;
+        // links 中本候选格的邻接候选区间起点。
         std::uint32_t linksOffset = 0;
+        // links 中本候选格的邻接候选数量。
         std::uint8_t linksCount = 0;
+        // 本候选格周围已经确定为雷的格子数量。
         std::uint8_t fixedMines = 0;
     };
+    // candidates、mineCandidateIds 都使用这些稠密下标；候选格数量。
     int candidateCount = 0;
+    // 完整雷位方案数量；每个方案对应一个 ConfigId。
     int possibilityCount = 0;
+    // CandidateId -> 候选格坐标和邻接信息。
     std::vector<Candidate> candidates;
+    // 所有候选格的邻接 CandidateId 连续存储区；每个候选格的区间由 linksOffset/linksCount 给出。
     std::vector<int> links;
-    std::vector<std::uint32_t> mineOffsets;
-    std::vector<CandidateId> mineCells;
+    // 每个完整方案固定包含的候选雷数量，也就是当前盘面的剩余雷数。
+    int minesPerConfig = 0;
+    // [ConfigId][第几个雷] 的候选雷 CandidateId 表；构建时按行追加，最终列数恒为 minesPerConfig。
+    RawGrid<CandidateId> mineCandidateIds;
 };
 
 struct BruteForce::Session {
-    // 普通后端用按“方案 × 候选格”的扁平表，避免递归过程中反复计算揭示数字。
-    std::vector<std::uint8_t> mine;
-    std::vector<std::uint8_t> reveal;
-    DynamicBitset unopened;
+    // 普通后端的 [ConfigId][CandidateId] 雷标记表；1 表示该候选格在方案中是雷。
+    RawGrid<std::uint8_t> mineByConfig;
+    // 普通后端的 [ConfigId][CandidateId] 揭示数字表，避免递归中重复计算。
+    RawGrid<std::uint8_t> revealByConfig;
+    // CandidateId 位图；1 表示该候选格尚未被当前搜索路径打开。
+    DynamicBitset unopenedCandidates;
+    // 当前 Session 递归访问的节点数。
+    long long nodes = 0;
+};
+
+template <typename Mask> struct BruteForce::MultiMaskSession {
+    // 每个 ConfigId 一张 Mask；第 CandidateId 位为 1 表示该格是雷。
+    std::vector<Mask> mineMaskByConfig;
+    // 与普通后端相同的 [ConfigId][CandidateId] 揭示数字表。
+    RawGrid<std::uint8_t> revealByConfig;
+    // CandidateId 位图；1 表示该候选格尚未被当前搜索路径打开。
+    Mask unopenedCandidates;
+    // 当前 Session 递归访问的节点数。
     long long nodes = 0;
 };
 

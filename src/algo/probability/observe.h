@@ -120,18 +120,17 @@ inline Probability::ObserveResult Probability::observe(const ObservedBoard::Resu
             maxCapturedMines += box.size;
     }
     const int stride = maxCapturedMines + 1;
-    ws.dp.assign(9 * stride, 0.0L);
-    ws.dp[0] = 1.0L;
+    ws.dp.resize(9, stride, 0.0L);
+    ws.dp[0][0] = 1.0L;
     // 把一个组件/Unknown 的联合转移卷入 dp；第一维是点击格邻居雷数，第二维是
     // 已捕获组件的雷数，后续 restWays 再补齐未捕获组件和远端 Unknown。
     auto applyTransfer = [&](const ObserveTransfer &transfer) {
         for (int neighborMines = 0; neighborMines + transfer.neighborMines <= 8; ++neighborMines)
             for (int capturedMines = 0; capturedMines + transfer.componentMines <= maxCapturedMines; ++capturedMines) {
-                const long double base = ws.dp[neighborMines * stride + capturedMines];
+                const long double base = ws.dp[neighborMines][capturedMines];
                 if (base == 0.0L)
                     continue;
-                ws.nextDp[(neighborMines + transfer.neighborMines) * stride + capturedMines + transfer.componentMines] +=
-                    base * transfer.ways;
+                ws.nextDp[neighborMines + transfer.neighborMines][capturedMines + transfer.componentMines] += base * transfer.ways;
             }
     };
 
@@ -146,7 +145,7 @@ inline Probability::ObserveResult Probability::observe(const ObservedBoard::Resu
                 if ((std::abs(cx - x) <= 1) && (std::abs(cy - y) <= 1) && !(cx == x && cy == y))
                     ++ws.adjacentBoxCells[box];
             }
-        ws.nextDp.assign(9 * stride, 0.0L);
+        ws.nextDp.resize(9, stride, 0.0L);
         Probability::buildObserveTable(shape, ws.adjacentBoxCells, component == xComponent ? xBox : -1, ws.transfers);
         for (const ObserveTransfer &transfer : ws.transfers)
             applyTransfer(transfer);
@@ -154,7 +153,7 @@ inline Probability::ObserveResult Probability::observe(const ObservedBoard::Resu
     }
 
     if (unknownNeighbors > 0) {
-        ws.nextDp.assign(9 * stride, 0.0L);
+        ws.nextDp.resize(9, stride, 0.0L);
         for (int mines = 0; mines <= unknownNeighbors; ++mines)
             applyTransfer({mines, mines, combLog(unknownNeighbors, mines)});
         ws.dp.swap(ws.nextDp);
@@ -184,7 +183,7 @@ inline Probability::ObserveResult Probability::observe(const ObservedBoard::Resu
     std::array<long double, 9> neighborWays{};
     for (int neighborMines = 0; neighborMines <= 8; ++neighborMines)
         for (int capturedMines = 0; capturedMines <= maxCapturedMines; ++capturedMines) {
-            const long double ways = ws.dp[neighborMines * stride + capturedMines];
+            const long double ways = ws.dp[neighborMines][capturedMines];
             const int restMines = totalMines - capturedMines;
             if (ways == 0.0L || restMines < 0 || restMines >= (int)(ws.restWays.size()))
                 continue;

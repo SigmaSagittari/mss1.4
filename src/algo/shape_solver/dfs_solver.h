@@ -133,17 +133,16 @@ inline DistributionId mss::ShapeSolver::DfsSolver::analyze(const Structure::Shap
 
     AnalyzeWorkspace &analyzeWorkspace = workspace::DfsSolver::analyze;
     std::vector<long double> &ways = analyzeWorkspace.ways;
-    std::vector<long double> &moments = analyzeWorkspace.moments;
+    RawGrid<long double> &moments = analyzeWorkspace.moments;
     ways.assign(maxMineCount + 1, 0.0L);
-    moments.assign((maxMineCount + 1) * boxCount, 0.0L);
+    moments.resize(maxMineCount + 1, boxCount, 0.0L);
     forEachAssignment(shape, [&](std::span<const char> assignment, long double weight) {
         int mineCount = 0;
         for (char mine : assignment)
             mineCount += mine;
         ways[mineCount] += weight;
-        const std::size_t offset = mineCount * boxCount;
         for (int box = 0; box < boxCount; ++box)
-            moments[offset + box] += weight * assignment[box];
+            moments[mineCount][box] += weight * assignment[box];
     });
 
     int start = 0;
@@ -156,14 +155,12 @@ inline DistributionId mss::ShapeSolver::DfsSolver::analyze(const Structure::Shap
     while (ways[end] == 0.0L)
         --end;
     std::vector<long double> compactWays(ways.begin() + start, ways.begin() + end + 1);
-    std::vector<long double> expectation(compactWays.size() * boxCount, 0.0L);
+    RawGrid<long double> expectation((int)(compactWays.size()), boxCount, 0.0L);
     for (int mineCount = start; mineCount <= end; ++mineCount) {
         if (ways[mineCount] == 0.0L)
             continue;
-        const std::size_t sourceOffset = mineCount * boxCount;
-        const std::size_t targetOffset = (mineCount - start) * boxCount;
         for (int box = 0; box < boxCount; ++box)
-            expectation[targetOffset + box] = moments[sourceOffset + box] / ways[mineCount];
+            expectation[mineCount - start][box] = moments[mineCount][box] / ways[mineCount];
     }
     Distribution::Result result(start, boxCount, std::move(compactWays), std::move(expectation));
     return pool.insert(shape.hash, std::move(result));

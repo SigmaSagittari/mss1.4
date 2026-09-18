@@ -32,6 +32,7 @@ inline void bruteforce() {
     const mss::BruteForce::Result result = mss::BruteForce::solve(board, basic, structure, shapes, config);
     const double milliseconds = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
     check(result.possibilities == 134550, "slow endgame possibility count changed");
+    check(!result.moves.empty() && result.moves[0].wins == 83553, "slow endgame win count changed");
     std::cout << "test/bruteforce: slow-endgame wins=" << (result.moves.empty() ? 0 : result.moves[0].wins) << " nodes=" << result.nodes
               << " time_ms=" << milliseconds << '\n';
 }

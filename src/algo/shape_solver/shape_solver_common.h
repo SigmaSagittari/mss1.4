@@ -8,6 +8,7 @@
 #include "algo/structure.h"
 #include "core/types.h"
 #include "core/utility/flat_hashtable.h"
+#include "core/utility/grid.h"
 #include "core/utility/hash.h"
 
 namespace mss {
@@ -29,7 +30,7 @@ struct ShapeSolver {
         class Result {
           public:
             // 创建指定雷数区间和 Box 期望值的分布结果。
-            Result(int start, int boxCount, std::vector<long double> ways, std::vector<long double> perBoxExpectations);
+            Result(int start, int boxCount, std::vector<long double> ways, RawGrid<long double> perBoxExpectations);
 
             // 禁止复制分布结果，避免复制内部 span 视图。
             Result(const Result &) = delete;
@@ -66,7 +67,7 @@ struct ShapeSolver {
             int boxCount_;
             std::vector<long double> ways_;
             std::vector<std::span<const long double>> perBoxExpectations_;
-            std::vector<long double> perBoxExpectationData_;
+            RawGrid<long double> perBoxExpectationData_;
         };
 
         struct Pool {

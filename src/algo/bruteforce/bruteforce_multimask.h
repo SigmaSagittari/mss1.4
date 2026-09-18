@@ -218,14 +218,6 @@ using u128 = bitMask<2>;
 using u256 = bitMask<4>;
 using u512 = bitMask<8>;
 
-template <typename Mask> struct BruteForce::MultiMaskSession {
-    // mineMasks/reveal 与 CommonSession 的方案、候选下标完全同序。
-    std::vector<Mask> mineMasks;
-    std::vector<std::uint8_t> reveal;
-    Mask unopened;
-    long long nodes = 0;
-};
-
 template <typename Mask> struct BruteForce::MultiMaskSolver {
     using ConfigId = std::uint32_t;
     using Common = BruteForce::CommonSession;
@@ -238,18 +230,13 @@ template <typename Mask> struct BruteForce::MultiMaskSolver {
 
     // 把完整方案表转换成多 word 雷掩码和揭示数字表。
     static Session buildSession(const Common &common);
-    // 读取某个方案下点击候选格后的揭示数字。
-    static int revealAt(const Common &common, const Session &session, ConfigId config, ConfigId candidate) {
-        return session.reveal[(std::size_t)(config)*common.candidateCount + candidate];
-    }
-    // 判断候选格在指定方案中是否为雷。
-    static bool mineAt(const Session &session, ConfigId config, ConfigId candidate) {
-        return session.mineMasks[config].test(candidate);
-    }
     // 用 Java-lite 启发式给同死亡数候选排序。
     static int javaLiteScore(const Common &common, const Session &session, std::span<const ConfigId> configs, int candidate);
     // 统一生成当前 unopened 候选的搜索顺序；root 也必须使用它来预热共享缓存。
     static std::vector<int> &orderCandidates(const Common &common, const Session &session, std::span<const ConfigId> configs, int depth);
+    // 按同时揭示的安全格向量对方案分组。
+    template <bool Small>
+    static void groupSafeConfigs(const Session &session, std::span<ConfigId> configs, const Mask &safeMask, Layer &buf);
 
     template <bool CheckAllMoves, bool IsRoot>
     // 递归搜索当前方案集合，按 need 返回可保证的胜局数或失败上界。
@@ -265,20 +252,21 @@ template <typename Mask> struct BruteForce::MultiMaskSolver {
 template <typename Mask>
 inline BruteForce::MultiMaskSession<Mask> BruteForce::MultiMaskSolver<Mask>::buildSession(const BruteForce::CommonSession &common) {
     // 把 CommonSession 的 CSR 雷位列表展开为 Mask，并预计算每个方案点击每格
-    // 后的数字；递归阶段只做位运算和数组读取。
+    // 后的数字；雷位置在 revealByConfig 中记为 9。
     Session session;
-    session.mineMasks.resize(common.possibilityCount);
-    for (int config = 0; config < common.possibilityCount; ++config)
-        for (std::uint32_t i = common.mineOffsets[config]; i < common.mineOffsets[config + 1]; ++i)
-            session.mineMasks[config].set(common.mineCells[i]);
-    session.reveal.assign((std::size_t)(common.possibilityCount) * common.candidateCount, 0);
+    session.mineMaskByConfig.resize(common.possibilityCount);
+    for (int config = 0; config < common.possibilityCount; ++config) {
+        for (int i = 0; i < common.minesPerConfig; ++i)
+            session.mineMaskByConfig[config].set(common.mineCandidateIds[config][i]);
+    }
+    session.revealByConfig.resize(common.possibilityCount, common.candidateCount, 0);
     for (int config = 0; config < common.possibilityCount; ++config)
         for (int candidate = 0; candidate < common.candidateCount; ++candidate) {
             int value = common.candidates[candidate].fixedMines;
             const CommonSession::Candidate &current = common.candidates[candidate];
             for (std::uint32_t i = 0; i < current.linksCount; ++i)
-                value += session.mineMasks[config].test(common.links[current.linksOffset + i]);
-            session.reveal[(std::size_t)(config)*common.candidateCount + candidate] = value;
+                value += session.mineMaskByConfig[config].test(common.links[current.linksOffset + i]);
+            session.revealByConfig[config][candidate] = session.mineMaskByConfig[config].test(candidate) ? 9 : value;
         }
     return session;
 }
@@ -296,13 +284,13 @@ inline int BruteForce::MultiMaskSolver<Mask>::javaLiteScore(const BruteForce::Co
     for (std::array<int, Mask::kBitCount> &counts : mineCounts)
         counts.fill(0);
     groupSizes.fill(0);
-    Mask remaining = session.unopened;
+    Mask remaining = session.unopenedCandidates;
     remaining.reset(candidate);
     for (ConfigId config : configs) {
-        const Mask &mines = session.mineMasks[config];
-        if (mines.test(candidate))
+        const int reveal = session.revealByConfig[config][candidate];
+        if (reveal == 9)
             continue;
-        const int reveal = revealAt(common, session, config, candidate);
+        const Mask &mines = session.mineMaskByConfig[config];
         ++groupSizes[reveal];
         Mask nextMines = mines;
         nextMines &= remaining;
@@ -339,12 +327,13 @@ inline std::vector<int> &BruteForce::MultiMaskSolver<Mask>::orderCandidates(cons
     Layer &buf = workspace::BruteForceMultiMask::scratch<Mask>.layer(depth);
     std::vector<int> &deaths = buf.deaths;
     deaths.assign(common.candidateCount, 0);
-    for (ConfigId config : configs)
-        for (std::uint32_t i = common.mineOffsets[config]; i < common.mineOffsets[config + 1]; ++i)
-            ++deaths[common.mineCells[i]];
+    for (ConfigId config : configs) {
+        for (int i = 0; i < common.minesPerConfig; ++i)
+            ++deaths[common.mineCandidateIds[config][i]];
+    }
     std::vector<int> &order = buf.order;
     order.clear();
-    session.unopened.forEachSetBit([&](int candidate) {
+    session.unopenedCandidates.forEachSetBit([&](int candidate) {
         order.push_back(candidate);
     });
     std::sort(order.begin(), order.end(), [&](int a, int b) {
@@ -373,12 +362,103 @@ inline std::vector<int> &BruteForce::MultiMaskSolver<Mask>::orderCandidates(cons
 }
 
 template <typename Mask>
+template <bool Small>
+inline void BruteForce::MultiMaskSolver<Mask>::groupSafeConfigs(const BruteForce::MultiMaskSession<Mask> &session,
+                                                                std::span<ConfigId> configs, const Mask &safeMask, Layer &buf) {
+    std::vector<std::span<ConfigId>> &groupList = buf.safeGroupList;
+    groupList.clear();
+    std::vector<int> &groupOffsets = buf.safeGroupOffsets;
+    std::vector<ConfigId> &groupedConfigs = buf.safeGroupedConfigs;
+    if constexpr (Small) {
+        static thread_local std::array<std::vector<ConfigId>, 729> groups;
+        static thread_local std::vector<int> keys;
+        std::array<int, 3> safeCandidates;
+        int safeCount = 0;
+        safeMask.forEachSetBit([&](int candidate) {
+            safeCandidates[safeCount++] = candidate;
+        });
+        for (ConfigId config : configs) {
+            int key = 0;
+            int factor = 1;
+            for (int i = 0; i < safeCount; ++i) {
+                key += session.revealByConfig[config][safeCandidates[i]] * factor;
+                factor *= 9;
+            }
+            if (groups[key].empty())
+                keys.push_back(key);
+            groups[key].push_back(config);
+        }
+        groupOffsets.resize(keys.size() + 1);
+        groupOffsets[0] = 0;
+        groupedConfigs.resize(configs.size());
+        for (int i = 0; i < (int)(keys.size()); ++i) {
+            std::vector<ConfigId> &group = groups[keys[i]];
+            groupOffsets[i + 1] = groupOffsets[i] + group.size();
+            std::copy(group.begin(), group.end(), groupedConfigs.begin() + groupOffsets[i]);
+            groupList.emplace_back(groupedConfigs.data() + groupOffsets[i], group.size());
+        }
+        for (int key : keys)
+            groups[key].clear();
+        keys.clear();
+    } else {
+        std::vector<U128> &hashes = buf.safeHashes;
+        hashes.clear();
+        const std::size_t wordCount = (safeMask.popcount() + 15) / 16;
+        for (ConfigId config : configs) {
+            std::array<std::uint64_t, Mask::kWordCount * 4> packed{};
+            int word = 0;
+            int shift = 0;
+            safeMask.forEachSetBit([&](int candidate) {
+                const std::uint64_t value = session.revealByConfig[config][candidate];
+                packed[word] |= value << shift;
+                shift += 4;
+                if (shift == 64) {
+                    ++word;
+                    shift = 0;
+                }
+            });
+            U128Hasher hasher;
+            for (int i = 0; i < (int)(wordCount); ++i)
+                hasher.mix(packed[i]);
+            hashes.push_back(hasher.finalize());
+        }
+        FlatHashTable<U128, int, U128Hash> &groupTable = workspace::BruteForceMultiMask::scratch<Mask>.safeGroupTable;
+        std::vector<int> &groupIds = buf.safeGroupIds;
+        std::vector<int> &groupSizes = buf.safeGroupSizes;
+        groupTable.clear();
+        groupTable.reserve(hashes.size());
+        groupIds.resize(hashes.size());
+        groupSizes.clear();
+        for (int i = 0; i < (int)(hashes.size()); ++i) {
+            int &slot = groupTable[hashes[i]];
+            if (slot == 0) {
+                slot = groupSizes.size() + 1;
+                groupSizes.push_back(0);
+            }
+            groupIds[i] = slot - 1;
+            ++groupSizes[groupIds[i]];
+        }
+        groupOffsets.resize(groupSizes.size() + 1);
+        groupOffsets[0] = 0;
+        for (int i = 0; i < (int)(groupSizes.size()); ++i)
+            groupOffsets[i + 1] = groupOffsets[i] + groupSizes[i];
+        groupedConfigs.resize(configs.size());
+        for (int i = 0; i < (int)(groupSizes.size()); ++i)
+            groupSizes[i] = groupOffsets[i];
+        for (int i = 0; i < (int)(configs.size()); ++i)
+            groupedConfigs[groupSizes[groupIds[i]]++] = configs[i];
+        for (int i = 0; i < (int)(groupSizes.size()); ++i)
+            groupList.emplace_back(groupedConfigs.data() + groupOffsets[i], groupOffsets[i + 1] - groupOffsets[i]);
+    }
+}
+
+template <typename Mask>
 template <bool CheckAllMoves, bool IsRoot>
 inline int BruteForce::MultiMaskSolver<Mask>::solve(const BruteForce::CommonSession &common, BruteForce::MultiMaskSession<Mask> &s,
                                                     std::span<ConfigId> configs, int need, int depth,
                                                     FlatHashTable<U128, int, U128Hash> &table, BruteForce::Result &result) {
     // 与普通后端相同，正数是当前方案集合的精确可赢数，负数是未达到 need
-    // 时的可赢上界编码；Mask 只改变 mineAt/安全集合的表示，不改变这个调用协议。
+    // 时的可赢上界编码；Mask 只改变雷位/安全集合的表示，不改变这个调用协议。
     // 根节点在 CheckAllMoves 模式下逐候选汇总各数字分支，否则只求一条推荐路径。
     if constexpr (CheckAllMoves && IsRoot) {
         ++s.nodes;
@@ -395,10 +475,13 @@ inline int BruteForce::MultiMaskSolver<Mask>::solve(const BruteForce::CommonSess
         for (int candidate : order) {
             for (std::vector<ConfigId> &group : groups)
                 group.clear();
-            for (ConfigId config : configs)
-                if (!mineAt(s, config, candidate))
-                    groups[revealAt(common, s, config, candidate)].push_back(config);
-            s.unopened.reset(candidate);
+            for (ConfigId config : configs) {
+                const int reveal = s.revealByConfig[config][candidate];
+                if (reveal == 9)
+                    continue;
+                groups[reveal].push_back(config);
+            }
+            s.unopenedCandidates.reset(candidate);
             int wins = 0;
             for (int reveal = 0; reveal < 9; ++reveal)
                 if (!groups[reveal].empty()) {
@@ -406,7 +489,7 @@ inline int BruteForce::MultiMaskSolver<Mask>::solve(const BruteForce::CommonSess
                     if (value > 0)
                         wins += value;
                 }
-            s.unopened.set(candidate);
+            s.unopenedCandidates.set(candidate);
             result.moves[candidate] = {common.candidates[candidate].x, common.candidates[candidate].y, wins};
             best = (std::max)(best, wins);
         }
@@ -421,7 +504,7 @@ inline int BruteForce::MultiMaskSolver<Mask>::solve(const BruteForce::CommonSess
             if constexpr (IsRoot)
                 if (n == 1)
                     for (int candidate = 0; candidate < common.candidateCount; ++candidate)
-                        if (!mineAt(s, configs[0], candidate)) {
+                        if (s.revealByConfig[configs[0]][candidate] != 9) {
                             result.moves[0].x = common.candidates[candidate].x;
                             result.moves[0].y = common.candidates[candidate].y;
                             break;
@@ -443,9 +526,9 @@ inline int BruteForce::MultiMaskSolver<Mask>::solve(const BruteForce::CommonSess
         Layer &buf = workspace::BruteForceMultiMask::scratch<Mask>.layer(depth);
         const int m = common.candidateCount;
         std::vector<int> &deaths = buf.deaths;
-        Mask safeMask = s.unopened;
+        Mask safeMask = s.unopenedCandidates;
         for (ConfigId config : configs) {
-            safeMask &= ~s.mineMasks[config];
+            safeMask &= ~s.mineMaskByConfig[config];
             if (!safeMask.any())
                 break;
         }
@@ -457,89 +540,39 @@ inline int BruteForce::MultiMaskSolver<Mask>::solve(const BruteForce::CommonSess
                 result.moves[0].x = common.candidates[candidate].x;
                 result.moves[0].y = common.candidates[candidate].y;
             }
-            s.unopened &= ~safeMask;
-            std::vector<U128> &hashes = buf.safeHashes;
-            hashes.clear();
-            const std::size_t wordCount = (safeMask.popcount() + 15) / 16;
-            for (ConfigId config : configs) {
-                std::array<std::uint64_t, Mask::kWordCount * 4> packed{};
-                int word = 0;
-                int shift = 0;
-                safeMask.forEachSetBit([&](int candidate) {
-                    const std::uint64_t value = revealAt(common, s, config, candidate);
-                    packed[word] |= value << shift;
-                    shift += 4;
-                    if (shift == 64) {
-                        ++word;
-                        shift = 0;
-                    }
-                });
-                U128Hasher hasher;
-                for (int i = 0; i < (int)(wordCount); ++i)
-                    hasher.mix(packed[i]);
-                hashes.push_back(hasher.finalize());
-            }
+            s.unopenedCandidates &= ~safeMask;
+            if (safeMask.popcount() <= 3)
+                groupSafeConfigs<true>(s, configs, safeMask, buf);
+            else
+                groupSafeConfigs<false>(s, configs, safeMask, buf);
             std::vector<std::span<ConfigId>> &groupList = buf.safeGroupList;
-            groupList.clear();
-            FlatHashTable<U128, int, U128Hash> &groupTable = workspace::BruteForceMultiMask::scratch<Mask>.safeGroupTable;
-            std::vector<int> &groupIds = buf.safeGroupIds;
-            std::vector<int> &groupSizes = buf.safeGroupSizes;
-            std::vector<int> &groupOffsets = buf.safeGroupOffsets;
-            std::vector<ConfigId> &groupedConfigs = buf.safeGroupedConfigs;
-            groupTable.clear();
-            groupTable.reserve(hashes.size());
-            groupIds.resize(hashes.size());
-            groupSizes.clear();
-            for (int i = 0; i < (int)(hashes.size()); ++i) {
-                int &slot = groupTable[hashes[i]];
-                if (slot == 0) {
-                    slot = groupSizes.size() + 1;
-                    groupSizes.push_back(0);
-                }
-                groupIds[i] = slot - 1;
-                ++groupSizes[groupIds[i]];
-            }
-            groupOffsets.resize(groupSizes.size() + 1);
-            groupOffsets[0] = 0;
-            for (int i = 0; i < (int)(groupSizes.size()); ++i)
-                groupOffsets[i + 1] = groupOffsets[i] + groupSizes[i];
-            groupedConfigs.resize(configs.size());
-            for (int i = 0; i < (int)(groupSizes.size()); ++i)
-                groupSizes[i] = groupOffsets[i];
-            for (int i = 0; i < (int)(configs.size()); ++i)
-                groupedConfigs[groupSizes[groupIds[i]]++] = configs[i];
-            for (int i = 0; i < (int)(groupSizes.size()); ++i)
-                groupList.emplace_back(groupedConfigs.data() + groupOffsets[i], groupOffsets[i + 1] - groupOffsets[i]);
             std::sort(groupList.begin(), groupList.end(), [](auto a, auto b) {
                 if (a.size() != b.size())
                     return a.size() > b.size();
                 return a.data() < b.data();
             });
-            std::vector<int> &suffix = buf.suffix;
-            suffix.resize(groupList.size() + 1);
-            suffix.back() = 0;
-            for (int i = (int)(groupList.size()) - 1; i >= 0; --i)
-                suffix[i] = suffix[i + 1] + groupList[i].size();
             int wins = 0;
             bool bailed = false;
             int upper = 0;
+            int remaining = n;
             for (int i = 0; i < (int)(groupList.size()); ++i) {
                 const int size = groupList[i].size();
-                if (wins + size + suffix[i + 1] < need) {
-                    upper = wins + size + suffix[i + 1];
+                remaining -= size;
+                if (wins + size + remaining < need) {
+                    upper = wins + size + remaining;
                     bailed = true;
                     break;
                 }
                 const int value =
-                    solve<false, false>(common, s, groupList[i], (std::max)(1, need - wins - suffix[i + 1]), depth + 1, table, result);
+                    solve<false, false>(common, s, groupList[i], (std::max)(1, need - wins - remaining), depth + 1, table, result);
                 if (value <= 0) {
-                    upper = wins - value + suffix[i + 1];
+                    upper = wins - value + remaining;
                     bailed = true;
                     break;
                 }
                 wins += value;
             }
-            s.unopened |= safeMask;
+            s.unopenedCandidates |= safeMask;
             if (bailed) {
                 // 仍无法达到 need；upper 包含已累计结果和未展开分支的最大贡献。
                 BruteForce::saveFail(key, upper, n, table);
@@ -562,13 +595,14 @@ inline int BruteForce::MultiMaskSolver<Mask>::solve(const BruteForce::CommonSess
             for (std::vector<ConfigId> &group : groups)
                 group.clear();
             int groupCount = 0;
-            for (ConfigId config : configs)
-                if (!mineAt(s, config, candidate)) {
-                    const int reveal = revealAt(common, s, config, candidate);
-                    if (groups[reveal].empty())
-                        ++groupCount;
-                    groups[reveal].push_back(config);
-                }
+            for (ConfigId config : configs) {
+                const int reveal = s.revealByConfig[config][candidate];
+                if (reveal == 9)
+                    continue;
+                if (groups[reveal].empty())
+                    ++groupCount;
+                groups[reveal].push_back(config);
+            }
             if (groupCount <= 1) {
                 // 不分裂候选不会产生新的信息分支；不更新 upper，供末尾识别所有
                 // 候选都不分裂的精确终局。
@@ -584,32 +618,29 @@ inline int BruteForce::MultiMaskSolver<Mask>::solve(const BruteForce::CommonSess
                     return a.second > b.second;
                 return a.first < b.first;
             });
-            std::vector<int> &suffix = buf.suffix;
-            suffix.resize(groupList.size() + 1);
-            suffix.back() = 0;
-            for (int i = (int)(groupList.size()) - 1; i >= 0; --i)
-                suffix[i] = suffix[i + 1] + groupList[i].second;
-            s.unopened.reset(candidate);
+            s.unopenedCandidates.reset(candidate);
             int wins = 0;
             bool bailed = false;
             int moveUpper = 0;
+            int remaining = n - deaths[candidate];
             for (int i = 0; i < (int)(groupList.size()); ++i) {
                 std::vector<ConfigId> &group = groups[groupList[i].first];
-                if (wins + groupList[i].second + suffix[i + 1] < target) {
-                    moveUpper = wins + groupList[i].second + suffix[i + 1];
+                remaining -= groupList[i].second;
+                if (wins + groupList[i].second + remaining < target) {
+                    moveUpper = wins + groupList[i].second + remaining;
                     bailed = true;
                     break;
                 }
                 const int value =
-                    solve<false, false>(common, s, group, (std::max)(1, target - wins - suffix[i + 1]), depth + 1, table, result);
+                    solve<false, false>(common, s, group, (std::max)(1, target - wins - remaining), depth + 1, table, result);
                 if (value <= 0) {
-                    moveUpper = wins - value + suffix[i + 1];
+                    moveUpper = wins - value + remaining;
                     bailed = true;
                     break;
                 }
                 wins += value;
             }
-            s.unopened.set(candidate);
+            s.unopenedCandidates.set(candidate);
             if (bailed)
                 upper = (std::max)(upper, moveUpper);
             if (!bailed && wins > best) {
@@ -630,8 +661,8 @@ inline int BruteForce::MultiMaskSolver<Mask>::solve(const BruteForce::CommonSess
             // 这里是精确结果，可供任意 need 直接复用。
             table[key] = 1;
             if constexpr (IsRoot)
-                for (int candidate = 0; candidate < m; ++candidate)
-                    if (!mineAt(s, configs[0], candidate)) {
+                    for (int candidate = 0; candidate < m; ++candidate)
+                    if (s.revealByConfig[configs[0]][candidate] != 9) {
                         result.moves[0].x = common.candidates[candidate].x;
                         result.moves[0].y = common.candidates[candidate].y;
                         break;
@@ -651,7 +682,7 @@ inline BruteForce::Result BruteForce::MultiMaskSolver<Mask>::solve(const BruteFo
     // 翻译成公开的 moves，失败的负上界不会泄漏为公开的 wins。
     BruteForce::Result result;
     result.possibilities = common.possibilityCount;
-    session.unopened = Mask::all(common.candidateCount);
+    session.unopenedCandidates = Mask::all(common.candidateCount);
     workspace::BruteForceMultiMask::scratch<Mask>.reset();
     workspace::BruteForceMultiMask::cache<Mask>.clear();
     std::vector<ConfigId> configs(common.possibilityCount);

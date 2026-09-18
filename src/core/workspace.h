@@ -73,8 +73,9 @@ struct Combinatorics {
         std::vector<long double> values;
     };
 
-    inline static thread_local Cache cache;
+    static thread_local Cache cache;
 };
+inline thread_local Combinatorics::Cache Combinatorics::cache;
 
 // src/core/utility/radix_sort.h
 struct RadixSort {
@@ -123,7 +124,7 @@ struct DfsSolver {
     // DfsSolver::analyze
     struct Analyze {
         std::vector<long double> ways;
-        std::vector<long double> moments;
+        RawGrid<long double> moments;
     };
 
     inline static thread_local Analyze analyze;
@@ -232,8 +233,9 @@ struct Probability {
         };
     };
 
-    inline static thread_local Analyze::Buffers globalWorkspace;
+    static thread_local Analyze::Buffers globalWorkspace;
 };
+inline thread_local Probability::Analyze::Buffers Probability::globalWorkspace;
 
 // src/algo/probability/observe.h
 struct ProbabilityObserve {
@@ -256,13 +258,13 @@ struct ProbabilityObserve {
         std::vector<ComponentId> captured;
         std::vector<char> seen;
         std::vector<int> adjacentBoxCells;
-        std::vector<long double> dp;
-        std::vector<long double> nextDp;
+        RawGrid<long double> dp;
+        RawGrid<long double> nextDp;
         std::vector<long double> restWays;
         std::vector<Transfer> transfers;
     };
 
-    inline static thread_local Buffers observeWorkspace;
+    static thread_local Buffers observeWorkspace;
 
     // Probability::buildDfsTable
     struct BuildDfsTable {
@@ -330,6 +332,7 @@ struct ProbabilityObserve {
         };
     };
 };
+inline thread_local ProbabilityObserve::Buffers ProbabilityObserve::observeWorkspace;
 
 // src/algo/bruteforce/bruteforce_normal.h
 struct BruteForceNormal {

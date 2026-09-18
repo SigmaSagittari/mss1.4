@@ -23,7 +23,7 @@ inline void probabilityCase() {
          "HMHHHMHHHMHHHMHHHMHMH", "HMHMHMHMHMHMHMHMHMHMH", "HMHHHMHHHMHHHMHHHMHMH", "HMHMHMHMHMHMHMHMHMHMH", "HMHHHMHHHMHHHMHHHMHMH"}};
 
     mss::ObservedBoard::Result board = mss::ObservedBoard::analyze(kRows, kCols, kMines);
-    std::vector<char> mines(kRows * kCols, 0);
+    mss::RawGrid<char> mines(kRows, kCols, 0);
     int mineCount = 0;
     for (int x = 1; x <= kRows; ++x) {
         check(kRowsData[x - 1].size() == kCols, "probability case row width is incorrect");
@@ -31,7 +31,7 @@ inline void probabilityCase() {
             const char cell = kRowsData[x - 1][y - 1];
             check(cell == 'H' || cell == 'M', "probability case contains an invalid cell");
             if (cell == 'M') {
-                mines[(x - 1) * kCols + y - 1] = 1;
+                mines[x - 1][y - 1] = 1;
                 ++mineCount;
             }
         }
@@ -47,13 +47,13 @@ inline void probabilityCase() {
     std::cout << std::fixed << std::setprecision(6);
     for (int x = 1; x <= kRows && !timedOut; x += 2)
         for (int y = 1; y <= kCols && !timedOut; y += 2) {
-            check(mines[(x - 1) * kCols + y - 1] == 0, "probability case opened a mine");
+            check(mines[x - 1][y - 1] == 0, "probability case opened a mine");
             const long double clickProbability =
                 analysis.probability.mineProbability(board.id(x, y), board, analysis.basic, analysis.structure);
             const std::chrono::steady_clock::time_point stepStart = std::chrono::steady_clock::now();
             int adjacentMines = 0;
             mss::forEachAdjacent(x, y, kRows, kCols, [&](int nx, int ny) {
-                adjacentMines += mines[(nx - 1) * kCols + ny - 1];
+                adjacentMines += mines[nx - 1][ny - 1];
             });
             mss::ObservedBoard::Delta updates;
             updates.changes.push_back({board.id(x, y), (mss::ObservedBoard::CellState)(adjacentMines)});

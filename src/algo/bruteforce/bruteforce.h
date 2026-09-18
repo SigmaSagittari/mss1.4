@@ -18,10 +18,15 @@ inline U128 BruteForce::hashConfigs(std::span<const ConfigId> configs) {
     // 必然对所有方案都安全；solve 会在继续分支前统一消掉这些共同安全格，
     // 所以 exact 结果只由 configs 决定。upper 是带 need 的剪枝上界，取决于
     // 本次搜索停在哪里，不是 configs 的固有结果。
-    // 将当前方案下标集合压缩成搜索缓存使用的 128 位键。
+    // 同一个 splitmix 值同时进入 sum/xor 两个无序通道；最后只混合 sum，
+    // 打断它与 xor 低位之间的相关性。
     U128 hash{configs.size(), configs.size()};
-    for (ConfigId config : configs)
-        hash += {splitmix64(config), splitmix64(config + 0x9e3779b97f4a7c15ULL)};
+    for (ConfigId config : configs) {
+        const std::uint64_t value = splitmix64(config);
+        hash.lo += value;
+        hash.hi ^= value;
+    }
+    hash.lo = splitmix64(hash.lo);
     return hash;
 }
 
@@ -75,9 +80,9 @@ inline BruteForce::CommonSession BruteForce::buildCommonSession(const ObservedBo
         if (basic.marks[session.candidates[candidate].x][session.candidates[candidate].y] == Basic::Mark::T)
             tCells.push_back(candidate);
 
-    session.mineOffsets.push_back(0);
     std::vector<CandidateId> placed;
     const int mines = board.totalMines - basic.mineSum;
+    session.minesPerConfig = mines;
     const int componentCount = structure.components.size();
     std::vector<std::uint32_t> assignmentOffsets(componentCount + 1);
     std::vector<std::uint32_t> assignmentCounts(componentCount);
@@ -95,17 +100,14 @@ inline BruteForce::CommonSession BruteForce::buildCommonSession(const ObservedBo
     }
     assignmentOffsets[componentCount] = assignments.size();
 
-    auto enumerateComponents = [&](auto &&self, int component, int used) -> void {
+    auto enumerateComponents = [&](auto &&self, int component, int used, auto &&emit) -> void {
         if (component == componentCount) {
             const int left = mines - used;
             if (left < 0 || left > (int)tCells.size())
                 return;
             auto chooseT = [&](auto &&choose, int start, int remaining) -> void {
                 if (remaining == 0) {
-                    ++session.possibilityCount;
-                    for (CandidateId candidate : placed)
-                        session.mineCells.push_back(candidate);
-                    session.mineOffsets.push_back(session.mineCells.size());
+                    emit(placed);
                     return;
                 }
                 for (int i = start; i <= (int)tCells.size() - remaining; ++i) {
@@ -130,7 +132,7 @@ inline BruteForce::CommonSession BruteForce::buildCommonSession(const ObservedBo
             auto chooseCells = [&](auto &&choose, int box, int start, int remaining) -> void {
                 if (remaining == 0) {
                     if (box + 1 == boxCount) {
-                        self(self, component + 1, used + componentMines);
+                        self(self, component + 1, used + componentMines, emit);
                         return;
                     }
                     choose(choose, box + 1, 0, assignments[assignmentStart + box + 1]);
@@ -145,12 +147,24 @@ inline BruteForce::CommonSession BruteForce::buildCommonSession(const ObservedBo
                 }
             };
             if (boxCount == 0)
-                self(self, component + 1, used);
+                self(self, component + 1, used, emit);
             else
                 chooseCells(chooseCells, 0, 0, assignments[assignmentStart]);
         }
     };
-    enumerateComponents(enumerateComponents, 0, 0);
+    // 先数出完整方案数，再一次性分配 [方案][第几个雷] 表，避免动态追加行。
+    auto countConfigs = [&](const std::vector<CandidateId> &) {
+        ++session.possibilityCount;
+    };
+    enumerateComponents(enumerateComponents, 0, 0, countConfigs);
+    session.mineCandidateIds.resize(session.possibilityCount, mines, 0);
+    int config = 0;
+    auto storeConfig = [&](const std::vector<CandidateId> &mineCandidates) {
+        for (int i = 0; i < mines; ++i)
+            session.mineCandidateIds[config][i] = mineCandidates[i];
+        ++config;
+    };
+    enumerateComponents(enumerateComponents, 0, 0, storeConfig);
     return session;
 }
 
@@ -184,8 +198,8 @@ inline BruteForce::Result BruteForce::solve(const ObservedBoard::Result &board, 
     workspace::BruteForceNormal::scratch.reset();
     workspace::BruteForceNormal::cache.clear();
     Session session = buildSession(common);
-    session.unopened.resize(common.candidateCount);
-    session.unopened.setAll();
+    session.unopenedCandidates.resize(common.candidateCount);
+    session.unopenedCandidates.setAll();
     std::vector<ConfigId> configs(common.possibilityCount);
     for (int i = 0; i < (int)configs.size(); ++i)
         configs[i] = i;

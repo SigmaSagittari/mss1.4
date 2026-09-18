@@ -110,7 +110,7 @@ inline void real_endgame_performance(const int l, const int r, const double seco
     int slowestPossibilities = 0;
     long long slowestNodes = 0;
     mss::ObservedBoard::Result slowestBoard;
-    std::vector<char> slowestMines;
+    mss::RawGrid<char> slowestMines;
 
     while (!timebox.expired()) {
         const long long gameNumber = games + 1;
@@ -335,7 +335,7 @@ inline void real_endgame_performance(const int l, const int r, const double seco
         std::cout << "performance/real_endgame/slowest mines:\n";
         for (int x = 1; x <= slowestBoard.rows; ++x) {
             for (int y = 1; y <= slowestBoard.cols; ++y)
-                std::cout << (slowestMines[(x - 1) * slowestBoard.cols + y - 1] ? '*' : '.');
+                std::cout << (slowestMines[x - 1][y - 1] ? '*' : '.');
             std::cout << '\n';
         }
     }

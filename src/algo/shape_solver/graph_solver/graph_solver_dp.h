@@ -213,17 +213,16 @@ inline ShapeSolver::Distribution::Result ShapeSolver::GraphSolver::materialize(c
         return layer.counts[countIds[lhs]].mineCount < layer.counts[countIds[rhs]].mineCount;
     });
     std::vector<long double> sortedWays(end - start + 1, 0.0L);
-    std::vector<long double> moments(sortedWays.size() * boxCount, 0.0L);
+    RawGrid<long double> moments((int)(sortedWays.size()), boxCount, 0.0L);
     for (const BoxId id : order) {
         const Layer::Count &count = layer.counts[countIds[id]];
         sortedWays[count.mineCount - start] = count.ways;
-        const std::size_t offset = (count.mineCount - start) * boxCount;
         for (int box = 0; box < boxCount; ++box) {
             long double value = 0;
             for (int slot = 0; slot < (int)(layer.momentBoxes.size()); ++slot)
                 if (layer.momentBoxes[slot] == box)
                     value = layer.momentValues[count.momentOffset + slot].value / count.ways;
-            moments[offset + box] = value;
+            moments[count.mineCount - start][box] = value;
         }
     }
     return {start, boxCount, std::move(sortedWays), std::move(moments)};
