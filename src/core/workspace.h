@@ -341,7 +341,6 @@ struct BruteForceNormal {
             std::vector<int> deaths;
             std::vector<int> safeCells;
             std::vector<int> order;
-            std::vector<int> suffix;
             std::array<std::vector<std::uint32_t>, 9> groups;
             std::vector<std::pair<int, int>> groupList;
             std::vector<U128> safeHashes;
@@ -368,7 +367,6 @@ struct BruteForceMultiMask {
     template <typename Mask> struct Layer {
         std::vector<int> deaths;
         std::vector<int> order;
-        std::vector<int> suffix;
         std::array<std::vector<std::uint32_t>, 9> groups;
         std::vector<std::pair<int, int>> groupList;
         std::vector<int> safeGroupIds;
@@ -391,7 +389,6 @@ struct BruteForceMultiMask {
             for (LayerType &layer : layers) {
                 layer.deaths.clear();
                 layer.order.clear();
-                layer.suffix.clear();
                 for (std::vector<std::uint32_t> &group : layer.groups)
                     group.clear();
                 layer.groupList.clear();

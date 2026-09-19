@@ -80,6 +80,13 @@ struct BruteForce {
                                             const Structure::Result &structure, const Structure::Pool &shapes);
     // 预计算普通后端所需的方案雷表和揭示数字表。
     static Session buildSession(const CommonSession &common);
+    // 两个多掩码宽度的统一驱动：建 Session 后交给 MultiMaskSolver 求解。
+    template <typename Mask> static Result solveWithMask(const CommonSession &common, const Config &config);
+    // 两个后端共用的求解驱动：按 checkAllMoves/minWins 分派两个 solve 入口，
+    // 并把带符号的递归返回值翻译成公开的 Move::wins。
+    template <typename Solver, typename SessionT>
+    static Result runSolver(const CommonSession &common, SessionT &session, const Config &config,
+                            FlatHashTable<U128, int, U128Hash> &table);
     template <bool CheckAllMoves, bool IsRoot>
     static int solve(const CommonSession &common, Session &s, std::span<ConfigId> configs, int need, int depth,
                      FlatHashTable<U128, int, U128Hash> &table, Result &result);

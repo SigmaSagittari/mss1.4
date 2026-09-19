@@ -45,6 +45,43 @@ inline void BruteForce::saveFail(const U128 &key, int upper, int count, FlatHash
         *old = (std::max)(*old, -upper);
 }
 
+template <typename Solver, typename SessionT>
+inline BruteForce::Result BruteForce::runSolver(const CommonSession &common, SessionT &session, const Config &config,
+                                                FlatHashTable<U128, int, U128Hash> &table) {
+    // 外层负责把带符号的递归结果翻译成公开的 moves：负值只是"未达到 minWins 的
+    // 可赢上界"，绝不能泄漏成公开的 Move::wins。多掩码与普通后端共用这段驱动。
+    Result result;
+    result.possibilities = common.possibilityCount;
+    std::vector<ConfigId> configs(common.possibilityCount);
+    for (int i = 0; i < (int)(configs.size()); ++i)
+        configs[i] = i;
+    if (config.checkAllMoves) {
+        // 该模式直接暴露根节点各候选的可赢数；递归负值不写进公开的 Move::wins。
+        Solver::template solve<true, true>(common, session, configs, 1, 0, table, result);
+    } else {
+        result.moves.resize(1);
+        // 单推荐格模式把 minWins 交给递归做阈值剪枝；只有正返回值才形成推荐步，
+        // 负值说明最多只能赢 abs(value) 局，因此清空公开动作结果。
+        const int wins = Solver::template solve<false, true>(common, session, configs, config.minWins, 0, table, result);
+        if (wins >= config.minWins)
+            result.moves[0].wins = wins;
+        else
+            result.moves.clear();
+    }
+    result.nodes = session.nodes;
+    return result;
+}
+
+template <typename Mask>
+inline BruteForce::Result BruteForce::solveWithMask(const CommonSession &common, const Config &config) {
+    // 掩码后端需要自己的 scratch/cache，二者都是跨调用复用的 thread_local。
+    MultiMaskSession<Mask> session = MultiMaskSolver<Mask>::buildSession(common);
+    session.unopenedCandidates = Mask::all(common.candidateCount);
+    workspace::BruteForceMultiMask::scratch<Mask>.reset();
+    workspace::BruteForceMultiMask::cache<Mask>.clear();
+    return runSolver<MultiMaskSolver<Mask>>(common, session, config, workspace::BruteForceMultiMask::cache<Mask>);
+}
+
 inline BruteForce::CommonSession BruteForce::buildCommonSession(const ObservedBoard::Result &board, const Basic::Result &basic,
                                                                 const Structure::Result &structure, const Structure::Pool &shapes) {
     // 从分析结果枚举完整雷位方案，并建立残局搜索的稠密索引。
@@ -180,46 +217,22 @@ inline BruteForce::Result BruteForce::solve(const ObservedBoard::Result &board, 
     if (common.possibilityCount == 0 || common.candidateCount == 0)
         return result;
     if (config.route != Config::Route::Common && common.possibilityCount > 1 && common.candidateCount <= multiMaskCandidateThreshold) {
-        if (common.candidateCount <= 64) {
-            MultiMaskSession<u64> session = MultiMaskSolver<u64>::buildSession(common);
-            return MultiMaskSolver<u64>::solve(common, session, config);
-        }
-        if (common.candidateCount <= 128) {
-            MultiMaskSession<u128> session = MultiMaskSolver<u128>::buildSession(common);
-            return MultiMaskSolver<u128>::solve(common, session, config);
-        }
-        if (common.candidateCount <= 256) {
-            MultiMaskSession<u256> session = MultiMaskSolver<u256>::buildSession(common);
-            return MultiMaskSolver<u256>::solve(common, session, config);
-        }
-        MultiMaskSession<u512> session = MultiMaskSolver<u512>::buildSession(common);
-        return MultiMaskSolver<u512>::solve(common, session, config);
+        // Mask 宽度按候选数选最小够用的那档；四档的求解流程完全相同。
+        if (common.candidateCount <= 64)
+            return solveWithMask<u64>(common, config);
+        if (common.candidateCount <= 128)
+            return solveWithMask<u128>(common, config);
+        if (common.candidateCount <= 256)
+            return solveWithMask<u256>(common, config);
+        return solveWithMask<u512>(common, config);
     }
+    // 普通后端：scratch/cache 都是跨调用复用的 thread_local，必须先清空。
     workspace::BruteForceNormal::scratch.reset();
     workspace::BruteForceNormal::cache.clear();
     Session session = buildSession(common);
     session.unopenedCandidates.resize(common.candidateCount);
     session.unopenedCandidates.setAll();
-    std::vector<ConfigId> configs(common.possibilityCount);
-    for (int i = 0; i < (int)configs.size(); ++i)
-        configs[i] = i;
-    if (config.checkAllMoves) {
-        // 该模式直接把根节点每个候选的可赢数写入 result；递归中的负数只作为
-        // 未达到阈值时的上界参与剪枝，不会进入公开的 Move::wins。
-        solve<true, true>(common, session, configs, 1, 0, workspace::BruteForceNormal::cache, result);
-    } else {
-        result.moves.resize(1);
-        // 单步模式把 minWins 传入递归：正返回值才是推荐步的可赢数；负返回值
-        // 表示当前残局最多只能赢 abs(value) 局，故公开结果必须保持为空。
-        const int wins = solve<false, true>(common, session, configs, config.minWins, 0, workspace::BruteForceNormal::cache, result);
-        if (wins >= config.minWins)
-            result.moves[0].wins = wins;
-        else
-            result.moves.clear();
-    }
-    result.nodes = session.nodes;
-    workspace::BruteForceNormal::cache.clear();
-    return result;
+    return runSolver<BruteForce>(common, session, config, workspace::BruteForceNormal::cache);
 }
 
 } // namespace mss

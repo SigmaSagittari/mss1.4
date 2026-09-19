@@ -24,7 +24,6 @@ inline void workspace::BruteForceNormal::Scratch::reset() {
         l.deaths.clear();
         l.safeCells.clear();
         l.order.clear();
-        l.suffix.clear();
         for (std::vector<std::uint32_t> &g : l.groups)
             g.clear();
         l.groupList.clear();
@@ -200,24 +199,24 @@ inline int BruteForce::solve(const CommonSession &common, Session &s, std::span<
                     return a.size() > b.size();
                 return a.data() < b.data();
             });
-            std::vector<int> &suffix = buf.suffix;
-            suffix.assign(groupList.size() + 1, 0);
-            for (int i = (int)(groupList.size()) - 1; i >= 0; --i)
-                suffix[i] = suffix[i + 1] + (int)groupList[i].size();
             int wins = 0;
             bool bailed = false;
             int upper = 0;
+            // remaining 是【尚未展开的桶】里的方案数上界，初值 n（一个桶都还没算）；
+            // 每轮先扣掉本桶，于是 wins + size + remaining 是乐观上界。
+            int remaining = n;
             for (int i = 0; i < (int)(groupList.size()); ++i) {
                 const int size = groupList[i].size();
-                if (wins + size + suffix[i + 1] < need) {
-                    upper = wins + size + suffix[i + 1];
+                remaining -= size;
+                if (wins + size + remaining < need) {
+                    upper = wins + size + remaining;
                     bailed = true;
                     break;
                 }
                 const int value =
-                    solve<false, false>(common, s, groupList[i], (std::max)(1, need - wins - suffix[i + 1]), depth + 1, table, result);
+                    solve<false, false>(common, s, groupList[i], (std::max)(1, need - wins - remaining), depth + 1, table, result);
                 if (value <= 0) {
-                    upper = wins - value + suffix[i + 1];
+                    upper = wins - value + remaining;
                     bailed = true;
                     break;
                 }
@@ -278,25 +277,25 @@ inline int BruteForce::solve(const CommonSession &common, Session &s, std::span<
                     return a.second > b.second;
                 return a.first < b.first;
             });
-            std::vector<int> &suffix = buf.suffix;
-            suffix.assign(groupList.size() + 1, 0);
-            for (int i = (int)(groupList.size()) - 1; i >= 0; --i)
-                suffix[i] = suffix[i + 1] + groupList[i].second;
             s.unopenedCandidates.reset(j);
             int wins = 0;
             bool bailed = false;
             int moveUpper = 0;
+            // 与 safe 分支同一套乐观上界，只是初值换成 n - deaths[j]：
+            // 认为该候选是雷的方案已经出局，本来就不该计入任何桶。
+            int remaining = n - deaths[j];
             for (int i = 0; i < (int)(groupList.size()); ++i) {
                 std::vector<ConfigId> &group = groups[groupList[i].first];
-                if (wins + groupList[i].second + suffix[i + 1] < target) {
-                    moveUpper = wins + groupList[i].second + suffix[i + 1];
+                remaining -= groupList[i].second;
+                if (wins + groupList[i].second + remaining < target) {
+                    moveUpper = wins + groupList[i].second + remaining;
                     bailed = true;
                     break;
                 }
                 const int value =
-                    solve<false, false>(common, s, group, (std::max)(1, target - wins - suffix[i + 1]), depth + 1, table, result);
+                    solve<false, false>(common, s, group, (std::max)(1, target - wins - remaining), depth + 1, table, result);
                 if (value <= 0) {
-                    moveUpper = wins - value + suffix[i + 1];
+                    moveUpper = wins - value + remaining;
                     bailed = true;
                     break;
                 }
