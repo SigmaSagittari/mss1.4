@@ -161,7 +161,7 @@ inline int BruteForce::solve(const CommonSession &common, Session &s, std::span<
             for (ConfigId ci : configs) {
                 U128Hasher hasher;
                 for (int i = 0; i < (int)(keyLen); ++i)
-                hasher.mix((std::uint64_t)(s.revealByConfig[ci][safeCells[i]]) * (keyLen + 1) + i);
+                    hasher.mix((std::uint64_t)(s.revealByConfig[ci][safeCells[i]]) * (keyLen + 1) + i);
                 hashes.push_back(hasher.finalize());
             }
             std::vector<std::span<ConfigId>> &groupList = buf.safeGroupList;

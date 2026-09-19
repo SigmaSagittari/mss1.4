@@ -126,6 +126,8 @@ struct BruteForce::Session {
 template <typename Mask> struct BruteForce::MultiMaskSession {
     // 每个 ConfigId 一张 Mask；第 CandidateId 位为 1 表示该格是雷。
     std::vector<Mask> mineMaskByConfig;
+    // [ConfigId][每 8 个 CandidateId 一组]；每个字节最低位表示对应候选为雷。
+    RawGrid<std::uint64_t> mineByteWordsByConfig;
     // 与普通后端相同的 [ConfigId][CandidateId] 揭示数字表。
     RawGrid<std::uint8_t> revealByConfig;
     // CandidateId 位图；1 表示该候选格尚未被当前搜索路径打开。

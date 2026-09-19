@@ -371,7 +371,6 @@ struct BruteForceMultiMask {
         std::vector<int> suffix;
         std::array<std::vector<std::uint32_t>, 9> groups;
         std::vector<std::pair<int, int>> groupList;
-        std::vector<U128> safeHashes;
         std::vector<int> safeGroupIds;
         std::vector<int> safeGroupSizes;
         std::vector<int> safeGroupOffsets;
@@ -396,7 +395,6 @@ struct BruteForceMultiMask {
                 for (std::vector<std::uint32_t> &group : layer.groups)
                     group.clear();
                 layer.groupList.clear();
-                layer.safeHashes.clear();
                 layer.safeGroupIds.clear();
                 layer.safeGroupSizes.clear();
                 layer.safeGroupOffsets.clear();

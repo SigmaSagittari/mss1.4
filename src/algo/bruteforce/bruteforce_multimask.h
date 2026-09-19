@@ -251,13 +251,17 @@ template <typename Mask> struct BruteForce::MultiMaskSolver {
 
 template <typename Mask>
 inline BruteForce::MultiMaskSession<Mask> BruteForce::MultiMaskSolver<Mask>::buildSession(const BruteForce::CommonSession &common) {
-    // 把 CommonSession 的 CSR 雷位列表展开为 Mask，并预计算每个方案点击每格
-    // 后的数字；雷位置在 revealByConfig 中记为 9。
+    // 把 CommonSession 的 CSR 雷位列表展开为 Mask、按候选字节打包的雷表，
+    // 并预计算每个方案点击每格后的数字；雷位置在 revealByConfig 中记为 9。
     Session session;
     session.mineMaskByConfig.resize(common.possibilityCount);
+    session.mineByteWordsByConfig.resize(common.possibilityCount, (common.candidateCount + 7) / 8, 0);
     for (int config = 0; config < common.possibilityCount; ++config) {
-        for (int i = 0; i < common.minesPerConfig; ++i)
-            session.mineMaskByConfig[config].set(common.mineCandidateIds[config][i]);
+        for (int i = 0; i < common.minesPerConfig; ++i) {
+            const CandidateId candidate = common.mineCandidateIds[config][i];
+            session.mineMaskByConfig[config].set(candidate);
+            session.mineByteWordsByConfig[config][candidate / 8] |= std::uint64_t{1} << (8 * (candidate % 8));
+        }
     }
     session.revealByConfig.resize(common.possibilityCount, common.candidateCount, 0);
     for (int config = 0; config < common.possibilityCount; ++config)
@@ -327,9 +331,31 @@ inline std::vector<int> &BruteForce::MultiMaskSolver<Mask>::orderCandidates(cons
     Layer &buf = workspace::BruteForceMultiMask::scratch<Mask>.layer(depth);
     std::vector<int> &deaths = buf.deaths;
     deaths.assign(common.candidateCount, 0);
-    for (ConfigId config : configs) {
-        for (int i = 0; i < common.minesPerConfig; ++i)
-            ++deaths[common.mineCandidateIds[config][i]];
+    {
+        // 使用预处理与 SIMD 加速代码：
+        // for (ConfigId config : configs) {
+        //     for (int i = 0; i < common.minesPerConfig; ++i)
+        //         ++deaths[common.mineCandidateIds[config][i]];
+        // }
+        const int wordCount = session.mineByteWordsByConfig.cols();
+        std::array<std::uint64_t, Mask::kBitCount / 8> sums{};
+        for (int begin = 0; begin < (int)configs.size(); begin += 255) {
+            sums.fill(0);
+            const int end = (std::min)(begin + 255, (int)configs.size());
+            for (int i = begin; i < end; ++i) {
+                const std::uint64_t *row = session.mineByteWordsByConfig[configs[i]];
+                for (int word = 0; word < wordCount; ++word)
+                    sums[word] += row[word];
+            }
+            for (int word = 0; word < wordCount; ++word) {
+                std::uint64_t value = sums[word];
+                const int endCandidate = (std::min)(word * 8 + 8, common.candidateCount);
+                for (int candidate = word * 8; candidate < endCandidate; ++candidate) {
+                    deaths[candidate] += value & 255;
+                    value >>= 8;
+                }
+            }
+        }
     }
     std::vector<int> &order = buf.order;
     order.clear();
@@ -369,14 +395,14 @@ inline void BruteForce::MultiMaskSolver<Mask>::groupSafeConfigs(const BruteForce
     groupList.clear();
     std::vector<int> &groupOffsets = buf.safeGroupOffsets;
     std::vector<ConfigId> &groupedConfigs = buf.safeGroupedConfigs;
+    std::array<int, Small ? 3 : Mask::kBitCount> safeCandidates;
+    int safeCount = 0;
+    safeMask.forEachSetBit([&](int candidate) {
+        safeCandidates[safeCount++] = candidate;
+    });
     if constexpr (Small) {
         static thread_local std::array<std::vector<ConfigId>, 729> groups;
         static thread_local std::vector<int> keys;
-        std::array<int, 3> safeCandidates;
-        int safeCount = 0;
-        safeMask.forEachSetBit([&](int candidate) {
-            safeCandidates[safeCount++] = candidate;
-        });
         for (ConfigId config : configs) {
             int key = 0;
             int factor = 1;
@@ -401,36 +427,30 @@ inline void BruteForce::MultiMaskSolver<Mask>::groupSafeConfigs(const BruteForce
             groups[key].clear();
         keys.clear();
     } else {
-        std::vector<U128> &hashes = buf.safeHashes;
-        hashes.clear();
-        const std::size_t wordCount = (safeMask.popcount() + 15) / 16;
-        for (ConfigId config : configs) {
-            std::array<std::uint64_t, Mask::kWordCount * 4> packed{};
-            int word = 0;
-            int shift = 0;
-            safeMask.forEachSetBit([&](int candidate) {
-                const std::uint64_t value = session.revealByConfig[config][candidate];
-                packed[word] |= value << shift;
-                shift += 4;
-                if (shift == 64) {
-                    ++word;
-                    shift = 0;
-                }
-            });
-            U128Hasher hasher;
-            for (int i = 0; i < (int)(wordCount); ++i)
-                hasher.mix(packed[i]);
-            hashes.push_back(hasher.finalize());
-        }
         FlatHashTable<U128, int, U128Hash> &groupTable = workspace::BruteForceMultiMask::scratch<Mask>.safeGroupTable;
         std::vector<int> &groupIds = buf.safeGroupIds;
         std::vector<int> &groupSizes = buf.safeGroupSizes;
         groupTable.clear();
-        groupTable.reserve(hashes.size());
-        groupIds.resize(hashes.size());
+        groupTable.reserve(configs.size());
+        groupIds.resize(configs.size());
         groupSizes.clear();
-        for (int i = 0; i < (int)(hashes.size()); ++i) {
-            int &slot = groupTable[hashes[i]];
+        const int full = safeCount / 16 * 16;
+        for (int i = 0; i < (int)(configs.size()); ++i) {
+            const auto *row = session.revealByConfig[configs[i]];
+            U128Hasher hasher;
+            for (int j = 0; j < full; j += 16) {
+                std::uint64_t packed = 0;
+                for (int k = 0; k < 16; ++k)
+                    packed |= (std::uint64_t)row[safeCandidates[j + k]] << (4 * k);
+                hasher.mix(packed);
+            }
+            if (full < safeCount) {
+                std::uint64_t packed = 0;
+                for (int j = full; j < safeCount; ++j)
+                    packed |= (std::uint64_t)row[safeCandidates[j]] << (4 * (j - full));
+                hasher.mix(packed);
+            }
+            int &slot = groupTable[hasher.finalize()];
             if (slot == 0) {
                 slot = groupSizes.size() + 1;
                 groupSizes.push_back(0);
