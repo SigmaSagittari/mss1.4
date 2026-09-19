@@ -27,7 +27,7 @@ inline void bruteforce() {
     const mss::Basic::Result basic = mss::Basic::analyze(board);
     mss::Structure::ShapePool shapes;
     const mss::Structure::Result structure = mss::Structure::analyze(board, basic, shapes);
-    const mss::BruteForce::Config config{false, 1};
+    const mss::BruteForce::Config config{false, 1, mss::BruteForce::Solver::Bitwise};
     const std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
     const mss::BruteForce::Result result = mss::BruteForce::solve(board, basic, structure, shapes, config);
     const double milliseconds = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();

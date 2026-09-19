@@ -8,6 +8,7 @@
 #include "algo/observed_board.h"
 #include "algo/shape_solver/shape_solver.h"
 #include "algo/structure.h"
+#include "core/utility/bit_mask.h"
 #include "core/utility/dynamic_bitset.h"
 #include "core/utility/flat_hashtable.h"
 #include "core/utility/grid.h"
@@ -17,15 +18,26 @@
 namespace mss {
 
 struct BruteForce {
-    struct Config {
-        enum class Route { Automatic, Common };
+    // 残局搜索后端。四个成员都必须返回相同的 possibilities、Move::wins 和动作
+    // 顺序，只在耗时与适用规模上不同；测试层用 Solver::Common 做逐项对拍。
+    enum class Solver {
+        // 普通递归后端（bruteforce_normal.h）。规模不限，总是可用。
+        Common,
+        // 掩码后端（multimask/bruteforce_multimask.h），单线程执行。
+        Bitwise,
+        // 掩码后端 + 根节点按候选并行。
+        BitwiseRootParallel,
+        // 掩码后端 + 多线程。设计已定但实现未落地，暂时与 rootparallel 同路。
+        BitwiseMultithread,
+    };
 
+    struct Config {
         // 是否在根节点求出每一个候选格的精确可赢数。
         bool checkAllMoves;
         // 单推荐格模式要求当前动作至少能保证的胜局数。
         int minWins;
-        // Automatic 使用候选数阈值选择后端；Common 强制使用普通后端。
-        Route route = Route::Automatic;
+        // 指定后端；退化规则见 solve 内的注释。
+        Solver solver = Solver::Bitwise;
     };
 
     struct Result {
@@ -50,8 +62,8 @@ struct BruteForce {
     // Move::wins 是该点击在所有揭示分支上可保证继续赢下去的方案数，不是概率。
 
     // 在当前盘面可能性上进行残局搜索；minWins 只影响单推荐格模式。
-    // route 用于选择自动后端或固定使用 Common 后端。两个后端必须返回相同的
-    // possibilities、wins 和动作顺序，测试层用 Route::Common 做逐项对拍。
+    // solver 用于选择后端。所有后端必须返回相同的 possibilities、wins 和动作
+    // 顺序，测试层用 Solver::Common 做逐项对拍。
     static Result solve(const ObservedBoard::Result &board, const Basic::Result &basic, const Structure::Result &structure,
                         const Structure::Pool &shapes, const Config &config);
 
@@ -68,6 +80,9 @@ struct BruteForce {
     template <typename Mask> struct MultiMaskSolver;
 
     inline static constexpr int multiMaskCandidateThreshold = 512;
+    // 阈值必须落在最宽掩码的位宽内：越过的候选会被 Mask::all 直接断言掉，
+    // 所以这两个数字不允许改脱节。
+    static_assert(multiMaskCandidateThreshold <= bitMask<8>::kBitCount, "阈值不能超过最宽掩码的位宽");
 
     // 为当前方案集合生成无序缓存键；递归分组会改变 span 顺序，但同一集合的
     // 子问题结果必须命中同一个缓存项。

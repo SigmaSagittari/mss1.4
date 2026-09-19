@@ -64,6 +64,7 @@
 #include <vector>
 
 #include "algo/bruteforce/bruteforce_common.h"
+#include "core/config.h"
 #include "core/utility/bit_mask.h"
 
 namespace mss {
@@ -90,9 +91,20 @@ template <typename Mask> struct BruteForce::MultiMaskSolver {
     // 方案数低于此阈值时 javaLiteScore 的分支统计与打分成本不划算，跳过它；
     // 它只影响搜索顺序，因此提高/降低这个值不会改变最终结果。
     inline static constexpr int kJavaLiteConfigThreshold = 10000;
+    // 小残局不启动线程；小子问题保留私有缓存，避免锁的开销占主导。
+    inline static constexpr int kParallelConfigThreshold = 4096;
+    inline static constexpr int kSharedConfigThreshold = 32;
 
     using Layer = workspace::BruteForceMultiMask::Layer<Mask>;
     using Scratch = workspace::BruteForceMultiMask::Scratch<Mask>;
+
+    struct SharedCache;
+    // 仅在本线程参与一次并行搜索期间指向该次调用拥有的共享缓存。
+    inline static thread_local SharedCache *sharedCache = nullptr;
+    // 根节点的并行闸门，由 BruteForce::solve 按 config.solver 在每次求解开始时设置：
+    // Solver::BitwiseRootParallel / BitwiseMultithread 为 true，Solver::Bitwise 为
+    // false。递归层不改动它，于是"哪个后端会并行"只由调用入口一个地方决定。
+    inline static thread_local bool rootParallel = false;
 
     // 把完整方案表转换成多 word 雷掩码和揭示数字表。
     static Session buildSession(const Common &common);
@@ -122,6 +134,9 @@ template <typename Mask> struct BruteForce::MultiMaskSolver {
     // （下标最小者）。这两处只知道"该状态精确可赢 1 局"，没有任何择格依据，
     // 所以固定挑最小下标以保证与普通后端逐项一致。
     static void writeFirstSafeMove(const Common &common, const Session &s, ConfigId config, Result &result);
+
+    template <bool CheckAllMoves>
+    static int solveCandidatesParallel(const Common &common, Session &s, std::span<ConfigId> configs, int need, Result &result);
 
     template <bool CheckAllMoves, bool IsRoot>
     // 递归搜索当前方案集合，按 need 返回可保证的胜局数或失败上界。
@@ -496,6 +511,8 @@ inline int BruteForce::MultiMaskSolver<Mask>::solve(const BruteForce::CommonSess
         int best = 0;
         std::array<std::vector<ConfigId>, 9> &groups = buf.groups;
         std::vector<int> &order = orderCandidates(common, s, configs, depth);
+        if (rootParallel && kMaxBruteforceCores > 1 && n >= kParallelConfigThreshold)
+            return solveCandidatesParallel<true>(common, s, configs, need, result);
         for (int candidate : order) {
             // 按揭示数字把 configs 分 9 桶；认为 candidate 是雷的方案直接出局，
             // 不计入任何桶。
@@ -535,16 +552,37 @@ inline int BruteForce::MultiMaskSolver<Mask>::solve(const BruteForce::CommonSess
         // 所以这一步可以放在查表之前，也不必写进缓存。
         if (need > n)
             return -n;
-        const U128 key = BruteForce::hashConfigs(configs);
+        if constexpr (!IsRoot) {
+            if (n == 2) {
+                // 两方案都能赢，当且仅当某个共同安全格能把它们区分开。
+                Mask safe = s.unopenedCandidates;
+                safe &= ~s.mineMaskByConfig[configs[0]];
+                safe &= ~s.mineMaskByConfig[configs[1]];
+                while (safe.any()) {
+                    const int candidate = safe.firstSetBit();
+                    if (s.revealByConfig[configs[0]][candidate] != s.revealByConfig[configs[1]][candidate])
+                        return 2;
+                    safe.reset(candidate);
+                }
+                return need <= 1 ? 1 : -1;
+            }
+        }
+        const U128 key = sharedCache == nullptr ? BruteForce::hashConfigs(configs) : sharedCache->hashConfigs(configs);
         // 正缓存值可直接回答阈值查询；负缓存值只有在绝对值仍低于 need 时
         // 才能直接证明失败，否则该缓存只对更低阈值有效。
         // 例：缓存 -5 表示"最多赢 5 个"；need=3 时 5 >= 3 无法证明失败，
         // 必须继续搜；need=7 时 5 < 7 可直接返回 -5。
-        if (const int *cached = table.find(key)) {
-            if (*cached >= 0)
-                return *cached >= need ? *cached : -*cached;
-            if (-*cached < need)
-                return *cached;
+        const bool shared = sharedCache != nullptr && n >= kSharedConfigThreshold;
+        int cached = 0;
+        if (shared)
+            cached = sharedCache->find(key);
+        else if (const int *value = table.find(key))
+            cached = *value;
+        if (cached != 0) {
+            if (cached > 0)
+                return cached >= need ? cached : -cached;
+            if (-cached < need)
+                return cached;
         }
         Layer &buf = workspace::BruteForceMultiMask::scratch<Mask>.layer(depth);
         std::vector<int> &deaths = buf.deaths;
@@ -588,11 +626,17 @@ inline int BruteForce::MultiMaskSolver<Mask>::solve(const BruteForce::CommonSess
             s.unopenedCandidates |= safeMask;
             if (!run.reached) {
                 // 仍无法达到 need；upper 包含已累计结果和未展开分支的最大贡献。
-                BruteForce::saveFail(key, run.upper, n, table);
+                if (shared)
+                    sharedCache->store(key, -run.upper);
+                else
+                    BruteForce::saveFail(key, run.upper, n, table);
                 return -run.upper;
             }
             // 所有桶都算完，wins 是精确值，可缓存并复用给任意 need。
-            table[key] = run.wins;
+            if (shared)
+                sharedCache->store(key, run.wins);
+            else
+                table[key] = run.wins;
             return run.wins;
         }
 
@@ -601,6 +645,9 @@ inline int BruteForce::MultiMaskSolver<Mask>::solve(const BruteForce::CommonSess
         // 认为该候选是雷的方案数，也就是点击它会直接出局的方案数，下面的上界
         // n - deaths[candidate] 由此而来。
         std::vector<int> &order = orderCandidates(common, s, configs, depth);
+        if constexpr (IsRoot)
+            if (rootParallel && kMaxBruteforceCores > 1 && n >= kParallelConfigThreshold)
+                return solveCandidatesParallel<false>(common, s, configs, need, result);
         int best = 0;
         // upper 是"在所有已尝试候选上见过的最好上界"，与 best（最好精确值）互不覆盖；
         // 结尾取 max(best, upper) 作为整节点的上界。
@@ -655,23 +702,34 @@ inline int BruteForce::MultiMaskSolver<Mask>::solve(const BruteForce::CommonSess
             }
         }
         if (best >= need) {
-            table[key] = best;
+            if (shared)
+                sharedCache->store(key, best);
+            else
+                table[key] = best;
             return best;
         }
         // upper == 0 说明没有可分裂候选进入失败路径；所有候选行为等价，
         // 因而该状态的精确可赢数是 1，而不是依赖本次 need 的失败上界。
         if (best == 0 && upper == 0) {
             // 这里是精确结果，可供任意 need 直接复用。
-            table[key] = 1;
+            if (shared)
+                sharedCache->store(key, 1);
+            else
+                table[key] = 1;
             // 所有候选行为等价，没有择格依据，固定取最小下标的非雷候选。
             if constexpr (IsRoot)
                 writeFirstSafeMove(common, s, configs[0], result);
             return 1;
         }
         // 未达标：max(best, upper) 是本节点可证明的可赢上界，按负数协议缓存。
-        BruteForce::saveFail(key, (std::max)(best, upper), n, table);
+        if (shared)
+            sharedCache->store(key, -(std::max)(best, upper));
+        else
+            BruteForce::saveFail(key, (std::max)(best, upper), n, table);
         return -(std::max)(best, upper);
     }
 }
 
 } // namespace mss
+
+#include "algo/bruteforce/multimask/bruteforce_multimask_rootparallel.h"

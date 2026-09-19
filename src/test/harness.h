@@ -22,7 +22,7 @@ inline void harness() {
     // ObservedBoard：棋盘观测、翻开更新和边界状态的功能回归。
     // observedBoard();
     // ProbabilityCase：人工构造的极端概率盘面压力测试，不代表通用性能。
-    //probabilityCase(); ##
+    //probabilityCase();
     // Performance：固定种子随机实战盘面，完整概率分析链路的 40 秒吞吐基线。
     // performance();
     // RadixSort：基数排序的功能与固定数据性能回归。
@@ -30,7 +30,7 @@ inline void harness() {
     // Structure：组件拆分、Box 压缩、池化和增量 Delta 回放的功能回归。
     // structure();
     // RealEndgamePerformance：随机实战残局样本的暴力搜索节点/耗时与结果对比。
-    // real_endgame_performance(0, 50000, 1200.0, true);
+     //real_endgame_performance(0, 50000, 20.0, true);
 }
 
 } // namespace test

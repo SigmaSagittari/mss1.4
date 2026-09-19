@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <cstdlib>
 
+#include "core/assert.h"
+
 namespace mss {
 
 // 定宽位集合：用 WordCount 个 64 位字表示最多 WordCount * 64 个下标。
@@ -29,9 +31,11 @@ template <std::size_t WordCount> struct bitMask {
         return result;
     }
 
-    // 创建低 bitCount 位为 1 的掩码。
+    // 创建低 bitCount 位为 1 的掩码。bitCount 超出位宽属于破坏调用契约：
+    // 越界的位无法表示，静默丢掉会让调用方以为候选格都在掩码里，随后按掩码
+    // 派生的下标少算一格。这里宁可炸掉，也不返回一个"看起来正常"的残缺掩码。
     static bitMask all(int bitCount) {
-        // bitCount <= kBitCount；最后一个有效 word 之外的位保持为 0。
+        assert_(bitCount >= 0 && bitCount <= kBitCount, "bitMask::all 的位数超出掩码位宽");
         bitMask result;
         int remaining = bitCount;
         for (std::uint64_t &word : result.words) {
@@ -142,8 +146,10 @@ template <> struct bitMask<1> {
         return result;
     }
 
-    // 创建低 bitCount 位为 1 的单 word 掩码。
+    // 创建低 bitCount 位为 1 的单 word 掩码。与通用版一样，超界直接炸：
+    // bitCount > 64 会让 (1 << bitCount) 变成移位未定义行为，比截断更糟。
     static bitMask all(int bitCount) {
+        assert_(bitCount >= 0 && bitCount <= kBitCount, "bitMask::all 的位数超出掩码位宽");
         bitMask result;
         if (bitCount == 64)
             result.word = ~std::uint64_t{};

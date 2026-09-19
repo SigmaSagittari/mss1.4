@@ -28,6 +28,9 @@
     <Filter Include="src\test">
       <UniqueIdentifier>{A2BCF0D8-1BAE-4A88-A5C6-07C67F598A94}</UniqueIdentifier>
     </Filter>
+    <Filter Include="src\algo\bruteforce\multimask">
+      <UniqueIdentifier>{f7bf34fc-49a9-4f58-802f-675e88a13de9}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\main.cpp">
@@ -42,9 +45,6 @@
       <Filter>src\algo\bruteforce</Filter>
     </ClInclude>
     <ClInclude Include="src\algo\bruteforce\bruteforce_common.h">
-      <Filter>src\algo\bruteforce</Filter>
-    </ClInclude>
-    <ClInclude Include="src\algo\bruteforce\bruteforce_multimask.h">
       <Filter>src\algo\bruteforce</Filter>
     </ClInclude>
     <ClInclude Include="src\algo\bruteforce\bruteforce_normal.h">
@@ -148,6 +148,12 @@
     </ClInclude>
     <ClInclude Include="src\test\real_endgame_performance.h">
       <Filter>src\test</Filter>
+    </ClInclude>
+    <ClInclude Include="src\algo\bruteforce\multimask\bruteforce_multimask.h">
+      <Filter>src\algo\bruteforce\multimask</Filter>
+    </ClInclude>
+    <ClInclude Include="src\algo\bruteforce\multimask\bruteforce_multimask_rootparallel.h">
+      <Filter>src\algo\bruteforce\multimask</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

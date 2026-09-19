@@ -183,7 +183,8 @@ inline void real_endgame_performance(const int l, const int r, const double seco
             if (noSafe && noFiftyFifty && l <= possibilities && possibilities <= r) {
                 const std::chrono::steady_clock::time_point multimaskStarted = std::chrono::steady_clock::now();
                 const mss::BruteForce::Result multimaskResult =
-                    mss::BruteForce::solve(game.board, analysis.basic, analysis.structure, analysis.shapes, {false, 1});
+                    mss::BruteForce::solve(game.board, analysis.basic, analysis.structure, analysis.shapes,
+                                           {false, 1, mss::BruteForce::Solver::Bitwise});
                 const double multimaskMilliseconds =
                     std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - multimaskStarted).count();
                 mss::BruteForce::Result commonResult;
@@ -193,7 +194,7 @@ inline void real_endgame_performance(const int l, const int r, const double seco
                 if (compareCommon) {
                     const std::chrono::steady_clock::time_point commonStarted = std::chrono::steady_clock::now();
                     commonResult = mss::BruteForce::solve(game.board, analysis.basic, analysis.structure, analysis.shapes,
-                                                          {false, 1, mss::BruteForce::Config::Route::Common});
+                                                          {false, 1, mss::BruteForce::Solver::Common});
                     commonMilliseconds =
                         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - commonStarted).count();
                     commonTotalMilliseconds += commonMilliseconds;

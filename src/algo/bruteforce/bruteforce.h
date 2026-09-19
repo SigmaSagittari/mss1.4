@@ -3,8 +3,9 @@
 #include <algorithm>
 
 #include "algo/bruteforce/bruteforce_common.h"
-#include "algo/bruteforce/bruteforce_multimask.h"
 #include "algo/bruteforce/bruteforce_normal.h"
+#include "algo/bruteforce/multimask/bruteforce_multimask.h"
+#include "core/assert.h"
 
 //==============================================================================
 
@@ -207,17 +208,18 @@ inline BruteForce::CommonSession BruteForce::buildCommonSession(const ObservedBo
 
 inline BruteForce::Result BruteForce::solve(const ObservedBoard::Result &board, const Basic::Result &basic,
                                             const Structure::Result &structure, const Structure::Pool &shapes, const Config &config) {
-    // 按配置选择多掩码或普通递归后端，返回候选动作及可赢方案数。
-    // Automatic 只在候选格不超过 512 且方案数大于 1 时走多掩码；Common 用于
-    // 与新后端对拍。这里的分流必须发生在构建递归 Session 之前，因为两套 Session
-    // 的 unopened 和 mine 存储完全不同。
+    // 按 config.solver 选择后端，返回候选动作及可赢方案数。分流必须发生在构建
+    // 递归 Session 之前，因为普通后端与掩码后端的 unopened / mine 存储完全不同。
     CommonSession common = buildCommonSession(board, basic, structure, shapes);
     Result result;
     result.possibilities = common.possibilityCount;
     if (common.possibilityCount == 0 || common.candidateCount == 0)
         return result;
-    if (config.route != Config::Route::Common && common.possibilityCount > 1 && common.candidateCount <= multiMaskCandidateThreshold) {
-        // Mask 宽度按候选数选最小够用的那档；四档的求解流程完全相同。
+    // bitwise 三兄弟共用的入口：Mask 宽度按候选数选最小够用的那档，四档求解流程
+    // 完全相同，只是根节点是否并行由 rootParallel 决定（见 multimask 后端）。
+    // 候选数超过阈值时 Mask::all 会断言，所以这里必须先退化成普通后端。
+    MultiMaskSolver<u64>::rootParallel = config.solver == Solver::BitwiseRootParallel || config.solver == Solver::BitwiseMultithread;
+    if (config.solver != Solver::Common && common.possibilityCount > 1 && common.candidateCount <= multiMaskCandidateThreshold) {
         if (common.candidateCount <= 64)
             return solveWithMask<u64>(common, config);
         if (common.candidateCount <= 128)
