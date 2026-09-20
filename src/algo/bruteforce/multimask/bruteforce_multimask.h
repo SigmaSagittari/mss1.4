@@ -389,37 +389,45 @@ inline void BruteForce::MultiMaskSolver<Mask>::groupSafeConfigs(const BruteForce
     if constexpr (Small) {
         // 729 == 9^3；Small 只在 safeCount <= 3 时被实例化（见 solve 中的调用点），
         // safeCount 同时也是 9 进制键的位数，所以 key 一定落在 [0, 729) 内。
-        static thread_local std::array<std::vector<ConfigId>, 729> groups;
+        // 计数排序：只枚举【本轮真正出现过的】桶（keys 按首次出现顺序记录），
+        // 规模 O(方案数 + 实际桶数)，绝不遍历全部 729 项。
+        static thread_local std::array<int, 729> counts;
         static thread_local std::vector<int> keys;
+        static thread_local std::vector<int> configKeys;
         // safeCandidates 已经按 forEachSetBit 的下标递增顺序排好，因此分桶键与
         // 方案在 configs 中的出现顺序无关，只由揭示向量本身决定。
-        // 直查表不预先 clear：靠 keys 记住本轮用过的槽，末尾按 keys 逐个清空。
         // 注意这里刻意不用 groupByReveal：本处键是跨 safeCount 个格子的 9 进制
         // 联合键（直接当直查下标用），而不是单个候选的揭示值，两者不同构。
-        for (ConfigId config : configs) {
+        keys.clear();
+        configKeys.resize(configs.size());
+        // 第一遍：算键、计数，并记下本轮出现过哪些桶（counts 归零时即首次出现）。
+        for (int i = 0; i < (int)(configs.size()); ++i) {
+            const auto *row = session.revealByConfig[configs[i]];
             int key = 0;
             int factor = 1;
-            for (int i = 0; i < safeCount; ++i) {
-                key += session.revealByConfig[config][safeCandidates[i]] * factor;
+            for (int j = 0; j < safeCount; ++j) {
+                key += row[safeCandidates[j]] * factor;
                 factor *= 9;
             }
-            if (groups[key].empty())
+            configKeys[i] = key;
+            if (counts[key]++ == 0)
                 keys.push_back(key);
-            groups[key].push_back(config);
         }
-        // 把桶摊平成 offsets + groupedConfigs，使每个桶成为一段连续 span。
+        // 前缀和得到每个桶的起点；counts 随即复用成写游标（与哈希路径同一套写法）。
         groupOffsets.resize(keys.size() + 1);
         groupOffsets[0] = 0;
-        groupedConfigs.resize(configs.size());
         for (int i = 0; i < (int)(keys.size()); ++i) {
-            std::vector<ConfigId> &group = groups[keys[i]];
-            groupOffsets[i + 1] = groupOffsets[i] + group.size();
-            std::copy(group.begin(), group.end(), groupedConfigs.begin() + groupOffsets[i]);
-            groupList.emplace_back(groupedConfigs.data() + groupOffsets[i], group.size());
+            groupOffsets[i + 1] = groupOffsets[i] + counts[keys[i]];
+            counts[keys[i]] = groupOffsets[i];
         }
-        for (int key : keys)
-            groups[key].clear();
-        keys.clear();
+        // 第二遍：把方案直接写到所属桶的最终位置，不再"先塞进 vector 再拷出来"。
+        groupedConfigs.resize(configs.size());
+        for (int i = 0; i < (int)(configs.size()); ++i)
+            groupedConfigs[counts[configKeys[i]]++] = configs[i];
+        for (int i = 0; i < (int)(keys.size()); ++i) {
+            groupList.emplace_back(groupedConfigs.data() + groupOffsets[i], groupOffsets[i + 1] - groupOffsets[i]);
+            counts[keys[i]] = 0; // 复位，供下一次调用
+        }
     } else {
         // 大 safeCount 路径：把每个方案的揭示向量按 4bit/格打包后哈希成一个 U128，
         // 再用 FlatHashTable 做值 → 桶 id 的映射（slot 存 id + 1，0 表示空槽）。
@@ -430,26 +438,34 @@ inline void BruteForce::MultiMaskSolver<Mask>::groupSafeConfigs(const BruteForce
         groupTable.reserve(configs.size());
         groupIds.resize(configs.size());
         groupSizes.clear();
-        const int full = safeCount / 16 * 16;
         for (int i = 0; i < (int)(configs.size()); ++i) {
-            // 每 16 格打成一个 u64（4bit * 16 = 64bit）后喂给 hasher；不足 16 的
-            // 尾巴单独打包一次。哈希碰撞只会让不同揭示向量共用桶 id —— 与 normal
-            // 后端一致，是同一套近似分组策略，故此处不做二次校验。
             const auto *row = session.revealByConfig[configs[i]];
-            U128Hasher hasher;
-            for (int j = 0; j < full; j += 16) {
+            U128 key;
+            if (safeCount <= 16) {
+                // 整条揭示向量只占一个 u64：每格 4bit，且揭示值只可能是 0..8
+                //（safeMask 是全体方案的交集安全格，没有任何方案认为它是雷），
+                // 各 4bit 段互不溢出，所以 packed 本身就是【不冲突】的组身份，
+                // 不需要再滚动哈希去构造指纹。只需把高位混进低位：U128Hash 是
+                // lo^hi、桶下标只取低位，而 packed 的低位只是头两个安全格的揭示
+                // 数字（取值很少），直接当键会严重扎堆。
                 std::uint64_t packed = 0;
-                for (int k = 0; k < 16; ++k)
-                    packed |= (std::uint64_t)row[safeCandidates[j + k]] << (4 * k);
-                hasher.mix(packed);
+                for (int j = 0; j < safeCount; ++j)
+                    packed |= (std::uint64_t)row[safeCandidates[j]] << (4 * j);
+                key = U128{packed, splitmix64(packed)};
+            } else {
+                // safeCount > 16 时一个 u64 装不下，必须分块滚动；此时键是 128 位
+                // 指纹（chunk 序列与原实现逐块一致）。碰撞只会让不同揭示向量共用
+                // 桶 id —— 与 normal 后端一致，是同一套近似分组策略，不做二次校验。
+                U128Hasher hasher;
+                for (int j = 0; j < safeCount; j += 16) {
+                    std::uint64_t chunk = 0;
+                    for (int k = 0; k < 16 && j + k < safeCount; ++k)
+                        chunk |= (std::uint64_t)row[safeCandidates[j + k]] << (4 * k);
+                    hasher.mix(chunk);
+                }
+                key = hasher.finalize();
             }
-            if (full < safeCount) {
-                std::uint64_t packed = 0;
-                for (int j = full; j < safeCount; ++j)
-                    packed |= (std::uint64_t)row[safeCandidates[j]] << (4 * (j - full));
-                hasher.mix(packed);
-            }
-            int &slot = groupTable[hasher.finalize()];
+            int &slot = groupTable[key];
             if (slot == 0) {
                 slot = groupSizes.size() + 1;
                 groupSizes.push_back(0);
