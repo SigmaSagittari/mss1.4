@@ -30,7 +30,7 @@ struct ShapeSolver::GraphSolver {
         std::vector<int> offsets;
         std::vector<BoxId> adjacent;
 
-        static Graph fromShape(const Structure::Shape &shape);
+        static Graph fromShape(const Structure::Shape &shape, const Structure::Pool &shapes);
         std::span<const BoxId> neighbors(BoxId box) const;
     };
 
@@ -82,7 +82,9 @@ struct ShapeSolver::GraphSolver {
         std::vector<Closing> closings;
     };
 
-    template <typename Callback> static void walkSteps(const Structure::Shape &shape, const std::vector<BoxId> &order, Callback &&callback);
+    template <typename Callback>
+    static void walkSteps(const Structure::Shape &shape, const Structure::Pool &shapes, const std::vector<BoxId> &order,
+                          Callback &&callback);
 
   private:
     using Layer = workspace::GraphSolverDp::Layer;
@@ -90,7 +92,8 @@ struct ShapeSolver::GraphSolver {
 
   public:
     // Graph DP 后端的普通分布求解。
-    static DistributionId analyze(const Structure::Shape &shape, Distribution::Pool &pool, const OrderAlgo &algo);
+    static DistributionId analyze(const Structure::Shape &shape, const Structure::Pool &shapes, Distribution::Pool &pool,
+                                  const OrderAlgo &algo);
 };
 
 } // namespace mss

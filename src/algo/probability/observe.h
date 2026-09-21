@@ -58,14 +58,14 @@ inline long double Probability::observeDenominator(const ObservePoly &polynomial
     return result;
 }
 
-inline void Probability::buildObserveTable(const Structure::Shape &shape, std::span<const int> adjacentBoxCells, int xBox,
-                                           std::vector<ObserveTransfer> &out) {
+inline void Probability::buildObserveTable(const Structure::Shape &shape, const Structure::Pool &shapes,
+                                           std::span<const int> adjacentBoxCells, int xBox, std::vector<ObserveTransfer> &out) {
     // 根据组件规模选择 DFS 或 Graph 后端生成点开转移表；xBox>=0 时排除被点击
     // Box 的具体格子，xBox=-1 表示该组件只通过邻居数字影响点开结果。
     out.clear();
-    if (shape.boxes.size() < ShapeSolver::graphThreshold)
-        return Probability::buildDfsTable(shape, adjacentBoxCells, xBox, out);
-    Probability::buildGraphTable(shape, adjacentBoxCells, xBox, out);
+    if (shape.boxes.size < ShapeSolver::graphThreshold)
+        return Probability::buildDfsTable(shape, shapes, adjacentBoxCells, xBox, out);
+    Probability::buildGraphTable(shape, shapes, adjacentBoxCells, xBox, out);
 }
 
 inline Probability::ObserveResult Probability::observe(const ObservedBoard::Result &board, const Basic::Result &basic,
@@ -116,7 +116,7 @@ inline Probability::ObserveResult Probability::observe(const ObservedBoard::Resu
     for (const ComponentId component : ws.captured) {
         const Structure::Instance &instance = shapes.getInstance(structure.components[component]);
         const Structure::Shape &shape = shapes.get(instance.shape);
-        for (const Structure::Shape::Box &box : shape.boxes)
+        for (const Structure::Shape::Box &box : shape.boxes.span(shapes.boxes))
             maxCapturedMines += box.size;
     }
     const int stride = maxCapturedMines + 1;
@@ -138,15 +138,15 @@ inline Probability::ObserveResult Probability::observe(const ObservedBoard::Resu
     for (const ComponentId component : ws.captured) {
         const Structure::Instance &instance = shapes.getInstance(structure.components[component]);
         const Structure::Shape &shape = shapes.get(instance.shape);
-        ws.adjacentBoxCells.assign(shape.boxes.size(), 0);
-        for (int box = 0; box < (int)(shape.boxes.size()); ++box)
-            for (int i = instance.boxes.boxOf[box]; i < instance.boxes.boxOf[box + 1]; ++i) {
-                const auto [cx, cy] = board.pos(instance.boxes.cells[i]);
+        ws.adjacentBoxCells.assign(shape.boxes.size, 0);
+        for (int box = 0; box < shape.boxes.size; ++box)
+            for (int i = instance.boxes.boxOf.span(shapes.boxOf)[box]; i < instance.boxes.boxOf.span(shapes.boxOf)[box + 1]; ++i) {
+                const auto [cx, cy] = board.pos(instance.boxes.cells.span(shapes.cells)[i]);
                 if ((std::abs(cx - x) <= 1) && (std::abs(cy - y) <= 1) && !(cx == x && cy == y))
                     ++ws.adjacentBoxCells[box];
             }
         ws.nextDp.resize(9, stride, 0.0L);
-        Probability::buildObserveTable(shape, ws.adjacentBoxCells, component == xComponent ? xBox : -1, ws.transfers);
+        Probability::buildObserveTable(shape, shapes, ws.adjacentBoxCells, component == xComponent ? xBox : -1, ws.transfers);
         for (const ObserveTransfer &transfer : ws.transfers)
             applyTransfer(transfer);
         ws.dp.swap(ws.nextDp);
@@ -168,7 +168,7 @@ inline Probability::ObserveResult Probability::observe(const ObservedBoard::Resu
         if (ws.seen[component])
             continue;
         const DistributionId id =
-            ShapeSolver::analyze(shapes.get(shapes.getInstance(structure.components[component]).shape), distributions, algo);
+            ShapeSolver::analyze(shapes.get(shapes.getInstance(structure.components[component]).shape), shapes, distributions, algo);
         const ShapeSolver::Distribution::Result &distribution = distributions.get(id);
         observePolyMultiplyInto(ws.rest, distribution.start(), distribution.ways(), ws.mult);
     }
@@ -196,7 +196,7 @@ inline Probability::ObserveResult Probability::observe(const ObservedBoard::Resu
     ws.all.start = ws.rest.start;
     for (const ComponentId component : ws.captured) {
         const DistributionId id =
-            ShapeSolver::analyze(shapes.get(shapes.getInstance(structure.components[component]).shape), distributions, algo);
+            ShapeSolver::analyze(shapes.get(shapes.getInstance(structure.components[component]).shape), shapes, distributions, algo);
         const ShapeSolver::Distribution::Result &distribution = distributions.get(id);
         observePolyMultiplyInto(ws.all, distribution.start(), distribution.ways(), ws.mult);
     }
@@ -206,17 +206,17 @@ inline Probability::ObserveResult Probability::observe(const ObservedBoard::Resu
     return result;
 }
 
-inline void Probability::buildDfsTable(const Structure::Shape &shape, std::span<const int> adjacentBoxCells, int xBox,
-                                       std::vector<Probability::ObserveTransfer> &out) {
+inline void Probability::buildDfsTable(const Structure::Shape &shape, const Structure::Pool &shapes,
+                                       std::span<const int> adjacentBoxCells, int xBox, std::vector<Probability::ObserveTransfer> &out) {
     // 枚举组件 Box 雷数，统计点开格邻居数字与组件雷数的联合权重。
     int maxMineCount = 0;
-    for (const Structure::Shape::Box &box : shape.boxes)
+    for (const Structure::Shape::Box &box : shape.boxes.span(shapes.boxes))
         maxMineCount += box.size;
     using Workspace = workspace::ProbabilityObserve::BuildDfsTable;
     Workspace &dfsWorkspace = workspace::ProbabilityObserve::buildDfsWorkspace;
     std::vector<std::array<long double, 9>> &accumulated = dfsWorkspace.accumulated;
     accumulated.assign(maxMineCount + 1, {});
-    ShapeSolver::DfsSolver::forEachAssignment(shape, [&](std::span<const char> assignment, long double weight) {
+    ShapeSolver::DfsSolver::forEachAssignment(shape, shapes, [&](std::span<const char> assignment, long double weight) {
         int componentMines = 0;
         std::array<long double, 9> convolution{};
         convolution[0] = 1.0L;
@@ -227,7 +227,7 @@ inline void Probability::buildDfsTable(const Structure::Shape &shape, std::span<
             const bool isXBox = boxId == xBox;
             if (adjacent == 0 && !isXBox)
                 continue;
-            const int size = shape.boxes[boxId].size;
+            const int size = shape.boxes.span(shapes.boxes)[boxId].size;
             const int pool = isXBox ? size - 1 : size;
             std::array<long double, 9> local{};
             const int maxAdjacent = (std::min)(adjacent, mines);
@@ -326,15 +326,15 @@ inline void workspace::ProbabilityObserve::BuildGraphTable::Layer::advance(
     }
 }
 
-inline void Probability::buildGraphTable(const Structure::Shape &shape, std::span<const int> adjacentBoxCells, int xBox,
-                                         std::vector<Probability::ObserveTransfer> &out) {
+inline void Probability::buildGraphTable(const Structure::Shape &shape, const Structure::Pool &shapes,
+                                         std::span<const int> adjacentBoxCells, int xBox, std::vector<Probability::ObserveTransfer> &out) {
     // 使用结构图的消元顺序构建点开专用 Graph DP 转移表。
-    const ShapeSolver::GraphSolver::Graph graph = ShapeSolver::GraphSolver::Graph::fromShape(shape);
+    const ShapeSolver::GraphSolver::Graph graph = ShapeSolver::GraphSolver::Graph::fromShape(shape, shapes);
     const std::vector<BoxId> order = ShapeSolver::GraphSolver::makeOrder(graph, ShapeSolver::GraphSolver::OrderAlgo::Adjacent);
     GraphLayer current;
     GraphLayer next;
     current.reset();
-    ShapeSolver::GraphSolver::walkSteps(shape, order, [&](const ShapeSolver::GraphSolver::StepPlan &plan) {
+    ShapeSolver::GraphSolver::walkSteps(shape, shapes, order, [&](const ShapeSolver::GraphSolver::StepPlan &plan) {
         current.advance(plan, next, adjacentBoxCells, xBox);
         std::swap(current, next);
     });

@@ -226,8 +226,8 @@ ForcedInfo inspectForced(const ForcedView &forced, CellId exclude, const Structu
             if (fp.components()[cid].boxProbabilities[bid] != 0.0L)
                 continue; // tally-0 = 全安全
             std::vector<CellId> cells;
-            for (int k = inst.boxes.boxOf[bid]; k < inst.boxes.boxOf[bid + 1]; ++k)
-                cells.push_back(inst.boxes.cells[k]);
+            for (int k = inst.boxes.boxOf.span(shapes.boxOf)[bid]; k < inst.boxes.boxOf.span(shapes.boxOf)[bid + 1]; ++k)
+                cells.push_back(inst.boxes.cells.span(shapes.cells)[k]);
             info.livingClears += cells.size();
             info.emptyBoxes.push_back(std::move(cells));
         }
@@ -328,8 +328,8 @@ BoardSummary summarizeBoard(const ObservedBoard::Result &board, const Basic::Res
             if (probability.components()[cid].boxProbabilities[bid] != 0.0L)
                 continue;
             std::vector<CellId> cells;
-            for (int k = inst.boxes.boxOf[bid]; k < inst.boxes.boxOf[bid + 1]; ++k)
-                cells.push_back(inst.boxes.cells[k]);
+            for (int k = inst.boxes.boxOf.span(shapes.boxOf)[bid]; k < inst.boxes.boxOf.span(shapes.boxOf)[bid + 1]; ++k)
+                cells.push_back(inst.boxes.cells.span(shapes.cells)[k]);
             std::sort(cells.begin(), cells.end());
             out.emptyBoxes.push_back(std::move(cells));
         }
@@ -655,8 +655,8 @@ JavaEvaluate::Result JavaEvaluate::solve(ObservedBoard::Result &board, Basic::Re
         for (int bid = 0; bid < (int)(instance.boxes.count()); ++bid) {
             FrontierBox box;
             box.safety = 1.0L - probability.components()[cid].boxProbabilities[bid];
-            for (int k = instance.boxes.boxOf[bid]; k < instance.boxes.boxOf[bid + 1]; ++k)
-                box.cells.push_back(instance.boxes.cells[k]);
+            for (int k = instance.boxes.boxOf.span(shapes.boxOf)[bid]; k < instance.boxes.boxOf.span(shapes.boxOf)[bid + 1]; ++k)
+                box.cells.push_back(instance.boxes.cells.span(shapes.cells)[k]);
             boxes.push_back(std::move(box));
         }
     }

@@ -17,17 +17,19 @@ struct ShapeSolver::DfsSolver {
   public:
     // 回调收到一个 Box->雷数赋值及其具体布局权重；weight 是各 Box 内 C(size,k)
     // 的乘积，调用方用它累计 ways/矩。回调期间 assignment 有效，返回后不能保存 span。
-    template <typename Callback> static void forEachAssignment(const Structure::Shape &shape, Callback &&callback);
+    template <typename Callback>
+    static void forEachAssignment(const Structure::Shape &shape, const Structure::Pool &shapes, Callback &&callback);
 
-    static DistributionId analyze(const Structure::Shape &shape, Distribution::Pool &pool);
+    static DistributionId analyze(const Structure::Shape &shape, const Structure::Pool &shapes, Distribution::Pool &pool);
 };
 
 template <typename Callback>
-inline void mss::ShapeSolver::DfsSolver::forEachAssignment(const Structure::Shape &shape, Callback &&callback) {
+inline void mss::ShapeSolver::DfsSolver::forEachAssignment(const Structure::Shape &shape, const Structure::Pool &shapes,
+                                                           Callback &&callback) {
     // 深度优先枚举满足全部约束的 Box 雷数赋值；每加入一个 Box 就用当前和与
     // 剩余容量剪枝，因此 callback 只看合法 assignment，不需要再次检查约束。
     AssignmentWorkspace &workspace = workspace::DfsSolver::forEachAssignment;
-    const int boxCount = shape.boxes.size();
+    const int boxCount = shape.boxes.size;
     const int constraintCount = shape.constraintCount();
 
     workspace.boxHead.assign(boxCount, -1);
@@ -41,15 +43,15 @@ inline void mss::ShapeSolver::DfsSolver::forEachAssignment(const Structure::Shap
 
     std::size_t incidenceCount = 0;
     for (int constraint = 0; constraint < constraintCount; ++constraint)
-        incidenceCount += shape.constraint(constraint).boxIds.size();
+        incidenceCount += shape.constraint(shapes, constraint).boxIds.size();
     workspace.constraintNext.reserve(incidenceCount);
     workspace.constraintIds.reserve(incidenceCount);
 
     for (int constraint = 0; constraint < constraintCount; ++constraint) {
-        const Structure::Shape::ConstraintView view = shape.constraint(constraint);
+        const Structure::Shape::ConstraintView view = shape.constraint(shapes, constraint);
         workspace.constraintSum[constraint] = view.sum;
         for (BoxId box : view.boxIds) {
-            workspace.constraintMaxAdd[constraint] += shape.boxes[box].size;
+            workspace.constraintMaxAdd[constraint] += shape.boxes.span(shapes.boxes)[box].size;
             workspace.constraintNext.push_back(workspace.boxHead[box]);
             workspace.constraintIds.push_back(constraint);
             workspace.boxHead[box] = workspace.constraintIds.size() - 1;
@@ -68,7 +70,7 @@ inline void mss::ShapeSolver::DfsSolver::forEachAssignment(const Structure::Shap
             const int appliedMine = frame.appliedMine;
             workspace.frames.pop_back();
             if (appliedIndex >= 0) {
-                const int maxMine = shape.boxes[appliedIndex].size;
+                const int maxMine = shape.boxes.span(shapes.boxes)[appliedIndex].size;
                 for (int link = workspace.boxHead[appliedIndex]; link >= 0; link = workspace.constraintNext[link]) {
                     const int constraint = workspace.constraintIds[link];
                     workspace.currentSum[constraint] -= appliedMine;
@@ -79,13 +81,13 @@ inline void mss::ShapeSolver::DfsSolver::forEachAssignment(const Structure::Shap
         }
 
         const int index = frame.index;
-        const int maxMine = shape.boxes[index].size;
+        const int maxMine = shape.boxes.span(shapes.boxes)[index].size;
         if (frame.nextMine > maxMine) {
             const int appliedIndex = frame.appliedIndex;
             const int appliedMine = frame.appliedMine;
             workspace.frames.pop_back();
             if (appliedIndex >= 0) {
-                const int appliedMaxMine = shape.boxes[appliedIndex].size;
+                const int appliedMaxMine = shape.boxes.span(shapes.boxes)[appliedIndex].size;
                 for (int link = workspace.boxHead[appliedIndex]; link >= 0; link = workspace.constraintNext[link]) {
                     const int constraint = workspace.constraintIds[link];
                     workspace.currentSum[constraint] -= appliedMine;
@@ -119,16 +121,17 @@ inline void mss::ShapeSolver::DfsSolver::forEachAssignment(const Structure::Shap
     }
 }
 
-inline DistributionId mss::ShapeSolver::DfsSolver::analyze(const Structure::Shape &shape, Distribution::Pool &pool) {
+inline DistributionId mss::ShapeSolver::DfsSolver::analyze(const Structure::Shape &shape, const Structure::Pool &shapes,
+                                                           Distribution::Pool &pool) {
     // 汇总每个合法赋值在各总雷数下的布局权重和 Box 期望雷数，再压缩掉空的
     // 雷数区间并交给 Distribution::Pool 缓存。
     const DistributionId cached = pool.find(shape.hash);
     if (cached >= 0)
         return cached;
 
-    const int boxCount = shape.boxes.size();
+    const int boxCount = shape.boxes.size;
     int maxMineCount = 0;
-    for (const Structure::Shape::Box &box : shape.boxes)
+    for (const Structure::Shape::Box &box : shape.boxes.span(shapes.boxes))
         maxMineCount += box.size;
 
     AnalyzeWorkspace &analyzeWorkspace = workspace::DfsSolver::analyze;
@@ -136,7 +139,7 @@ inline DistributionId mss::ShapeSolver::DfsSolver::analyze(const Structure::Shap
     RawGrid<long double> &moments = analyzeWorkspace.moments;
     ways.assign(maxMineCount + 1, 0.0L);
     moments.resize(maxMineCount + 1, boxCount, 0.0L);
-    forEachAssignment(shape, [&](std::span<const char> assignment, long double weight) {
+    forEachAssignment(shape, shapes, [&](std::span<const char> assignment, long double weight) {
         int mineCount = 0;
         for (char mine : assignment)
             mineCount += mine;

@@ -93,11 +93,11 @@ struct Probability {
     // 计算点开条件下的全局方案数分母。
     static long double observeDenominator(const ObservePoly &polynomial, int totalMines, int tSum);
     // 用 DFS 枚举组件并生成点开转移表。
-    static void buildDfsTable(const Structure::Shape &shape, std::span<const int> adjacentBoxCells, int xBox,
-                              std::vector<ObserveTransfer> &out);
+    static void buildDfsTable(const Structure::Shape &shape, const Structure::Pool &shapes, std::span<const int> adjacentBoxCells,
+                              int xBox, std::vector<ObserveTransfer> &out);
     // 用 Graph DP 生成点开转移表。
-    static void buildGraphTable(const Structure::Shape &shape, std::span<const int> adjacentBoxCells, int xBox,
-                                std::vector<ObserveTransfer> &out);
+    static void buildGraphTable(const Structure::Shape &shape, const Structure::Pool &shapes, std::span<const int> adjacentBoxCells,
+                                int xBox, std::vector<ObserveTransfer> &out);
 
     using Poly = workspace::Probability::Analyze::Poly;
     using Workspace = workspace::Probability::Analyze::Buffers;
@@ -120,8 +120,8 @@ struct Probability {
                         const ShapeSolver::OrderAlgo &algo = ShapeSolver::OrderAlgo::Auto);
 
     // 为指定点开格生成组件转移表。
-    static void buildObserveTable(const Structure::Shape &shape, std::span<const int> adjacentBoxCells, int xBox,
-                                  std::vector<ObserveTransfer> &out);
+    static void buildObserveTable(const Structure::Shape &shape, const Structure::Pool &shapes, std::span<const int> adjacentBoxCells,
+                                  int xBox, std::vector<ObserveTransfer> &out);
     // 计算点开指定 Hidden 格后的数字/爆炸概率分布。
     static ObserveResult observe(const ObservedBoard::Result &board, const Basic::Result &basic, const Structure::Result &structure,
                                  const Structure::Pool &shapes, const Result &probability, ShapeSolver::Distribution::Pool &distributions,
@@ -180,8 +180,8 @@ inline void mss::Probability::Result::frontierCells(const mss::ObservedBoard::Re
         const Structure::Instance &instance = shapes.getInstance(structure.components[cid]);
         for (int box = 0; box < (int)(component.boxProbabilities.size()); ++box) {
             const long double probability = component.boxProbabilities[box];
-            for (int i = instance.boxes.boxOf[box]; i < instance.boxes.boxOf[box + 1]; ++i) {
-                const auto [x, y] = board.pos(instance.boxes.cells[i]);
+            for (int i = instance.boxes.boxOf.span(shapes.boxOf)[box]; i < instance.boxes.boxOf.span(shapes.boxOf)[box + 1]; ++i) {
+                const auto [x, y] = board.pos(instance.boxes.cells.span(shapes.cells)[i]);
                 callback(x, y, probability);
             }
         }

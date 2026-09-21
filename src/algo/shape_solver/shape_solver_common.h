@@ -97,7 +97,8 @@ struct ShapeSolver {
 
     // 按组件规模选择 DFS 或 Graph 后端并返回缓存句柄；两者必须产出同一分布，
     // 阈值只为控制状态爆炸和运行时间。
-    static DistributionId analyze(const Structure::Shape &shape, Distribution::Pool &pool, const OrderAlgo &algo = OrderAlgo::Auto);
+    static DistributionId analyze(const Structure::Shape &shape, const Structure::Pool &shapes, Distribution::Pool &pool,
+                                  const OrderAlgo &algo = OrderAlgo::Auto);
 
     // 返回 n 个格子中选 k 个雷的组合数。
     static long double binom(int n, int k);

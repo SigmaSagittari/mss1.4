@@ -5,10 +5,11 @@
 namespace mss {
 
 template <typename Callback>
-inline void ShapeSolver::GraphSolver::walkSteps(const Structure::Shape &shape, const std::vector<BoxId> &order, Callback &&callback) {
+inline void ShapeSolver::GraphSolver::walkSteps(const Structure::Shape &shape, const Structure::Pool &shapes,
+                                                 const std::vector<BoxId> &order, Callback &&callback) {
     // 把消元顺序转换为逐步的读取、收集和闭合计划；StepPlan 让 Layer 只读取
     // 当前检查所需的旧槽位，并在约束关闭时输出对应 Box 的矩。
-    const int boxCount = shape.boxes.size();
+    const int boxCount = shape.boxes.size;
     std::vector<int> position(boxCount);
     for (int step = 0; step < boxCount; ++step)
         position[order[step]] = step;
@@ -19,7 +20,7 @@ inline void ShapeSolver::GraphSolver::walkSteps(const Structure::Shape &shape, c
     std::vector<int> nextLink;
     std::vector<int> constraintIds;
     for (int constraint = 0; constraint < constraintCount; ++constraint) {
-        const Structure::Shape::ConstraintView view = shape.constraint(constraint);
+        const Structure::Shape::ConstraintView view = shape.constraint(shapes, constraint);
         for (BoxId box : view.boxIds)
             constraintLast[constraint] = (std::max)(constraintLast[constraint], position[box]);
         for (BoxId box : view.boxIds) {
@@ -31,7 +32,7 @@ inline void ShapeSolver::GraphSolver::walkSteps(const Structure::Shape &shape, c
 
     std::vector<int> closeStep = position;
     for (int constraint = 0; constraint < constraintCount; ++constraint)
-        for (BoxId box : shape.constraint(constraint).boxIds)
+        for (BoxId box : shape.constraint(shapes, constraint).boxIds)
             closeStep[box] = (std::max)(closeStep[box], constraintLast[constraint]);
 
     std::vector<int> closeHead(boxCount, -1);
@@ -47,20 +48,20 @@ inline void ShapeSolver::GraphSolver::walkSteps(const Structure::Shape &shape, c
     StepPlan plan;
     for (int step = 0; step < boxCount; ++step) {
         plan.box = order[step];
-        plan.boxSize = shape.boxes[plan.box].size;
+        plan.boxSize = shape.boxes.span(shapes.boxes)[plan.box].size;
         plan.checks.clear();
         plan.gather.clear();
         plan.closings.clear();
 
         for (int link = boxHead[plan.box]; link >= 0; link = nextLink[link]) {
-            const Structure::Shape::ConstraintView view = shape.constraint(constraintIds[link]);
+            const Structure::Shape::ConstraintView view = shape.constraint(shapes, constraintIds[link]);
             StepPlan::Check check;
             check.sum = view.sum;
             for (BoxId member : view.boxIds) {
                 if (position[member] < step)
                     check.readSlots[check.readCount++] = slotOf[member];
                 else if (position[member] > step)
-                    check.remainingSize += shape.boxes[member].size;
+                    check.remainingSize += shape.boxes.span(shapes.boxes)[member].size;
             }
             plan.checks.push_back(check);
         }
@@ -228,25 +229,26 @@ inline ShapeSolver::Distribution::Result ShapeSolver::GraphSolver::materialize(c
     return {start, boxCount, std::move(sortedWays), std::move(moments)};
 }
 
-inline DistributionId ShapeSolver::GraphSolver::analyze(const Structure::Shape &shape, ShapeSolver::Distribution::Pool &pool,
+inline DistributionId ShapeSolver::GraphSolver::analyze(const Structure::Shape &shape, const Structure::Pool &shapes,
+                                                        ShapeSolver::Distribution::Pool &pool,
                                                         const ShapeSolver::GraphSolver::OrderAlgo &algo) {
     // 构建消元图、执行 Graph DP，并把结果写入分布缓存；先查缓存，命中时不再
     // 重算同一 Shape，未命中时用 algo 控制消元顺序的优化策略。
     const DistributionId cached = pool.find(shape.hash);
     if (cached >= 0)
         return cached;
-    const Graph graph = Graph::fromShape(shape);
+    const Graph graph = Graph::fromShape(shape, shapes);
     const std::vector<BoxId> order = makeOrder(graph, algo);
     // 当前线程复用两层 DP 容量；reset 只清空逻辑元素。
     Layer &current = workspace::GraphSolverDp::current;
     Layer &next = workspace::GraphSolverDp::next;
     current.reset();
     next.reset();
-    walkSteps(shape, order, [&](const StepPlan &plan) {
+    walkSteps(shape, shapes, order, [&](const StepPlan &plan) {
         current.advance(plan, next);
         std::swap(current, next);
     });
-    ShapeSolver::Distribution::Result result = materialize(current, shape.boxes.size());
+    ShapeSolver::Distribution::Result result = materialize(current, shape.boxes.size);
     return pool.insert(shape.hash, std::move(result));
 }
 

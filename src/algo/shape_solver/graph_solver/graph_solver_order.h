@@ -4,10 +4,11 @@
 
 namespace mss {
 
-inline ShapeSolver::GraphSolver::Graph ShapeSolver::GraphSolver::Graph::fromShape(const Structure::Shape &shape) {
+inline ShapeSolver::GraphSolver::Graph ShapeSolver::GraphSolver::Graph::fromShape(const Structure::Shape &shape,
+                                                                                    const Structure::Pool &shapes) {
     // 将每条约束中的 Box 两两连接，构建消元排序使用的邻接图；同一约束中的
     // 任意两个 Box 必须在消元前互相可见，才能在局部状态中检查约束剩余量。
-    const int boxCount = shape.boxes.size();
+    const int boxCount = shape.boxes.size;
     Graph graph;
     graph.offsets.assign(boxCount + 1, 0);
 
@@ -23,7 +24,7 @@ inline ShapeSolver::GraphSolver::Graph ShapeSolver::GraphSolver::Graph::fromShap
     };
 
     for (int i = 0; i < (int)(shape.constraintCount()); ++i) {
-        const Structure::Shape::ConstraintView constraint = shape.constraint(i);
+        const Structure::Shape::ConstraintView constraint = shape.constraint(shapes, i);
         for (int a = 0; a < (int)(constraint.boxIds.size()); ++a)
             for (int b = a + 1; b < (int)(constraint.boxIds.size()); ++b) {
                 addEdge(constraint.boxIds[a], constraint.boxIds[b]);

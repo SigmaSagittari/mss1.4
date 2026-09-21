@@ -10,6 +10,7 @@
 #include "core/types.h"
 #include "core/utility/flat_hashtable.h"
 #include "core/utility/hash.h"
+#include "core/utility/vector_pool.h"
 #include "core/workspace.h"
 
 namespace mss {
@@ -18,6 +19,8 @@ struct Structure {
 
     // Structure 把 Basic 的 H/数字二部图压缩成独立连通组件；同一组件内，
     // 具有相同数字邻接签名的隐藏格共享一个 Box，后续分布层只枚举 Box 的雷数。
+
+    struct Pool;
 
     struct Shape {
         struct Box {
@@ -29,20 +32,8 @@ struct Structure {
             std::span<const BoxId> boxIds;
         };
 
-        std::vector<Box> boxes;
+        vectorPool<Box>::vector boxes;
         U128 hash = {};
-
-        // 返回该 Shape 保存的数字约束数量。
-        std::size_t constraintCount() const {
-            return constraints_.size();
-        }
-        // 返回指定约束的雷数和 Box 成员视图。
-        ConstraintView constraint(std::size_t i) const {
-            const Constraint &c = constraints_[i];
-            if (c.count == 0)
-                return {};
-            return {c.sum, std::span<const BoxId>(boxIds_.data() + c.offset, c.count)};
-        }
 
         struct Constraint {
             int sum = 0;
@@ -50,30 +41,33 @@ struct Structure {
             std::uint8_t count = 0;
         };
 
-        std::vector<Constraint> constraints_;
-        std::vector<BoxId> boxIds_;
+        // 返回该 Shape 保存的数字约束数量。
+        std::size_t constraintCount() const {
+            return constraints_.size;
+        }
+        // 返回指定约束的雷数和 Box 成员视图。
+        ConstraintView constraint(const Pool &pool, std::size_t i) const;
+
+        vectorPool<Constraint>::vector constraints_;
+        vectorPool<BoxId>::vector boxIds_;
     };
 
     struct Instance {
         ShapeId shape = -1;
         struct Boxes {
-            std::vector<CellId> cells;
-            // 设计目的：用 16 位累计偏移压缩组件布局；组件规模受项目盘面约束，
-            // 不在此处引入更宽整数，以保持 Instance 的紧凑存储。
-            std::vector<std::uint16_t> boxOf;
+            vectorPool<CellId>::vector cells;
+            vectorPool<int>::vector boxOf;
 
             // 返回实例中的 Box 数量。
             std::size_t count() const {
-                return boxOf.empty() ? 0 : boxOf.size() - 1;
+                return boxOf.size == 0 ? 0 : boxOf.size - 1;
             }
             // 返回指定 Box 包含的真实格子数量。
-            std::size_t cellCount(std::size_t box) const {
-                return boxOf[box + 1] - boxOf[box];
-            }
+            std::size_t cellCount(const Pool &pool, std::size_t box) const;
         };
 
         Boxes boxes;
-        std::vector<CellId> constraintCells;
+        vectorPool<CellId>::vector constraintCells;
     };
 
     struct Result {
@@ -90,6 +84,13 @@ struct Structure {
     };
 
     struct Pool {
+        vectorPool<Shape::Box> boxes;
+        vectorPool<Shape::Constraint> constraints;
+        vectorPool<BoxId> boxIds;
+        vectorPool<CellId> cells;
+        vectorPool<int> boxOf;
+        vectorPool<CellId> constraintCells;
+
         // 通过内容哈希插入或复用一个不可变 Shape。
         ShapeId internShape(Shape shape);
         // 通过内容哈希插入或复用一个不可变 Instance。
@@ -113,7 +114,7 @@ struct Structure {
 
       private:
         // 计算 Instance 的完整内容哈希，用于布局池去重。
-        static U128 computeInstanceHash(const Instance &instance);
+        static U128 computeInstanceHash(const Instance &instance, const Pool &pool);
 
         std::vector<Shape> shapes_;
         FlatHashTable<U128, ShapeId, U128Hash> shapeIndex_;
@@ -146,7 +147,7 @@ struct Structure {
     static InstanceId buildComponent(const std::vector<CellId> &cells, const ObservedBoard::Result &board, const Basic::Result &basic,
                                      Grid<U128> &cellHash, Pool &pool);
     // 计算 Shape 内容哈希，用于结构池去重。
-    static U128 computeHash(const Shape &shape);
+    static U128 computeHash(const Shape &shape, const Pool &pool);
 
   public:
     // 从完整盘面构建所有独立约束组件：数字与 H 候选先按邻接关系连通，再把
@@ -194,28 +195,46 @@ inline U128 Structure::cellSignature(int x, int y, const ObservedBoard::Result &
     return hash;
 }
 
+inline Structure::Shape::ConstraintView Structure::Shape::constraint(const Pool &pool, std::size_t i) const {
+    const Constraint &c = constraints_.span(pool.constraints)[i];
+    if (c.count == 0)
+        return {};
+    return {c.sum, boxIds_.span(pool.boxIds).subspan(c.offset, c.count)};
+}
+
+inline std::size_t Structure::Instance::Boxes::cellCount(const Pool &pool, std::size_t box) const {
+    const std::span<const int> offsets = boxOf.span(pool.boxOf);
+    return offsets[box + 1] - offsets[box];
+}
+
 inline void Structure::remapInstance(InstanceId instance, ComponentId component, const Structure::Pool &pool,
                                      std::vector<CellLocation> &cellLoc) {
     const Instance &data = pool.getInstance(instance);
+    const std::span<const int> boxOf = data.boxes.boxOf.span(pool.boxOf);
+    const std::span<const CellId> cells = data.boxes.cells.span(pool.cells);
     for (int box = 0; box < (int)(data.boxes.count()); ++box)
-        for (int i = data.boxes.boxOf[box]; i < data.boxes.boxOf[box + 1]; ++i)
-            cellLoc[data.boxes.cells[i]] = CellLocation{component, box};
-    for (CellId cell : data.constraintCells)
+        for (int i = boxOf[box]; i < boxOf[box + 1]; ++i)
+            cellLoc[cells[i]] = CellLocation{component, box};
+    for (CellId cell : data.constraintCells.span(pool.constraintCells))
         cellLoc[cell] = CellLocation{component, -1};
 }
 
 inline void Structure::clearInstance(InstanceId instance, const Structure::Pool &pool, std::vector<CellLocation> &cellLoc) {
     const Instance &data = pool.getInstance(instance);
-    for (CellId cell : data.boxes.cells)
+    for (CellId cell : data.boxes.cells.span(pool.cells))
         cellLoc[cell] = CellLocation{};
-    for (CellId cell : data.constraintCells)
+    for (CellId cell : data.constraintCells.span(pool.constraintCells))
         cellLoc[cell] = CellLocation{};
 }
 
 inline ShapeId Structure::Pool::internShape(Shape shape) {
-    shape.hash = Structure::computeHash(shape);
-    if (const ShapeId *found = shapeIndex_.find(shape.hash))
+    shape.hash = Structure::computeHash(shape, *this);
+    if (const ShapeId *found = shapeIndex_.find(shape.hash)) {
+        boxes.pop_back(shape.boxes);
+        constraints.pop_back(shape.constraints_);
+        boxIds.pop_back(shape.boxIds_);
         return *found;
+    }
     const ShapeId id = shapes_.size();
     shapes_.push_back(std::move(shape));
     shapeIndex_.emplace(shapes_[id].hash, id);
@@ -223,26 +242,30 @@ inline ShapeId Structure::Pool::internShape(Shape shape) {
 }
 
 inline InstanceId Structure::Pool::internInstance(Instance data) {
-    const U128 hash = Structure::Pool::computeInstanceHash(data);
-    if (const InstanceId *found = instanceIndex_.find(hash))
+    const U128 hash = Structure::Pool::computeInstanceHash(data, *this);
+    if (const InstanceId *found = instanceIndex_.find(hash)) {
+        cells.pop_back(data.boxes.cells);
+        boxOf.pop_back(data.boxes.boxOf);
+        constraintCells.pop_back(data.constraintCells);
         return *found;
+    }
     const InstanceId id = instances_.size();
     instances_.push_back(std::move(data));
     instanceIndex_.emplace(hash, id);
     return id;
 }
 
-inline U128 Structure::Pool::computeInstanceHash(const Instance &data) {
+inline U128 Structure::Pool::computeInstanceHash(const Instance &data, const Pool &pool) {
     U128Hasher hasher;
     hasher.mix((std::uint64_t)(data.shape));
-    hasher.mix((std::uint64_t)(data.boxes.cells.size()));
-    for (CellId cell : data.boxes.cells)
+    hasher.mix((std::uint64_t)(data.boxes.cells.size));
+    for (CellId cell : data.boxes.cells.span(pool.cells))
         hasher.mix(cell);
-    hasher.mix((std::uint64_t)(data.boxes.boxOf.size()));
-    for (std::uint16_t offset : data.boxes.boxOf)
+    hasher.mix((std::uint64_t)(data.boxes.boxOf.size));
+    for (int offset : data.boxes.boxOf.span(pool.boxOf))
         hasher.mix((std::uint64_t)(offset));
-    hasher.mix((std::uint64_t)(data.constraintCells.size()));
-    for (CellId cell : data.constraintCells)
+    hasher.mix((std::uint64_t)(data.constraintCells.size));
+    for (CellId cell : data.constraintCells.span(pool.constraintCells))
         hasher.mix(cell);
     return hasher.finalize();
 }
@@ -313,6 +336,9 @@ inline InstanceId Structure::buildComponent(const std::vector<CellId> &cells, co
     workspace::Structure::workspace.hashBox.clear();
     workspace::Structure::workspace.boxOfCells.assign(cells.size(), -1);
     Shape shape;
+    shape.boxes = pool.boxes.push_back();
+    shape.constraints_ = pool.constraints.push_back();
+    shape.boxIds_ = pool.boxIds.push_back();
     for (int i = 0; i < (int)(cells.size()); ++i) {
         const auto [x, y] = board.pos(cells[i]);
         if (basic.marks[x][y] != Basic::Mark::H)
@@ -322,41 +348,36 @@ inline InstanceId Structure::buildComponent(const std::vector<CellId> &cells, co
         if (const BoxId *found = workspace::Structure::workspace.hashBox.find(hash))
             box = *found;
         else {
-            box = shape.boxes.size();
-            shape.boxes.push_back({0});
+            box = shape.boxes.size;
+            shape.boxes.push_back(pool.boxes, {0});
             workspace::Structure::workspace.hashBox.emplace(hash, box);
         }
-        ++shape.boxes[box].size;
+        ++shape.boxes.span(pool.boxes)[box].size;
         workspace::Structure::workspace.boxOfCells[i] = box;
         cellHash[x][y] = U128{(std::uint64_t)(box), 0};
     }
-    workspace::Structure::workspace.bucketSize.assign(shape.boxes.size(), 0);
-    if (workspace::Structure::workspace.buckets.size() < shape.boxes.size())
-        workspace::Structure::workspace.buckets.resize(shape.boxes.size());
-    std::size_t numberCells = 0;
-    for (int i = 0; i < (int)(cells.size()); ++i) {
-        const BoxId box = workspace::Structure::workspace.boxOfCells[i];
-        if (box == -1) {
-            ++numberCells;
-            continue;
-        }
-        workspace::Structure::workspace.buckets[box][workspace::Structure::workspace.bucketSize[box]++] = cells[i];
-    }
-    Instance instance;
-    instance.boxes.boxOf.resize(shape.boxes.size() + 1);
-    for (int box = 0; box < (int)(shape.boxes.size()); ++box)
-        instance.boxes.boxOf[box + 1] = instance.boxes.boxOf[box] + workspace::Structure::workspace.bucketSize[box];
-    instance.boxes.cells.resize(instance.boxes.boxOf.back());
-    workspace::Structure::workspace.boxCursor.assign(shape.boxes.size(), 0);
+    workspace::Structure::workspace.bucketSize.assign(shape.boxes.size, 0);
+    if ((int)(workspace::Structure::workspace.buckets.size()) < shape.boxes.size)
+        workspace::Structure::workspace.buckets.resize(shape.boxes.size);
     for (int i = 0; i < (int)(cells.size()); ++i) {
         const BoxId box = workspace::Structure::workspace.boxOfCells[i];
         if (box == -1)
             continue;
-        instance.boxes.cells[instance.boxes.boxOf[box] + workspace::Structure::workspace.boxCursor[box]++] = cells[i];
+        workspace::Structure::workspace.buckets[box][workspace::Structure::workspace.bucketSize[box]++] = cells[i];
     }
-    shape.constraints_.reserve(numberCells);
-    instance.constraintCells.reserve(numberCells);
-    workspace::Structure::workspace.boxUsed.assign(shape.boxes.size(), 0);
+    Instance instance;
+    instance.boxes.cells = pool.cells.push_back();
+    instance.boxes.boxOf = pool.boxOf.push_back();
+    instance.constraintCells = pool.constraintCells.push_back();
+    int boxOffset = 0;
+    instance.boxes.boxOf.push_back(pool.boxOf, 0);
+    for (int box = 0; box < shape.boxes.size; ++box) {
+        for (int i = 0; i < workspace::Structure::workspace.bucketSize[box]; ++i)
+            instance.boxes.cells.push_back(pool.cells, workspace::Structure::workspace.buckets[box][i]);
+        boxOffset += workspace::Structure::workspace.bucketSize[box];
+        instance.boxes.boxOf.push_back(pool.boxOf, boxOffset);
+    }
+    workspace::Structure::workspace.boxUsed.assign(shape.boxes.size, 0);
     workspace::Structure::workspace.allBoxIds.clear();
     for (CellId cell : cells) {
         const auto [x, y] = board.pos(cell);
@@ -378,23 +399,24 @@ inline InstanceId Structure::buildComponent(const std::vector<CellId> &cells, co
         for (int i = start; i < (int)(workspace::Structure::workspace.allBoxIds.size()); ++i)
             workspace::Structure::workspace.boxUsed[workspace::Structure::workspace.allBoxIds[i]] = 0;
         const std::uint8_t count = workspace::Structure::workspace.allBoxIds.size() - start;
-        shape.constraints_.push_back({sum, start, count});
-        instance.constraintCells.push_back(cell);
+        shape.constraints_.push_back(pool.constraints, {sum, start, count});
+        instance.constraintCells.push_back(pool.constraintCells, cell);
     }
-    shape.boxIds_.insert(shape.boxIds_.end(), workspace::Structure::workspace.allBoxIds.begin(), workspace::Structure::workspace.allBoxIds.end());
+    for (BoxId box : workspace::Structure::workspace.allBoxIds)
+        shape.boxIds_.push_back(pool.boxIds, box);
     instance.shape = pool.internShape(std::move(shape));
     return pool.internInstance(std::move(instance));
 }
 
-inline U128 Structure::computeHash(const Shape &shape) {
+inline U128 Structure::computeHash(const Shape &shape, const Pool &pool) {
     U128Hasher hasher;
-    for (const Shape::Box &box : shape.boxes)
+    for (const Shape::Box &box : shape.boxes.span(pool.boxes))
         hasher.mix((std::uint64_t)(box.size));
-    for (int i = 0; i < (int)(shape.constraints_.size()); ++i) {
-        const Shape::Constraint &constraint = shape.constraints_[i];
+    for (int i = 0; i < shape.constraints_.size; ++i) {
+        const Shape::Constraint &constraint = shape.constraints_.span(pool.constraints)[i];
         hasher.mix((std::uint64_t)(constraint.sum));
         for (std::uint32_t k = 0; k < constraint.count; ++k)
-            hasher.mix((std::uint64_t)(shape.boxIds_[constraint.offset + k]) + 0x9e3779b9ULL);
+            hasher.mix((std::uint64_t)(shape.boxIds_.span(pool.boxIds)[constraint.offset + k]) + 0x9e3779b9ULL);
     }
     return hasher.finalize();
 }
@@ -422,12 +444,12 @@ inline void Structure::update(Result &result, Delta &delta, const ObservedBoard:
     auto invalidate = [&](ComponentId component) {
         scratch.removed[component] = 1;
         const Instance &instance = pool.getInstance(result.components[component]);
-        for (CellId cell : instance.boxes.cells) {
+        for (CellId cell : instance.boxes.cells.span(pool.cells)) {
             const auto [x, y] = board.pos(cell);
             markDirty(x, y);
             result.cellLoc[cell] = CellLocation{};
         }
-        for (CellId cell : instance.constraintCells) {
+        for (CellId cell : instance.constraintCells.span(pool.constraintCells)) {
             const auto [x, y] = board.pos(cell);
             markDirty(x, y);
             result.cellLoc[cell] = CellLocation{};

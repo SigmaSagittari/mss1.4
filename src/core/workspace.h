@@ -57,7 +57,6 @@ struct Structure {
         std::vector<BoxId> boxOfCells;
         std::vector<std::array<CellId, 9>> buckets;
         std::vector<std::uint8_t> bucketSize;
-        std::vector<BoxId> boxCursor;
         std::vector<char> boxUsed;
         std::vector<BoxId> allBoxIds;
     };

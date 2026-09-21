@@ -78,7 +78,7 @@ inline void Probability::analyze(const ObservedBoard::Result &board, const Basic
     ws.distributions.clear();
     for (InstanceId instanceId : structure.components) {
         const Structure::Instance &instance = shapes.getInstance(instanceId);
-        ws.distributions.push_back(ShapeSolver::analyze(shapes.get(instance.shape), distributions, algo));
+        ws.distributions.push_back(ShapeSolver::analyze(shapes.get(instance.shape), shapes, distributions, algo));
     }
     for (const DistributionId id : ws.distributions)
         if (distributions.get(id).ways().empty()) {
@@ -95,7 +95,7 @@ inline void Probability::analyze(const ObservedBoard::Result &board, const Basic
     ws.identity.coeffs.assign(1, 1.0L);
     ws.componentBoxCounts.resize(componentCount);
     for (int i = 0; i < (int)(componentCount); ++i)
-        ws.componentBoxCounts[i] = shapes.get(shapes.getInstance(structure.components[i]).shape).boxes.size();
+        ws.componentBoxCounts[i] = shapes.get(shapes.getInstance(structure.components[i]).shape).boxes.size;
     result.reset(ws.componentBoxCounts);
 
     long double candidates;
@@ -167,13 +167,13 @@ inline void Probability::analyze(const ObservedBoard::Result &board, const Basic
             ws.entryProbabilities[i] = ways[i] * numerator / candidates;
         }
         const Structure::Shape &shape = shapes.get(shapes.getInstance(structure.components[cid]).shape);
-        for (int box = 0; box < (int)(shape.boxes.size()); ++box) {
+        for (int box = 0; box < shape.boxes.size; ++box) {
             long double probability = 0.0L;
             for (int i = 0; i < (int)(ways.size()); ++i)
                 probability += ws.entryProbabilities[i] * distribution.perBoxExpectation(i)[box];
-            result.boxProbabilities_[boxOffset + box] = probability / shape.boxes[box].size;
+            result.boxProbabilities_[boxOffset + box] = probability / shape.boxes.span(shapes.boxes)[box].size;
         }
-        boxOffset += shape.boxes.size();
+        boxOffset += shape.boxes.size;
     }
     result.tCellProbability_ = tCellProbability;
     result.candidates_ = candidates;

@@ -192,13 +192,13 @@ std::vector<CellId> PseudoReference::findPseudo5050(const ObservedBoard::Result 
         const Structure::Instance &instance = shapes.getInstance(instanceId);
         const Structure::Shape &shape = shapes.get(instance.shape);
         for (int i = 0; i < (int)(shape.constraintCount()); ++i) {
-            const Structure::Shape::ConstraintView constraint = shape.constraint(i);
+            const Structure::Shape::ConstraintView constraint = shape.constraint(shapes, i);
             if (constraint.sum != 1)
                 continue;
             std::vector<CellId> cells;
             for (BoxId box : constraint.boxIds)
-                for (int k = instance.boxes.boxOf[box]; k < instance.boxes.boxOf[box + 1]; ++k)
-                    cells.push_back(instance.boxes.cells[k]);
+                for (int k = instance.boxes.boxOf.span(shapes.boxOf)[box]; k < instance.boxes.boxOf.span(shapes.boxOf)[box + 1]; ++k)
+                    cells.push_back(instance.boxes.cells.span(shapes.cells)[k]);
             if (cells.size() < 2)
                 continue;
             if (cells.size() == 2) {

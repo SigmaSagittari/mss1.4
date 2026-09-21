@@ -130,7 +130,7 @@ inline BruteForce::CommonSession BruteForce::buildCommonSession(const ObservedBo
         const Structure::Instance &instance = shapes.getInstance(structure.components[component]);
         const Structure::Shape &shape = shapes.get(instance.shape);
         const int boxCount = instance.boxes.count();
-        ShapeSolver::DfsSolver::forEachAssignment(shape, [&](auto assignment, long double) {
+        ShapeSolver::DfsSolver::forEachAssignment(shape, shapes, [&](auto assignment, long double) {
             for (int box = 0; box < boxCount; ++box)
                 assignments.push_back(assignment[box]);
             ++assignmentCounts[component];
@@ -176,10 +176,10 @@ inline BruteForce::CommonSession BruteForce::buildCommonSession(const ObservedBo
                     choose(choose, box + 1, 0, assignments[assignmentStart + box + 1]);
                     return;
                 }
-                const int first = instance.boxes.boxOf[box];
-                const int count = instance.boxes.boxOf[box + 1] - first;
+                const int first = instance.boxes.boxOf.span(shapes.boxOf)[box];
+                const int count = instance.boxes.boxOf.span(shapes.boxOf)[box + 1] - first;
                 for (int i = start; i <= count - remaining; ++i) {
-                    placed.push_back(candidateAt[instance.boxes.cells[first + i]]);
+                    placed.push_back(candidateAt[instance.boxes.cells.span(shapes.cells)[first + i]]);
                     choose(choose, box, i + 1, remaining - 1);
                     placed.pop_back();
                 }
