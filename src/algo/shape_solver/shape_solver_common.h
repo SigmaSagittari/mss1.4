@@ -7,6 +7,7 @@
 
 #include "algo/structure.h"
 #include "core/types.h"
+#include "core/utility/combinatorics.h"
 #include "core/utility/flat_hashtable.h"
 #include "core/utility/grid.h"
 #include "core/utility/hash.h"
@@ -99,9 +100,6 @@ struct ShapeSolver {
     // 阈值只为控制状态爆炸和运行时间。
     static DistributionId analyze(const Structure::Shape &shape, const Structure::Pool &shapes, Distribution::Pool &pool,
                                   const OrderAlgo &algo = OrderAlgo::Auto);
-
-    // 返回 n 个格子中选 k 个雷的组合数。
-    static long double binom(int n, int k);
 
     // 小组件走 DFS，大组件走图 DP；这是性能阈值，不是正确性分界。
     inline static constexpr int graphThreshold = 35;

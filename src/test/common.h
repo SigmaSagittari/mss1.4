@@ -38,26 +38,26 @@ struct StackTrace {
         if (!SymInitialize(process, nullptr, TRUE)) {
             for (USHORT i = 0; i < count; ++i)
                 std::cerr << "  " << frames[i] << '\n';
-            return;
+        } else {
+            alignas(SYMBOL_INFO) unsigned char storage[sizeof(SYMBOL_INFO) + MAX_SYM_NAME]{};
+            PSYMBOL_INFO symbol = reinterpret_cast<PSYMBOL_INFO>(storage);
+            symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+            symbol->MaxNameLen = MAX_SYM_NAME;
+            for (USHORT i = 0; i < count; ++i) {
+                DWORD64 displacement = 0;
+                if (SymFromAddr(process, reinterpret_cast<DWORD64>(frames[i]), &displacement, symbol))
+                    std::cerr << "  " << symbol->Name;
+                else
+                    std::cerr << "  " << frames[i];
+                IMAGEHLP_LINE64 line{};
+                line.SizeOfStruct = sizeof(line);
+                DWORD lineDisplacement = 0;
+                if (SymGetLineFromAddr64(process, reinterpret_cast<DWORD64>(frames[i]), &lineDisplacement, &line))
+                    std::cerr << " (" << line.FileName << ':' << line.LineNumber << ')';
+                std::cerr << '\n';
+            }
+            SymCleanup(process);
         }
-        alignas(SYMBOL_INFO) unsigned char storage[sizeof(SYMBOL_INFO) + MAX_SYM_NAME]{};
-        PSYMBOL_INFO symbol = reinterpret_cast<PSYMBOL_INFO>(storage);
-        symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
-        symbol->MaxNameLen = MAX_SYM_NAME;
-        for (USHORT i = 0; i < count; ++i) {
-            DWORD64 displacement = 0;
-            if (SymFromAddr(process, reinterpret_cast<DWORD64>(frames[i]), &displacement, symbol))
-                std::cerr << "  " << symbol->Name;
-            else
-                std::cerr << "  " << frames[i];
-            IMAGEHLP_LINE64 line{};
-            line.SizeOfStruct = sizeof(line);
-            DWORD lineDisplacement = 0;
-            if (SymGetLineFromAddr64(process, reinterpret_cast<DWORD64>(frames[i]), &lineDisplacement, &line))
-                std::cerr << " (" << line.FileName << ':' << line.LineNumber << ')';
-            std::cerr << '\n';
-        }
-        SymCleanup(process);
     }
 
     friend void check(bool, const char *, std::source_location);
@@ -67,16 +67,16 @@ struct StackTrace {
 
 inline void check(bool condition, const char *errmsg, std::source_location location = std::source_location::current()) {
     // 检查测试条件；失败时输出位置和调用栈并终止测试进程。
-    if (condition)
-        return;
-    std::cerr << "[FAIL] " << errmsg << "\n"
-              << "  at " << location.file_name() << ':' << location.line() << '\n'
-              << "  function: " << location.function_name() << '\n'
-              << "  stack:\n";
+    if (!condition) {
+        std::cerr << "[FAIL] " << errmsg << "\n"
+                  << "  at " << location.file_name() << ':' << location.line() << '\n'
+                  << "  function: " << location.function_name() << '\n'
+                  << "  stack:\n";
 #ifdef _WIN32
-    StackTrace::print();
+        StackTrace::print();
 #endif
-    std::abort();
+        std::abort();
+    }
 }
 
 // Game simulation.
@@ -291,13 +291,14 @@ struct TimeBox {
 };
 
 struct Move {
-    int x = -1;
-    int y = -1;
-    long double mineProbability = 1.0L;
+    int x;
+    int y;
+    long double mineProbability;
 };
 
 inline Move lowestRiskMove(const Game &game, const Analysis &analysis) {
     // 扫描所有可点候选并返回条件雷概率最低的格子。
+    bool found = false;
     Move result;
     for (int x = 1; x <= game.board.rows; ++x)
         for (int y = 1; y <= game.board.cols; ++y) {
@@ -307,27 +308,21 @@ inline Move lowestRiskMove(const Game &game, const Analysis &analysis) {
                 continue;
             const long double risk =
                 analysis.probability.mineProbability(game.board.id(x, y), game.board, analysis.basic, analysis.structure);
-            if (risk >= result.mineProbability)
+            if (found && risk >= result.mineProbability)
                 continue;
             result = {x, y, risk};
+            found = true;
         }
-    if (result.x == -1)
+    if (!found)
         std::abort();
     return result;
-}
-
-using MovePolicy = Move (*)(const Game &, const Analysis &);
-
-inline Move defaultMovePolicy(const Game &, const Analysis &) {
-    // 返回空动作，交给调用方的默认最低风险策略接管。
-    return Move{};
 }
 
 struct Snapshot {
     const Game &game;
     const Analysis &analysis;
     Move next;
-    bool mustGuess = false;
+    bool mustGuess;
 };
 
 template <typename Policy, typename Fn>
@@ -344,13 +339,7 @@ inline bool generateGame(const TestConfig &config, GameRng &rng, Policy &&movePo
             mss::ObservedBoard::update(game.board, updates);
         }
         Analysis analysis(game.board, mss::ShapeSolver::OrderAlgo::Auto);
-        auto chooseMove = [&](const Game &current, const Analysis &currentAnalysis) {
-            Move next = movePolicy(current, currentAnalysis);
-            if (next.x == -1 && next.y == -1)
-                next = lowestRiskMove(current, currentAnalysis);
-            return next;
-        };
-        Move next = chooseMove(game, analysis);
+        Move next = movePolicy(game, analysis);
         bool lost = false;
         while (!game.won()) {
             updates.clear();
@@ -361,7 +350,7 @@ inline bool generateGame(const TestConfig &config, GameRng &rng, Policy &&movePo
             if (game.won())
                 break;
             analysis.update(game.board, updates);
-            next = chooseMove(game, analysis);
+            next = movePolicy(game, analysis);
             const Snapshot snapshot{game, analysis, next, next.mineProbability > 1e-15L};
             if (config.filter == PositionFilter::All || snapshot.mustGuess)
                 consume(snapshot);
@@ -412,8 +401,8 @@ inline RunSummary runGames(const TestConfig &config, GameRng &rng, Policy &&move
 }
 
 template <typename Fn> inline RunSummary runGames(const TestConfig &config, GameRng &rng, Fn &&perSnapshot) {
-    // 使用默认最低风险策略批量运行测试。
-    return runGames(config, rng, &defaultMovePolicy, std::forward<Fn>(perSnapshot));
+    // 使用最低风险策略批量运行测试。
+    return runGames(config, rng, lowestRiskMove, std::forward<Fn>(perSnapshot));
 }
 
 } // namespace test

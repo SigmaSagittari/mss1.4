@@ -117,7 +117,7 @@ inline void mss::ShapeSolver::DfsSolver::forEachAssignment(const Structure::Shap
             workspace.currentSum[constraint] += mine;
             workspace.assignedSize[constraint] += maxMine;
         }
-        workspace.frames.push_back({index + 1, 0, index, mine, frame.ways * ShapeSolver::binom(maxMine, mine)});
+        workspace.frames.push_back({index + 1, 0, index, mine, frame.ways * binomSmall(maxMine, mine)});
     }
 }
 

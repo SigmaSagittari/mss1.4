@@ -53,7 +53,7 @@ inline long double Probability::observeDenominator(const ObservePoly &polynomial
         const int componentMines = polynomial.start + i;
         const int tMines = totalMines - componentMines;
         if (tMines >= 0 && tMines <= tSum)
-            result += polynomial.coeffs[i] * combLog(tSum, tMines);
+            result += polynomial.coeffs[i] * binom(tSum, tMines);
     }
     return result;
 }
@@ -155,7 +155,7 @@ inline Probability::ObserveResult Probability::observe(const ObservedBoard::Resu
     if (unknownNeighbors > 0) {
         ws.nextDp.resize(9, stride, 0.0L);
         for (int mines = 0; mines <= unknownNeighbors; ++mines)
-            applyTransfer({mines, mines, combLog(unknownNeighbors, mines)});
+            applyTransfer({mines, mines, binom(unknownNeighbors, mines)});
         ws.dp.swap(ws.nextDp);
     }
 
@@ -178,7 +178,7 @@ inline Probability::ObserveResult Probability::observe(const ObservedBoard::Resu
         const long double ways = ws.rest.coeffs[i];
         const int componentMines = ws.rest.start + i;
         for (int tMines = 0; tMines <= tPool; ++tMines)
-            ws.restWays[componentMines + tMines] += ways * combLog(tPool, tMines);
+            ws.restWays[componentMines + tMines] += ways * binom(tPool, tMines);
     }
     std::array<long double, 9> neighborWays{};
     for (int neighborMines = 0; neighborMines <= 8; ++neighborMines)
@@ -235,7 +235,7 @@ inline void Probability::buildDfsTable(const Structure::Shape &shape, const Stru
                 const int remaining = mines - adjacentMines;
                 if (remaining > pool - adjacent)
                     continue;
-                local[adjacentMines] = combLog(adjacent, adjacentMines) * combLog(pool - adjacent, remaining) / combLog(size, mines);
+                local[adjacentMines] = binom(adjacent, adjacentMines) * binom(pool - adjacent, remaining) / binom(size, mines);
             }
             std::array<long double, 9> next{};
             for (int h = 0; h <= 8; ++h)
@@ -299,7 +299,7 @@ inline void workspace::ProbabilityObserve::BuildGraphTable::Layer::advance(
                 target = &nextLayer.states.back();
             }
             if (!isXBox && adjacent == 0) {
-                const long double factor = ShapeSolver::binom(size, mine);
+                const long double factor = binomSmall(size, mine);
                 for (int sourceIndex = state.firstCount; sourceIndex >= 0; sourceIndex = counts[sourceIndex].next) {
                     const Count &source = counts[sourceIndex];
                     Count &destination = nextLayer.findOrAddCount(*target, source.componentMines + mine, source.neighborMines);
@@ -312,7 +312,7 @@ inline void workspace::ProbabilityObserve::BuildGraphTable::Layer::advance(
                 const int remaining = mine - neighborMines;
                 if (remaining > pool - adjacent)
                     continue;
-                const long double factor = ShapeSolver::binom(adjacent, neighborMines) * ShapeSolver::binom(pool - adjacent, remaining);
+                const long double factor = binomSmall(adjacent, neighborMines) * binomSmall(pool - adjacent, remaining);
                 for (int sourceIndex = state.firstCount; sourceIndex >= 0; sourceIndex = counts[sourceIndex].next) {
                     const Count &source = counts[sourceIndex];
                     if (source.neighborMines + neighborMines > 8)

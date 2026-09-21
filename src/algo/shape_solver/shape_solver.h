@@ -1,7 +1,5 @@
 #pragma once
 
-#include <array>
-
 #include "algo/shape_solver/shape_solver_common.h"
 
 //==============================================================================
@@ -9,23 +7,6 @@
 #include "algo/shape_solver/graph_solver/graph_solver.h"
 
 namespace mss {
-
-inline long double ShapeSolver::binom(int n, int k) {
-    // Box 是局部等价格集合，给定 Box 雷数 k 时有 C(n,k) 个具体布局。
-    // 从固定大小的组合数表读取 C(n,k)。
-    constexpr int max = 9;
-    static constexpr std::array<std::array<long double, max + 1>, max + 1> table = [] {
-        std::array<std::array<long double, max + 1>, max + 1> result{};
-        for (int i = 0; i <= max; ++i) {
-            result[i][0] = 1;
-            result[i][i] = 1;
-            for (int j = 1; j < i; ++j)
-                result[i][j] = result[i - 1][j - 1] + result[i - 1][j];
-        }
-        return result;
-    }();
-    return table[n][k];
-}
 
 inline ShapeSolver::Distribution::Result::Result(int start, int boxCount, std::vector<long double> ways,
                                                  RawGrid<long double> perBoxExpectations)

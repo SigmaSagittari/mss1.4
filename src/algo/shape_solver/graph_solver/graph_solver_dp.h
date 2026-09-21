@@ -136,7 +136,7 @@ inline void workspace::GraphSolverDp::Layer::advance(const Plan &plan, Layer &ne
                     nextLayer.index.emplace(hash, id);
                     target = &nextLayer.states.back();
                 }
-                const long double factor = ShapeSolver::binom(plan.boxSize, mine);
+                const long double factor = binomSmall(plan.boxSize, mine);
                 // factor 为 1 时跳过乘法。
                 const bool factorIsOne = factor == 1.0L;
                 for (int sourceIndex = state.firstCount; sourceIndex >= 0; sourceIndex = counts[sourceIndex].next) {

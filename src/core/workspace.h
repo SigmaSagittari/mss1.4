@@ -66,7 +66,7 @@ struct Structure {
 
 // src/core/utility/combinatorics.h
 struct Combinatorics {
-    // combLog
+    // binom
     struct Cache {
         int n = -1;
         std::vector<long double> values;

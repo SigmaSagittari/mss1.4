@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <vector>
 
 #include "core/assert.h"
@@ -11,28 +12,42 @@ namespace mss {
 // ─────────────────────────────────────────────────────────────
 // combinatorics.h — 组合数（共享）。
 //
-// 概率引擎与分布求解共用同一份组合数计算入口：
-// 线程局部惰性扩展，数值口径必须全局一致（曾因表分属不同翻译单元/副本
-// 导致长尾 ulp 漂移）。调用方保证 0 <= k <= n；越界 = 调用 bug。
+// 组合数缓存按 Pascal 三角形平铺；已经计算过的 n 永久保留，避免反复重算。
+// 调用方保证 0 <= k <= n。
 // ─────────────────────────────────────────────────────────────
 
-using CombinationCache = workspace::Combinatorics::Cache;
+inline long double binomSmall(int n, int k) {
+    constexpr int max = 9;
+    static constexpr std::array<std::array<long double, max + 1>, max + 1> table = [] {
+        std::array<std::array<long double, max + 1>, max + 1> result{};
+        for (int i = 0; i <= max; ++i) {
+            result[i][0] = 1;
+            result[i][i] = 1;
+            for (int j = 1; j < i; ++j)
+                result[i][j] = result[i - 1][j - 1] + result[i - 1][j];
+        }
+        return result;
+    }();
+    return table[n][k];
+}
 
-inline long double combLog(int n, int k) {
-    // 返回组合数 C(n,k) 的浮点值；全局概率层用它把 Unknown 的选雷方式
-    // 乘到组件 ways 上，因此这里的数值口径必须与分布层一致。
-    assert_(k >= 0 && k <= n, "combLog: 参数越界");
-    k = (std::min)(k, n - k);
-    CombinationCache &cache = workspace::Combinatorics::cache;
-    if (cache.n != n) {
+inline long double binom(int n, int k) {
+    // 返回组合数 C(n,k) 的浮点值。
+    assert_(k >= 0 && k <= n, "binom: 参数越界");
+    auto &cache = workspace::Combinatorics::cache;
+    if (cache.n < n) {
+        const int first = (std::max)(cache.n + 1, 0);
+        cache.values.resize((std::size_t)(n + 1) * (n + 2) / 2);
+        for (int row = first; row <= n; ++row) {
+            const std::size_t offset = (std::size_t)(row) * (row + 1) / 2;
+            cache.values[offset] = 1.0L;
+            cache.values[offset + row] = 1.0L;
+            for (int column = 1; column < row; ++column)
+                cache.values[offset + column] = cache.values[offset - row + column - 1] + cache.values[offset - row + column];
+        }
         cache.n = n;
-        cache.values.assign(1, 1.0L);
     }
-    while ((int)(cache.values.size()) <= k) {
-        const int i = cache.values.size();
-        cache.values.push_back(cache.values.back() * (n - i + 1) / i);
-    }
-    return cache.values[k];
+    return cache.values[(std::size_t)(n) * (n + 1) / 2 + k];
 }
 
 } // namespace mss

@@ -38,7 +38,7 @@ inline long double Probability::denominator(const Poly &polynomial, int totalMin
         const int componentMines = polynomial.start + i;
         const int tMines = totalMines - componentMines;
         if (tMines >= 0 && tMines <= tSum)
-            result += coefficients[i] * combLog(tSum, tMines);
+            result += coefficients[i] * binom(tSum, tMines);
     }
     return result;
 }
@@ -53,7 +53,7 @@ inline long double Probability::unknownMineProbability(const Poly &polynomial, i
         const int componentMines = polynomial.start + i;
         const int tMines = totalMines - 1 - componentMines;
         if (tMines >= 0 && tMines <= tSum - 1)
-            result += coefficients[i] * combLog(tSum - 1, tMines);
+            result += coefficients[i] * binom(tSum - 1, tMines);
     }
     return result / denom;
 }
@@ -162,7 +162,7 @@ inline void Probability::analyze(const ObservedBoard::Result &board, const Basic
             for (int k = 0; k < (int)(otherCoefficients.size()); ++k) {
                 const int tMines = totalMines - componentMines - others.start - k;
                 if (tMines >= 0 && tMines <= tSum)
-                    numerator += otherCoefficients[k] * combLog(tSum, tMines);
+                    numerator += otherCoefficients[k] * binom(tSum, tMines);
             }
             ws.entryProbabilities[i] = ways[i] * numerator / candidates;
         }
