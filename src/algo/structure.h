@@ -111,6 +111,8 @@ struct Structure {
         std::size_t size() const {
             return shapes_.size();
         }
+        // 清空逻辑内容并保留所有底层容量。
+        void clear();
 
       private:
         // 计算 Instance 的完整内容哈希，用于布局池去重。
@@ -252,6 +254,19 @@ inline InstanceId Structure::Pool::internInstance(Instance data) {
     instances_.push_back(std::move(data));
     instanceIndex_.emplace(hash, id);
     return id;
+}
+
+inline void Structure::Pool::clear() {
+    shapes_.clear();
+    instances_.clear();
+    shapeIndex_.clear();
+    instanceIndex_.clear();
+    boxes.clear();
+    constraints.clear();
+    boxIds.clear();
+    cells.clear();
+    boxOf.clear();
+    constraintCells.clear();
 }
 
 inline U128 Structure::Pool::computeInstanceHash(const Instance &data, const Pool &pool) {

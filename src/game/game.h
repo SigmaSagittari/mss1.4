@@ -107,6 +107,7 @@ struct GameControl {
          ShapeSolver::OrderAlgo orderAlgo = ShapeSolver::OrderAlgo::Auto);
     Game(int rows, int cols, int mines, U128 seed, const ObservedBoard::Result *observedBoard = nullptr,
          ShapeSolver::OrderAlgo orderAlgo = ShapeSolver::OrderAlgo::Auto);
+    void reset(U128 seed);
     void update(ObservedBoard::Delta &updates);
     void makeFirstMoveSafe(CellId cell, U128 seed);
     int number(int x, int y) const;
@@ -328,6 +329,17 @@ inline void GameControl::Game::update(ObservedBoard::Delta &updates) {
 inline void GameControl::Game::makeFirstMoveSafe(CellId cell, U128 seed) {
     const auto [x, y] = position.observedBoard.pos(cell);
     mineBoard_->makeSafe(x, y, seed);
+}
+
+inline void GameControl::Game::reset(U128 seed) {
+    const int rows = position.observedBoard.rows;
+    const int cols = position.observedBoard.cols;
+    const int mines = position.observedBoard.totalMines;
+    mineBoard_->generate(rows, cols, mines, seed);
+    structPool_->clear();
+    distributionPool_->clear();
+    position = Position(ObservedBoard::Result(rows, cols, mines), *structPool_, *distributionPool_, position.orderAlgo);
+    initializeWinState();
 }
 
 inline int GameControl::Game::number(int x, int y) const {

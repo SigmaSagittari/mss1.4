@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <iostream>
+#include <memory>
 #include <source_location>
 #include <utility>
 #include <vector>
@@ -115,13 +116,11 @@ struct Snapshot {
 };
 
 template <typename Fn>
-inline bool generateGame(const TestConfig &config, mss::Random &rng, mss::GameControl::Position::SuggestMode mode, Fn &&consume) {
+inline bool generateGame(const TestConfig &config, mss::GameControl::Game &game, mss::Random &rng,
+                         mss::GameControl::Position::SuggestMode mode, Fn &&consume) {
     // 生成并运行一局测试游戏，在指定快照时机调用消费回调。
     mss::assert_(config.rows > 0 && config.cols > 0 && config.mines >= 0 && config.mines < config.rows * config.cols,
                  "test::generateGame: invalid board configuration");
-    mss::GameControl::mineBoard mineBoard;
-    mineBoard.generate(config.rows, config.cols, config.mines, mss::U128{rng.next(), rng.next()});
-    mss::GameControl::Game game(std::move(mineBoard), mss::ObservedBoard::Result(config.rows, config.cols, config.mines));
     mss::ObservedBoard::Delta updates;
     std::vector<mss::CellId> next = game.Suggest(mode);
     mss::assert_(!next.empty(), "test::generateGame: initial Suggest returned no move");
@@ -165,8 +164,17 @@ inline RunSummary runGames(const TestConfig &config, mss::Random &rng, mss::Game
     mss::assert_(config.seconds >= 0 || config.games >= 0, "test::runGames: no stopping condition");
     TimeBox timebox(config.seconds);
     RunSummary summary;
+    std::unique_ptr<mss::GameControl::Game> game;
     while ((config.games < 0 || summary.games < config.games) && !timebox.expired()) {
-        const bool won = generateGame(config, rng, mode, [&](const Snapshot &snapshot) {
+        if (game) {
+            game->reset(mss::U128{rng.next(), rng.next()});
+        } else {
+            mss::GameControl::mineBoard mineBoard;
+            mineBoard.generate(config.rows, config.cols, config.mines, mss::U128{rng.next(), rng.next()});
+            game = std::make_unique<mss::GameControl::Game>(std::move(mineBoard),
+                                                            mss::ObservedBoard::Result(config.rows, config.cols, config.mines));
+        }
+        const bool won = generateGame(config, *game, rng, mode, [&](const Snapshot &snapshot) {
             if (!timebox.expired())
                 perSnapshot(snapshot);
         });
