@@ -13,4 +13,19 @@ inline std::uint64_t splitmix64(std::uint64_t x) {
     return x ^ (x >> 31);
 }
 
+struct Random {
+    Random(std::uint64_t lo, std::uint64_t hi) : lo_(lo), hi_(hi) {
+    }
+
+    std::uint64_t next() {
+        lo_ = splitmix64(lo_ + 0x9e3779b97f4a7c15ULL);
+        hi_ = splitmix64(hi_ + 0xd1b54a32d192ed03ULL);
+        return lo_ ^ hi_;
+    }
+
+  private:
+    std::uint64_t lo_;
+    std::uint64_t hi_;
+};
+
 } // namespace mss

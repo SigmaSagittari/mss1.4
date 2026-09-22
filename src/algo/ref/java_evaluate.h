@@ -78,7 +78,7 @@ struct JavaEvaluate {
     // dead：调用方可选的已知死格（默认空；求解内用 observe 自行判定并合并）。
     // 求解期间会临时修改 board/basic/structure，返回前恢复。
     static Result solve(ObservedBoard::Result &board, Basic::Result &basic, Structure::Result &structure,
-                        const Probability::Result &probability, Structure::ShapePool &shapes,
+                        const Probability::Result &probability, Structure::structPool &shapes,
                         ShapeSolver::Distribution::Pool &distributions, const LongTermRiskReference::Influence &risk,
                         std::span<const CellId> dead, const Config &config);
 };
@@ -181,7 +181,7 @@ struct ForcedView {
 };
 
 ForcedView analyzeForced(const ObservedBoard::Result &board, const Basic::Result &basic, const Structure::Result &structure,
-                         Structure::ShapePool &shapes, ShapeSolver::Distribution::Pool &distributions, std::span<const CellId> mines,
+                         Structure::structPool &shapes, ShapeSolver::Distribution::Pool &distributions, std::span<const CellId> mines,
                          std::span<const CellId> safes) {
     ForcedView out;
     out.board = board;
@@ -216,7 +216,7 @@ struct ForcedInfo {
     std::vector<std::vector<CellId>> emptyBoxes; // 每个 tally-0 盒的格集
 };
 
-ForcedInfo inspectForced(const ForcedView &forced, CellId exclude, const Structure::ShapePool &shapes) {
+ForcedInfo inspectForced(const ForcedView &forced, CellId exclude, const Structure::structPool &shapes) {
     ForcedInfo info;
     const Structure::Result &fs = forced.structure;
     const Probability::Result &fp = forced.probability;
@@ -257,7 +257,7 @@ struct BoardSummary {
 };
 
 BoardSummary summarizeBoard(const ObservedBoard::Result &board, const Basic::Result &basic, const Structure::Result &structure,
-                            const Probability::Result &probability, const Structure::ShapePool &shapes, const JavaEvaluate::Config &cfg) {
+                            const Probability::Result &probability, const Structure::structPool &shapes, const JavaEvaluate::Config &cfg) {
     BoardSummary out;
     long double best = 1.0L - probability.tCellProbability();
     long double second = best;
@@ -357,7 +357,7 @@ std::vector<CellId> flattenBoxes(const std::vector<std::vector<CellId>> &boxes) 
 // board/basic/structure 会被临时修改并回滚。observation 是该格的观测分布。
 // best：当前最高分（Java 的 best 字段，供乐观剪枝）；cell = -1 表示尚无第一名。
 Eval evaluate(ObservedBoard::Result &board, Basic::Result &basic, Structure::Result &structure, const Probability::Result &probability,
-              Structure::ShapePool &shapes, ShapeSolver::Distribution::Pool &distributions, const LongTermRiskReference::Influence &risk,
+              Structure::structPool &shapes, ShapeSolver::Distribution::Pool &distributions, const LongTermRiskReference::Influence &risk,
               long double baseHotspot, const Probability::ObserveResult &observation, CellId cell, const Eval &best,
               const JavaEvaluate::Config &cfg) {
     Eval out;
@@ -537,7 +537,7 @@ const Eval *findAlternativeMove(const Eval &move, const std::vector<Eval> &evalu
 } // namespace
 
 JavaEvaluate::Result JavaEvaluate::solve(ObservedBoard::Result &board, Basic::Result &basic, Structure::Result &structure,
-                                         const Probability::Result &probability, Structure::ShapePool &shapes,
+                                         const Probability::Result &probability, Structure::structPool &shapes,
                                          ShapeSolver::Distribution::Pool &distributions, const LongTermRiskReference::Influence &risk,
                                          std::span<const CellId> dead, const Config &cfg) {
     // 无解盘面（方案数 0）：引擎会产出 NaN/Inf，直接返回空结果，避免污染前端。

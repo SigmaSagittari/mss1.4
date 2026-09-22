@@ -79,7 +79,7 @@ struct LongTermRiskReference {
     // possible。与 Java findInfluence() 一致：找到 pseudo 即提前终止；
     // hotspot 只在扫描阶段记录。
     static Influence findInfluence(const ObservedBoard::Result &board, const Basic::Result &basic, const Structure::Result &structure,
-                                   const Probability::Result &probability, Structure::ShapePool &shapes,
+                                   const Probability::Result &probability, Structure::structPool &shapes,
                                    ShapeSolver::Distribution::Pool &distributions, std::span<const CellId> dead, const Config &cfg);
 
     // Java findInfluence(Location tile)：单格聚合——参与的不超过 4 个 2-tile
@@ -88,12 +88,12 @@ struct LongTermRiskReference {
     // full：全盘扫描产物（取 enabler 贡献）；传空则忽略 enabler 部分。
     static long double findInfluence(CellId cell, const ObservedBoard::Result &board, const Basic::Result &basic,
                                      const Structure::Result &structure, const Probability::Result &probability,
-                                     Structure::ShapePool &shapes, ShapeSolver::Distribution::Pool &distributions, const Influence &full);
+                                     Structure::structPool &shapes, ShapeSolver::Distribution::Pool &distributions, const Influence &full);
 
     // 计数原语（公开，便于测试）：强制一组雷 / 一组安全后的全盘解数。
     // 与 Java validatePosition(mines, noMines, EMPTY_AREA) 语义一致。
     static long double countWithForces(const ObservedBoard::Result &board, const Basic::Result &basic, const Structure::Result &structure,
-                                       Structure::ShapePool &shapes, ShapeSolver::Distribution::Pool &distributions,
+                                       Structure::structPool &shapes, ShapeSolver::Distribution::Pool &distributions,
                                        std::span<const CellId> mines, std::span<const CellId> safes);
 };
 
@@ -148,12 +148,12 @@ enum class TallyKind : unsigned char {
 };
 
 using InfluenceTallyCache = workspace::LongTermRisk::InfluenceTallyCache<
-    LongTermRiskReference::Influence, ObservedBoard::Result, Basic::Result, Structure::Result, Probability::Result, Structure::ShapePool,
+    LongTermRiskReference::Influence, ObservedBoard::Result, Basic::Result, Structure::Result, Probability::Result, Structure::structPool,
     ShapeSolver::Distribution::Pool>;
 
 template <typename Compute> long double cachedTally(TallyKind kind, int index, Compute &&compute) {
     InfluenceTallyCache &cache = workspace::LongTermRisk::influenceTallyCache<
-        LongTermRiskReference::Influence, ObservedBoard::Result, Basic::Result, Structure::Result, Probability::Result, Structure::ShapePool,
+        LongTermRiskReference::Influence, ObservedBoard::Result, Basic::Result, Structure::Result, Probability::Result, Structure::structPool,
         ShapeSolver::Distribution::Pool>;
     const int slot = (int)(kind);
     if (cache.ready[slot][index])
@@ -204,7 +204,7 @@ long double boxTally(CellId cell, const Probability::Result &probability, const 
 // 数全盘解数。mineCount = 1（2-tile）/ 2（2x2）；maxMissing 是"missing+n ≤ maxMissing"
 // 的阈值（Java 直接传 maxMissingMines）。
 long double candidateTally(const ObservedBoard::Result &board, const Basic::Result &basic, const Structure::Result &structure,
-                           const Probability::Result &probability, Structure::ShapePool &shapes,
+                           const Probability::Result &probability, Structure::structPool &shapes,
                            ShapeSolver::Distribution::Pool &distributions, std::span<const CellId> tiles,
                            std::span<const std::pair<int, int>> source, int mineCount, int maxMissing, int minesLeft, long double eqEps) {
     if (hasRevealedSource(board, source))
@@ -239,7 +239,7 @@ bool LongTermRiskReference::Possible5050::isExempt(CellId candidate) const {
 }
 
 long double LongTermRiskReference::countWithForces(const ObservedBoard::Result &board, const Basic::Result &basic,
-                                                   const Structure::Result &structure, Structure::ShapePool &shapes,
+                                                   const Structure::Result &structure, Structure::structPool &shapes,
                                                    ShapeSolver::Distribution::Pool &distributions, std::span<const CellId> mines,
                                                    std::span<const CellId> safes) {
     // 调用方传入的是可回滚的可变状态，只在接口层以 const 视图传递；
@@ -276,7 +276,7 @@ long double LongTermRiskReference::countWithForces(const ObservedBoard::Result &
 
 LongTermRiskReference::Influence LongTermRiskReference::findInfluence(const ObservedBoard::Result &board, const Basic::Result &basic,
                                                                       const Structure::Result &structure,
-                                                                      const Probability::Result &probability, Structure::ShapePool &shapes,
+                                                                      const Probability::Result &probability, Structure::structPool &shapes,
                                                                       ShapeSolver::Distribution::Pool &distributions,
                                                                       std::span<const CellId> dead, const Config &cfg) {
     Influence out;
@@ -284,7 +284,7 @@ LongTermRiskReference::Influence LongTermRiskReference::findInfluence(const Obse
     out.tiles.assign(size, 0.0L);
     out.enablers.assign(size, 0.0L);
     InfluenceTallyCache &tallyCache = workspace::LongTermRisk::influenceTallyCache<
-        LongTermRiskReference::Influence, ObservedBoard::Result, Basic::Result, Structure::Result, Probability::Result, Structure::ShapePool,
+        LongTermRiskReference::Influence, ObservedBoard::Result, Basic::Result, Structure::Result, Probability::Result, Structure::structPool,
         ShapeSolver::Distribution::Pool>;
     tallyCache.reset(board.rows, board.cols);
     tallyCache.owner = out.tiles.data();
@@ -415,14 +415,14 @@ LongTermRiskReference::Influence LongTermRiskReference::findInfluence(const Obse
 
 long double LongTermRiskReference::findInfluence(CellId cell, const ObservedBoard::Result &board, const Basic::Result &basic,
                                                  const Structure::Result &structure, const Probability::Result &probability,
-                                                 Structure::ShapePool &shapes, ShapeSolver::Distribution::Pool &distributions,
+                                                 Structure::structPool &shapes, ShapeSolver::Distribution::Pool &distributions,
                                                  const Influence &full) {
     if (probability.candidates() == 0.0L)
         return 0.0L;
     const int minesLeft = board.totalMines - basic.mineSum;
     const auto [x, y] = board.pos(cell);
     InfluenceTallyCache &tallyCache = workspace::LongTermRisk::influenceTallyCache<
-        LongTermRiskReference::Influence, ObservedBoard::Result, Basic::Result, Structure::Result, Probability::Result, Structure::ShapePool,
+        LongTermRiskReference::Influence, ObservedBoard::Result, Basic::Result, Structure::Result, Probability::Result, Structure::structPool,
         ShapeSolver::Distribution::Pool>;
     const bool useTallyCache = tallyCache.reusable(board, basic, structure, probability, shapes, distributions, full);
 

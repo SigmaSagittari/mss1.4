@@ -27,7 +27,7 @@ struct PseudoReference {
     // 查找 pseudo 50/50 候选。dead：已知"死格"（单结局格），Java 即 PE 的
     // deadLocations。返回空 = 无 pseudo。
     static std::vector<CellId> findPseudo5050(const ObservedBoard::Result &board, const Basic::Result &basic,
-                                              const Structure::Result &structure, const Structure::ShapePool &shapes,
+                                              const Structure::Result &structure, const Structure::structPool &shapes,
                                               const Probability::Result &probability, std::span<const CellId> dead = {});
 };
 
@@ -182,7 +182,7 @@ bool linkLess(const Link &lhs, const Link &rhs) {
 } // namespace
 
 std::vector<CellId> PseudoReference::findPseudo5050(const ObservedBoard::Result &board, const Basic::Result &basic,
-                                                    const Structure::Result &structure, const Structure::ShapePool &shapes,
+                                                    const Structure::Result &structure, const Structure::structPool &shapes,
                                                     const Probability::Result &probability, std::span<const CellId> dead) {
     std::vector<Link> links;
     std::vector<std::vector<CellId>> pseudoWitnesses;

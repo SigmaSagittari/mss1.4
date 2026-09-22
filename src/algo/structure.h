@@ -122,7 +122,7 @@ struct Structure {
         FlatHashTable<U128, InstanceId, U128Hash> instanceIndex_;
     };
 
-    using ShapePool = Pool;
+    using structPool = Pool;
 
     using Workspace = workspace::Structure::Buffers;
 
@@ -139,7 +139,6 @@ struct Structure {
     static void remapInstance(InstanceId instance, ComponentId component, const Pool &pool, std::vector<CellLocation> &cellLoc);
     // 清除实例在 cellLoc 中留下的组件和 Box 映射。
     static void clearInstance(InstanceId instance, const Pool &pool, std::vector<CellLocation> &cellLoc);
-
     // 从起始格遍历一个数字/H 候选连通组件。
     static void collectComponent(CellId start, const ObservedBoard::Result &board, const Basic::Result &basic, Grid<char> &visited,
                                  std::vector<CellId> &cells);

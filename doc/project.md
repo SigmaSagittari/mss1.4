@@ -74,7 +74,7 @@ Probability
 
 - `Shape`：不依赖具体坐标的约束形状；
 - `Instance`：Shape 在当前盘面中的 Box 和数字位置；
-- `ShapePool`：按内容哈希复用 Shape 和 Instance；
+- `structPool`：按内容哈希复用 Shape 和 Instance；
 - `Result::cellLoc`：把当前格子映射到组件和 Box；
 - `Structure::Delta`：支持受影响组件的增量重建和回放。
 
@@ -133,7 +133,7 @@ auto probability = Probability::analyze(board, basic, structure, shapes, distrib
 mss::ObservedBoard::Result board = mss::ObservedBoard::analyze(rows, cols, mines);
 mss::Basic::Result basic = mss::Basic::analyze(board);
 
-mss::Structure::ShapePool shapes;
+mss::Structure::structPool shapes;
 mss::Structure::Result structure = mss::Structure::analyze(board, basic, shapes);
 
 mss::ShapeSolver::Distribution::Pool distributions;

@@ -3,37 +3,36 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
-#include <cstdint>
-#include <cstdlib>
 #include <iomanip>
 #include <iostream>
 #include <vector>
 
 #include "algo/bruteforce/bruteforce.h"
-#include "algo/ref/java_evaluate.h"
-#include "algo/ref/long_term_risk_helper.h"
-#include "algo/ref/pseudo_helper.h"
+#include "core/utility/rng.h"
 #include "test/common.h"
 
 namespace test {
 
-inline int bruteForceCandidateCount(const Game &game, const Analysis &analysis) {
+inline int bruteForceCandidateCount(const mss::GameControl::Game &game) {
     // 统计当前测试局面中可交给残局搜索的候选格数量。
     int count = 0;
-    for (int x = 1; x <= game.board.rows; ++x)
-        for (int y = 1; y <= game.board.cols; ++y)
-            if (game.board.board[x][y] == mss::ObservedBoard::CellState::Hidden &&
-                (analysis.basic.marks[x][y] == mss::Basic::Mark::H || analysis.basic.marks[x][y] == mss::Basic::Mark::T))
+    const mss::GameControl::Position &position = game.position;
+    for (int x = 1; x <= position.observedBoard.rows; ++x)
+        for (int y = 1; y <= position.observedBoard.cols; ++y)
+            if (position.observedBoard.board[x][y] == mss::ObservedBoard::CellState::Hidden &&
+                (position.basic().marks[x][y] == mss::Basic::Mark::H || position.basic().marks[x][y] == mss::Basic::Mark::T))
                 ++count;
     return count;
 }
 
-inline bool hasZeroProbabilityCell(const Game &game, const Analysis &analysis) {
+inline bool hasZeroProbabilityCell(mss::GameControl::Game &game) {
     // 只按全局概率判断确定安全格；Basic 的局部传播不能覆盖完整逻辑推导。
-    for (int x = 1; x <= game.board.rows; ++x)
-        for (int y = 1; y <= game.board.cols; ++y)
-            if (game.board.board[x][y] == mss::ObservedBoard::CellState::Hidden &&
-                analysis.probability.mineProbability(game.board.id(x, y), game.board, analysis.basic, analysis.structure) == 0.0L)
+    const mss::Probability::Result &probability = game.probability();
+    const mss::GameControl::Position &position = game.position;
+    for (int x = 1; x <= position.observedBoard.rows; ++x)
+        for (int y = 1; y <= position.observedBoard.cols; ++y)
+            if (position.observedBoard.board[x][y] == mss::ObservedBoard::CellState::Hidden &&
+                probability.mineProbability(position.observedBoard.id(x, y), position.observedBoard, position.basic(), position.structure()) == 0.0L)
                 return true;
     return false;
 }
@@ -43,7 +42,6 @@ inline void real_endgame_performance(const int l, const int r, const double seco
     constexpr int kRows = 30;
     constexpr int kCols = 16;
     constexpr int kMines = 99;
-    constexpr std::uint64_t kSeed = 0xC0FFEE12345ULL;
 
     struct PossibilityBucket {
         int low;
@@ -64,7 +62,7 @@ inline void real_endgame_performance(const int l, const int r, const double seco
     std::array<PossibilityBucket, 5> possibilityBuckets = bucketTemplate;
 
     TimeBox timebox(seconds);
-    GameRng rng(kSeed);
+    mss::Random rng(0xC0FFEE12345ULL, 0xD1B54A32D192ED03ULL);
     long long games = 0;
     long long wins = 0;
     long long calls = 0;
@@ -74,8 +72,6 @@ inline void real_endgame_performance(const int l, const int r, const double seco
     long long totalPossibilities = 0;
     long long positions = 0;
     long long noSafePositions = 0;
-    long long noFiftyFiftyPositions = 0;
-    long long eligiblePositions = 0;
     long long moves = 0;
     long long safeMoves = 0;
     long long javaMoves = 0;
@@ -87,13 +83,8 @@ inline void real_endgame_performance(const int l, const int r, const double seco
     long double lowestSafetyTotal = 0;
     long double javaSafetyMinimum = 1;
     long double lowestSafetyMinimum = 1;
-    int maxOpened = 0;
     int minAllCandidates = 0;
     int maxAllCandidates = 0;
-    int minEligibleCandidates = 0;
-    int maxEligibleCandidates = 0;
-    long double minEligiblePossibilities = 0;
-    long double maxEligiblePossibilities = 0;
     double totalMilliseconds = 0.0;
     double commonTotalMilliseconds = 0.0;
     long long mismatches = 0;
@@ -105,85 +96,70 @@ inline void real_endgame_performance(const int l, const int r, const double seco
     double slowestMilliseconds = 0.0;
     long long slowestGame = 0;
     int slowestMove = 0;
-    int slowestOpened = 0;
     int slowestCandidates = 0;
     int slowestPossibilities = 0;
     long long slowestNodes = 0;
     mss::ObservedBoard::Result slowestBoard;
-    mss::RawGrid<char> slowestMines;
 
     while (!timebox.expired()) {
         const long long gameNumber = games + 1;
-        Game game({kRows, kCols, kMines});
-        game.placeMines(rng, true);
+        mss::GameControl::mineBoard mineBoard;
+        mineBoard.generate(kRows, kCols, kMines, mss::U128{rng.next(), rng.next()});
+        mss::GameControl::Game game(std::move(mineBoard), mss::ObservedBoard::Result(kRows, kCols, kMines));
         mss::ObservedBoard::Delta updates;
-        if (!game.reveal(1, 1, updates))
-            std::abort();
-        mss::ObservedBoard::update(game.board, updates);
-        Analysis analysis(game.board);
+        const std::vector<mss::CellId> firstMove = game.Suggest(mss::GameControl::Position::SuggestMode::Java);
+        mss::assert_(!firstMove.empty(), "test::real_endgame_performance: initial Suggest returned no move");
+        game.makeFirstMoveSafe(firstMove.front(), mss::U128{rng.next(), rng.next()});
+        const mss::CellId first = firstMove.front();
+        const auto [firstX, firstY] = game.position.observedBoard.pos(first);
+        updates.changes.push_back({first, (mss::ObservedBoard::CellState)game.number(firstX, firstY)});
+        game.update(updates);
+        const mss::GameControl::Position &position = game.position;
         bool tracked = false;
         int moveNumber = 0;
 
         while (!game.won()) {
             ++moveNumber;
-            const mss::LongTermRiskReference::Config riskConfig{};
-            mss::LongTermRiskReference::Influence risk =
-                mss::LongTermRiskReference::findInfluence(game.board, analysis.basic, analysis.structure, analysis.probability,
-                                                          analysis.shapes, analysis.distributions, {}, riskConfig);
-            const int candidates = bruteForceCandidateCount(game, analysis);
-            const mss::JavaEvaluate::Config evaluateConfig{};
-            const mss::JavaEvaluate::Result java =
-                mss::JavaEvaluate::solve(game.board, analysis.basic, analysis.structure, analysis.probability, analysis.shapes,
-                                         analysis.distributions, risk, {}, evaluateConfig);
-            if (java.x == 0 || java.y == 0)
-                std::abort();
-            const bool noSafe = !hasZeroProbabilityCell(game, analysis);
-            const bool noFiftyFifty = !java.pseudo5050;
-            const Move next = {
-                java.x, java.y,
-                1.0L - analysis.probability.mineProbability(game.board.id(java.x, java.y), game.board, analysis.basic, analysis.structure)};
+            const int candidates = bruteForceCandidateCount(game);
+            const std::vector<mss::CellId> java = game.Suggest(mss::GameControl::Position::SuggestMode::Java);
+            mss::assert_(!java.empty(), "test::real_endgame_performance: Java Suggest returned no move");
+            const bool noSafe = !hasZeroProbabilityCell(game);
+            const mss::CellId javaCell = java.front();
+            const auto [javaX, javaY] = position.observedBoard.pos(javaCell);
+            const long double javaMineProbability = 1.0L - game.mineProbability(javaCell);
+            const std::vector<mss::CellId> lowest = game.Suggest(mss::GameControl::Position::SuggestMode::LowRisk);
+            mss::assert_(!lowest.empty(), "test::real_endgame_performance: LowRisk Suggest returned no move");
+            const mss::CellId lowestCell = lowest.front();
+            const auto [lowestX, lowestY] = position.observedBoard.pos(lowestCell);
+            const long double lowestMineProbability = game.mineProbability(lowestCell);
             ++javaMoves;
-            const Move lowest = lowestRiskMove(game, analysis);
             ++moves;
-            if (!game.mine(next.x, next.y))
+            if (game.number(javaX, javaY) != 9)
                 ++safeMoves;
             if (noSafe) {
                 ++noSafeMoves;
-                if (!game.mine(next.x, next.y))
+                if (game.number(javaX, javaY) != 9)
                     ++javaSafeMoves;
             }
-            if (!game.mine(lowest.x, lowest.y))
+            if (game.number(lowestX, lowestY) != 9)
                 ++lowestSafeMoves;
-            if (noSafe && !game.mine(lowest.x, lowest.y))
+            if (noSafe && game.number(lowestX, lowestY) != 9)
                 ++noSafeLowestSafeMoves;
-            javaSafetyTotal += next.mineProbability;
-            lowestSafetyTotal += 1.0L - lowest.mineProbability;
-            javaSafetyMinimum = (std::min)(javaSafetyMinimum, next.mineProbability);
-            lowestSafetyMinimum = (std::min)(lowestSafetyMinimum, 1.0L - lowest.mineProbability);
-            maxOpened = (std::max)(maxOpened, game.opened);
+            javaSafetyTotal += javaMineProbability;
+            lowestSafetyTotal += 1.0L - lowestMineProbability;
+            javaSafetyMinimum = (std::min)(javaSafetyMinimum, javaMineProbability);
+            lowestSafetyMinimum = (std::min)(lowestSafetyMinimum, 1.0L - lowestMineProbability);
             if (minAllCandidates == 0 || candidates < minAllCandidates)
                 minAllCandidates = candidates;
             maxAllCandidates = (std::max)(maxAllCandidates, candidates);
             ++positions;
             if (noSafe)
                 ++noSafePositions;
-            if (noFiftyFifty)
-                ++noFiftyFiftyPositions;
-            if (noSafe && noFiftyFifty) {
-                ++eligiblePositions;
-                if (minEligibleCandidates == 0 || candidates < minEligibleCandidates)
-                    minEligibleCandidates = candidates;
-                maxEligibleCandidates = (std::max)(maxEligibleCandidates, candidates);
-                const long double possibilities = analysis.probability.candidates();
-                if (minEligiblePossibilities == 0 || possibilities < minEligiblePossibilities)
-                    minEligiblePossibilities = possibilities;
-                maxEligiblePossibilities = (std::max)(maxEligiblePossibilities, possibilities);
-            }
-            const long double possibilities = analysis.probability.candidates();
-            if (noSafe && noFiftyFifty && l <= possibilities && possibilities <= r) {
+            const long double possibilities = game.probability().candidates();
+            if (noSafe && l <= possibilities && possibilities <= r) {
                 const std::chrono::steady_clock::time_point multimaskStarted = std::chrono::steady_clock::now();
                 const mss::BruteForce::Result multimaskResult =
-                    mss::BruteForce::solve(game.board, analysis.basic, analysis.structure, analysis.shapes,
+                    mss::BruteForce::solve(position.observedBoard, position.basic(), position.structure(), game.shapePool(),
                                            {false, 1, mss::BruteForce::Solver::Bitwise});
                 const double multimaskMilliseconds =
                     std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - multimaskStarted).count();
@@ -193,7 +169,7 @@ inline void real_endgame_performance(const int l, const int r, const double seco
                 bool sameValue = true;
                 if (compareCommon) {
                     const std::chrono::steady_clock::time_point commonStarted = std::chrono::steady_clock::now();
-                    commonResult = mss::BruteForce::solve(game.board, analysis.basic, analysis.structure, analysis.shapes,
+                    commonResult = mss::BruteForce::solve(position.observedBoard, position.basic(), position.structure(), game.shapePool(),
                                                           {false, 1, mss::BruteForce::Solver::Common});
                     commonMilliseconds =
                         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - commonStarted).count();
@@ -232,7 +208,7 @@ inline void real_endgame_performance(const int l, const int r, const double seco
                         bucket.commonMilliseconds += commonMilliseconds;
                         break;
                     }
-                std::cout << "performance/real_endgame/search game=" << gameNumber << " move=" << moveNumber << " opened=" << game.opened
+                std::cout << "performance/real_endgame/search game=" << gameNumber << " move=" << moveNumber
                           << " candidates=" << candidates << " possibilities=" << multimaskResult.possibilities
                           << " multimask_nodes=" << multimaskResult.nodes << " multimask_time_ms=" << std::fixed << std::setprecision(3)
                           << multimaskMilliseconds;
@@ -244,12 +220,10 @@ inline void real_endgame_performance(const int l, const int r, const double seco
                     slowestMilliseconds = multimaskMilliseconds;
                     slowestGame = gameNumber;
                     slowestMove = moveNumber;
-                    slowestOpened = game.opened;
                     slowestCandidates = candidates;
                     slowestPossibilities = multimaskResult.possibilities;
                     slowestNodes = multimaskResult.nodes;
-                    slowestBoard = game.board;
-                    slowestMines = game.mines;
+                    slowestBoard = position.observedBoard;
                 }
                 if (!tracked) {
                     ++gamesWithCalls;
@@ -263,11 +237,13 @@ inline void real_endgame_performance(const int l, const int r, const double seco
             }
 
             updates.clear();
-            if (!game.reveal(next.x, next.y, updates))
+            const int javaNumber = game.number(javaX, javaY);
+            if (javaNumber == 9)
                 break;
+            updates.changes.push_back({javaCell, (mss::ObservedBoard::CellState)(javaNumber)});
+            game.update(updates);
             if (game.won())
                 break;
-            analysis.update(game.board, updates);
         }
         if (game.won())
             ++wins;
@@ -280,11 +256,9 @@ inline void real_endgame_performance(const int l, const int r, const double seco
               << " no_safe_moves=" << noSafeMoves << " no_safe_lowest_safe_moves=" << noSafeLowestSafeMoves
               << " lowest_safe_moves=" << lowestSafeMoves << " java_safety_avg=" << (javaMoves == 0 ? 0 : javaSafetyTotal / javaMoves)
               << " java_safety_min=" << javaSafetyMinimum << " lowest_safety_avg=" << (moves == 0 ? 0 : lowestSafetyTotal / moves)
-              << " lowest_safety_min=" << lowestSafetyMinimum << " opened_max=" << maxOpened << " all_candidates=[" << minAllCandidates
+              << " lowest_safety_min=" << lowestSafetyMinimum << " all_candidates=[" << minAllCandidates
               << ',' << maxAllCandidates << "]"
-              << " positions=" << positions << " no_safe=" << noSafePositions << " no_5050=" << noFiftyFiftyPositions
-              << " eligible=" << eligiblePositions << " eligible_candidates=[" << minEligibleCandidates << ',' << maxEligibleCandidates
-              << "] eligible_possibilities=[" << minEligiblePossibilities << ',' << maxEligiblePossibilities << "]"
+              << " positions=" << positions << " no_safe=" << noSafePositions
               << " calls=" << calls << " games_with_calls=" << gamesWithCalls << " candidates=[" << (calls == 0 ? 0 : minCandidates) << ','
               << maxCandidates << "] possibilities=[" << minPossibilities << ',' << maxPossibilities
               << "] possibilities_total=" << totalPossibilities << " nodes=" << totalNodes << " search_time_ms=" << std::fixed
@@ -316,7 +290,7 @@ inline void real_endgame_performance(const int l, const int r, const double seco
     }
     std::cout << '\n';
     if (slowestGame != 0) {
-        std::cout << "performance/real_endgame/slowest game=" << slowestGame << " move=" << slowestMove << " opened=" << slowestOpened
+        std::cout << "performance/real_endgame/slowest game=" << slowestGame << " move=" << slowestMove
                   << " candidates=" << slowestCandidates << " possibilities=" << slowestPossibilities << " nodes=" << slowestNodes
                   << " time_ms=" << slowestMilliseconds << " observed_board:\n";
         for (int x = 1; x <= slowestBoard.rows; ++x) {
@@ -331,12 +305,6 @@ inline void real_endgame_performance(const int l, const int r, const double seco
                 else
                     std::cout << (int)(state);
             }
-            std::cout << '\n';
-        }
-        std::cout << "performance/real_endgame/slowest mines:\n";
-        for (int x = 1; x <= slowestBoard.rows; ++x) {
-            for (int y = 1; y <= slowestBoard.cols; ++y)
-                std::cout << (slowestMines[x - 1][y - 1] ? '*' : '.');
             std::cout << '\n';
         }
     }

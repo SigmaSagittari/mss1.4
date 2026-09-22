@@ -373,7 +373,12 @@ inline std::vector<BoxId> ShapeSolver::GraphSolver::makeOrder(const Graph &graph
     case OrderAlgo::AutoSA:
         return makeAutoSAOrder(graph);
     }
-    std::abort();
+    assert_(false, "GraphSolver::makeOrder: invalid order algorithm");
+#if defined(_MSC_VER)
+    __assume(0);
+#else
+    __builtin_unreachable();
+#endif
 }
 
 } // namespace mss

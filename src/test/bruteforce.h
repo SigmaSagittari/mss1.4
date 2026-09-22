@@ -25,7 +25,7 @@ inline void bruteforce() {
             board.board[x][y] = cell == '?' ? mss::ObservedBoard::CellState::Hidden : (mss::ObservedBoard::CellState)(cell - '0');
         }
     const mss::Basic::Result basic = mss::Basic::analyze(board);
-    mss::Structure::ShapePool shapes;
+    mss::Structure::structPool shapes;
     const mss::Structure::Result structure = mss::Structure::analyze(board, basic, shapes);
     const mss::BruteForce::Config config{false, 1, mss::BruteForce::Solver::Bitwise};
     const std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();

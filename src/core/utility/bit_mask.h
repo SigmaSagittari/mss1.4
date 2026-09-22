@@ -4,7 +4,6 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 
 #include "core/assert.h"
 
@@ -68,7 +67,12 @@ template <std::size_t WordCount> struct bitMask {
                 return index * 64 + std::countr_zero(word);
             ++index;
         }
-        std::exit(1);
+        assert_(false, "bitMask::firstSetBit: mask is empty");
+#if defined(_MSC_VER)
+        __assume(0);
+#else
+        __builtin_unreachable();
+#endif
     }
 
     // 查询指定下标是否置位。
@@ -167,7 +171,12 @@ template <> struct bitMask<1> {
     int firstSetBit() const {
         if (word != 0)
             return std::countr_zero(word);
-        std::exit(1);
+        assert_(false, "bitMask::firstSetBit: mask is empty");
+#if defined(_MSC_VER)
+        __assume(0);
+#else
+        __builtin_unreachable();
+#endif
     }
 
     // 查询单 word 中指定下标是否置位。

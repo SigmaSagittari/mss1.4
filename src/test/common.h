@@ -1,22 +1,15 @@
 #pragma once
 
 #include <chrono>
-#include <cstdint>
-#include <cstdlib>
-#include <deque>
 #include <iostream>
-#include <numeric>
 #include <source_location>
 #include <utility>
 #include <vector>
 
-#include "algo/basic.h"
-#include "algo/probability/probability.h"
-#include "algo/probability/probability_external.h"
-#include "algo/shape_solver/shape_solver.h"
-#include "algo/structure.h"
-#include "core/types.h"
-#include "core/utility/grid.h"
+#include "algo/observed_board.h"
+#include "core/utility/hash.h"
+#include "core/utility/rng.h"
+#include "game/game.h"
 
 #ifdef _WIN32
 #include <dbghelp.h>
@@ -75,181 +68,8 @@ inline void check(bool condition, const char *errmsg, std::source_location locat
 #ifdef _WIN32
         StackTrace::print();
 #endif
-        std::abort();
+        mss::assert_(false, errmsg, location);
     }
-}
-
-// Game simulation.
-
-struct GameRng {
-    std::uint64_t state;
-
-    // 用确定性种子创建测试用伪随机数发生器。
-    explicit GameRng(std::uint64_t seed) : state(seed) {
-    }
-
-    // 生成下一个确定性的 64 位伪随机值。
-    std::uint64_t next() {
-        state ^= state >> 12;
-        state ^= state << 25;
-        state ^= state >> 27;
-        return state * 0x2545f4914f6cdd1dULL;
-    }
-
-    // 生成 [0,n) 范围内的测试随机下标。
-    int below(int n) {
-        return next() % n;
-    }
-};
-
-struct GameConfig {
-    int rows;
-    int cols;
-    int mines;
-};
-
-struct Game {
-    mss::ObservedBoard::Result board;
-    mss::RawGrid<char> mines;
-    int opened = 0;
-
-    // 按测试配置创建空雷盘和全 Hidden 观测盘面。
-    explicit Game(const GameConfig &config) : board(config.rows, config.cols, config.mines), mines(config.rows, config.cols, 0) {
-    }
-
-    char &mineByFlat(int cell) {
-        return mines[cell / board.cols][cell % board.cols];
-    }
-
-    // 查询指定测试格是否有雷。
-    bool mine(int x, int y) const {
-        return mines[x - 1][y - 1] != 0;
-    }
-
-    void placeMines(GameRng &rng, bool firstMoveSafe = false) {
-        // 设计目的：测试夹具固定保留 flat index 0（即 (1,1)）作为稳定的起始安全格；
-        // firstMoveSafe 只控制后续是否再次执行安全交换，不改变这个固定测试布局。
-        std::vector<int> cells(board.rows * board.cols - 1);
-        std::iota(cells.begin(), cells.end(), 1);
-        for (int i = (int)(cells.size()) - 1; i > 0; --i)
-            std::swap(cells[i], cells[rng.below(i + 1)]);
-        for (int i = 0; i < board.totalMines; ++i)
-            mineByFlat(cells[i]) = 1;
-        if (firstMoveSafe && mine(1, 1))
-            for (int x = 1; x <= board.rows; ++x)
-                for (int y = 1; y <= board.cols; ++y)
-                    if (!mine(x, y)) {
-                        std::swap(mines[0][0], mines[x - 1][y - 1]);
-                        return;
-                    }
-    }
-
-    int adjacentMines(int x, int y) const {
-        // 统计指定格八邻域中的雷数。
-        int result = 0;
-        mss::forEachAdjacent(x, y, board.rows, board.cols, [&](int nx, int ny) {
-            result += mine(nx, ny);
-        });
-        return result;
-    }
-
-    bool reveal(int x, int y, mss::ObservedBoard::Delta &updates) {
-        // 模拟安全点击和零区域泛洪，并把新数字写入观测 Delta。
-        if (mine(x, y))
-            return false;
-        mss::Grid<char> queued(board.rows, board.cols, 0);
-        std::deque<std::pair<int, int>> pending{{x, y}};
-        while (!pending.empty()) {
-            const auto [cx, cy] = pending.front();
-            pending.pop_front();
-            const mss::CellId cell = board.id(cx, cy);
-            if (queued[cx][cy] || board.board[cx][cy] != mss::ObservedBoard::CellState::Hidden || mine(cx, cy))
-                continue;
-            queued[cx][cy] = 1;
-            const int digit = adjacentMines(cx, cy);
-            ++opened;
-            updates.changes.push_back({cell, (mss::ObservedBoard::CellState)(digit)});
-            if (digit == 0)
-                mss::forEachAdjacent(cx, cy, board.rows, board.cols, [&](int nx, int ny) {
-                    pending.emplace_back(nx, ny);
-                });
-        }
-        return true;
-    }
-
-    // 判断测试盘面是否已打开全部非雷格。
-    bool won() const {
-        return opened == board.rows * board.cols - board.totalMines;
-    }
-};
-
-struct Analysis {
-    const mss::ShapeSolver::OrderAlgo orderAlgo;
-    mss::Basic::Result basic;
-    mss::Structure::ShapePool shapes;
-    mss::Structure::Result structure;
-    mss::ShapeSolver::Distribution::Pool distributions;
-    mss::Probability::Result probability;
-    mss::Basic::Delta basicDelta;
-    mss::Structure::Delta structureDelta;
-
-    // 从当前观测盘面建立生产分析管线的测试副本。
-    explicit Analysis(const mss::ObservedBoard::Result &board, const mss::ShapeSolver::OrderAlgo &algo = mss::ShapeSolver::OrderAlgo::Auto)
-        : orderAlgo(algo), basic(mss::Basic::analyze(board)), structure(mss::Structure::analyze(board, basic, shapes)) {
-        probability = mss::Probability::analyze(board, basic, structure, shapes, distributions, orderAlgo);
-    }
-
-    void update(mss::ObservedBoard::Result &board, mss::ObservedBoard::Delta &updates) {
-        // 测试分析器按生产管线的固定顺序回放 Delta：board → basic → structure → probability。
-        mss::ObservedBoard::update(board, updates);
-        mss::Basic::update(basic, basicDelta, board, updates);
-        mss::Structure::update(structure, structureDelta, board, basic, shapes, updates);
-        mss::Probability::analyze(board, basic, structure, shapes, distributions, probability, orderAlgo);
-    }
-};
-
-// 输出便于复现的调试对局：宽、高、雷数按输入格式排列，H/F 分别表示隐藏和旗标。
-inline void printGame(const Game &game, const Analysis &analysis) {
-    std::cout << game.board.cols << 'x' << game.board.rows << 'x' << game.board.totalMines << '\n';
-    for (int x = 1; x <= game.board.rows; ++x) {
-        for (int y = 1; y <= game.board.cols; ++y) {
-            const mss::ObservedBoard::CellState state = game.board.board[x][y];
-            switch (state) {
-            case mss::ObservedBoard::CellState::Num0:
-            case mss::ObservedBoard::CellState::Num1:
-            case mss::ObservedBoard::CellState::Num2:
-            case mss::ObservedBoard::CellState::Num3:
-            case mss::ObservedBoard::CellState::Num4:
-            case mss::ObservedBoard::CellState::Num5:
-            case mss::ObservedBoard::CellState::Num6:
-            case mss::ObservedBoard::CellState::Num7:
-            case mss::ObservedBoard::CellState::Num8:
-                std::cout << (int)(state);
-                break;
-            case mss::ObservedBoard::CellState::Hidden:
-                std::cout << (analysis.basic.marks[x][y] == mss::Basic::Mark::F ? 'F' : 'H');
-                break;
-            case mss::ObservedBoard::CellState::ForcedMine:
-                std::cout << 'F';
-                break;
-            case mss::ObservedBoard::CellState::ForcedSafe:
-                std::cout << 'H';
-                break;
-            }
-        }
-        std::cout << '\n';
-    }
-    std::cout << '\n' << "Hide Flag\n";
-}
-
-inline std::vector<mss::CellId> hiddenSafeCells(const Game &game, const Analysis &analysis) {
-    // 收集当前已被 Basic 推断为安全但仍未翻开的格子。
-    std::vector<mss::CellId> result;
-    for (int x = 1; x <= game.board.rows; ++x)
-        for (int y = 1; y <= game.board.cols; ++y)
-            if (game.board.board[x][y] == mss::ObservedBoard::CellState::Hidden && analysis.basic.marks[x][y] == mss::Basic::Mark::Safe)
-                result.push_back(game.board.id(x, y));
-    return result;
 }
 
 // Batch test configuration and execution.
@@ -263,8 +83,6 @@ struct TestConfig {
     double seconds;
     int games;
     PositionFilter filter;
-    int maxRestarts;
-    bool requireWinningGame;
     bool firstMoveSafe;
 };
 
@@ -290,76 +108,49 @@ struct TimeBox {
     }
 };
 
-struct Move {
-    int x;
-    int y;
-    long double mineProbability;
-};
-
-inline Move lowestRiskMove(const Game &game, const Analysis &analysis) {
-    // 扫描所有可点候选并返回条件雷概率最低的格子。
-    bool found = false;
-    Move result;
-    for (int x = 1; x <= game.board.rows; ++x)
-        for (int y = 1; y <= game.board.cols; ++y) {
-            if (game.board.board[x][y] != mss::ObservedBoard::CellState::Hidden)
-                continue;
-            if (analysis.basic.marks[x][y] == mss::Basic::Mark::F)
-                continue;
-            const long double risk =
-                analysis.probability.mineProbability(game.board.id(x, y), game.board, analysis.basic, analysis.structure);
-            if (found && risk >= result.mineProbability)
-                continue;
-            result = {x, y, risk};
-            found = true;
-        }
-    if (!found)
-        std::abort();
-    return result;
-}
-
 struct Snapshot {
-    const Game &game;
-    const Analysis &analysis;
-    Move next;
+    const mss::GameControl::Game &game;
+    const std::vector<mss::CellId> &next;
     bool mustGuess;
 };
 
-template <typename Policy, typename Fn>
-inline bool generateGame(const TestConfig &config, GameRng &rng, Policy &&movePolicy, Fn &&consume) {
+template <typename Fn>
+inline bool generateGame(const TestConfig &config, mss::Random &rng, mss::GameControl::Position::SuggestMode mode, Fn &&consume) {
     // 生成并运行一局测试游戏，在指定快照时机调用消费回调。
-    if (config.rows <= 0 || config.cols <= 0 || config.mines < 0 || config.mines >= config.rows * config.cols)
-        std::abort();
-    for (int restart = 0; restart < config.maxRestarts; ++restart) {
-        Game game({config.rows, config.cols, config.mines});
-        game.placeMines(rng, config.firstMoveSafe);
-        mss::ObservedBoard::Delta updates;
-        if (config.firstMoveSafe) {
-            game.reveal(1, 1, updates);
-            mss::ObservedBoard::update(game.board, updates);
-        }
-        Analysis analysis(game.board, mss::ShapeSolver::OrderAlgo::Auto);
-        Move next = movePolicy(game, analysis);
-        bool lost = false;
-        while (!game.won()) {
+    mss::assert_(config.rows > 0 && config.cols > 0 && config.mines >= 0 && config.mines < config.rows * config.cols,
+                 "test::generateGame: invalid board configuration");
+    mss::GameControl::mineBoard mineBoard;
+    mineBoard.generate(config.rows, config.cols, config.mines, mss::U128{rng.next(), rng.next()});
+    mss::GameControl::Game game(std::move(mineBoard), mss::ObservedBoard::Result(config.rows, config.cols, config.mines));
+    mss::ObservedBoard::Delta updates;
+    std::vector<mss::CellId> next = game.Suggest(mode);
+    mss::assert_(!next.empty(), "test::generateGame: initial Suggest returned no move");
+    if (config.firstMoveSafe)
+        game.makeFirstMoveSafe(next.front(), mss::U128{rng.next(), rng.next()});
+    bool lost = false;
+    while (!game.won()) {
+        for (const mss::CellId cell : next) {
+            const auto [x, y] = game.position.observedBoard.pos(cell);
             updates.clear();
-            if (!game.reveal(next.x, next.y, updates)) {
+            const int number = game.number(x, y);
+            if (number == 9) {
                 lost = true;
                 break;
             }
+            updates.changes.push_back({cell, (mss::ObservedBoard::CellState)(number)});
+            game.update(updates);
             if (game.won())
                 break;
-            analysis.update(game.board, updates);
-            next = movePolicy(game, analysis);
-            const Snapshot snapshot{game, analysis, next, next.mineProbability > 1e-15L};
-            if (config.filter == PositionFilter::All || snapshot.mustGuess)
-                consume(snapshot);
         }
-        const bool won = !lost && game.won();
-        if (won || !config.requireWinningGame)
-            return won;
+        if (lost || game.won())
+            break;
+        next = game.Suggest(mode);
+        mss::assert_(!next.empty(), "test::generateGame: Suggest returned no move");
+        const Snapshot snapshot{game, next, next.size() == 1};
+        if (config.filter == PositionFilter::All || snapshot.mustGuess)
+            consume(snapshot);
     }
-    std::abort();
+    return !lost && game.won();
 }
 
 struct RunSummary {
@@ -369,16 +160,13 @@ struct RunSummary {
     double elapsedSeconds = 0.0;
 };
 
-template <typename Policy, typename SnapshotFn, typename GameFn>
-inline RunSummary runGamesWithGameEnd(const TestConfig &config, GameRng &rng, Policy &&movePolicy, SnapshotFn &&perSnapshot,
-                                      GameFn &&perGame) {
-    // 按时间或局数限制批量运行测试，并分别回调快照和对局结束事件。
-    if (config.seconds < 0 && config.games < 0)
-        std::abort();
+template <typename Fn>
+inline RunSummary runGames(const TestConfig &config, mss::Random &rng, mss::GameControl::Position::SuggestMode mode, Fn &&perSnapshot) {
+    mss::assert_(config.seconds >= 0 || config.games >= 0, "test::runGames: no stopping condition");
     TimeBox timebox(config.seconds);
     RunSummary summary;
     while ((config.games < 0 || summary.games < config.games) && !timebox.expired()) {
-        const bool won = generateGame(config, rng, movePolicy, [&](const Snapshot &snapshot) {
+        const bool won = generateGame(config, rng, mode, [&](const Snapshot &snapshot) {
             if (!timebox.expired())
                 perSnapshot(snapshot);
         });
@@ -387,22 +175,9 @@ inline RunSummary runGamesWithGameEnd(const TestConfig &config, GameRng &rng, Po
             ++summary.wins;
         else
             ++summary.losses;
-        perGame(won);
     }
     summary.elapsedSeconds = timebox.elapsedSeconds();
     return summary;
-}
-
-template <typename Policy, typename Fn>
-inline RunSummary runGames(const TestConfig &config, GameRng &rng, Policy &&movePolicy, Fn &&perSnapshot) {
-    // 批量运行测试并只提供逐快照回调。
-    return runGamesWithGameEnd(config, rng, std::forward<Policy>(movePolicy), std::forward<Fn>(perSnapshot), [](bool) {
-    });
-}
-
-template <typename Fn> inline RunSummary runGames(const TestConfig &config, GameRng &rng, Fn &&perSnapshot) {
-    // 使用最低风险策略批量运行测试。
-    return runGames(config, rng, lowestRiskMove, std::forward<Fn>(perSnapshot));
 }
 
 } // namespace test
