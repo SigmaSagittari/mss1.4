@@ -22,7 +22,7 @@
 #include <vector>
 
 #include "core/assert.h"
-#include "ref/java_evaluate.h"
+#include "algo/winrate_solver/java_transplant/java_evaluate.h"
 #include "ui/game_control.h"
 #include "ui/http_server.h"
 #include "ui/interactive.h"

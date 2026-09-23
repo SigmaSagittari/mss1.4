@@ -4,7 +4,7 @@
 #include <span>
 #include <vector>
 
-#include "algo/probability/probability_external.h"
+#include "algo/probability_engine/probability/probability_external.h"
 #include "core/assert.h"
 #include "core/utility/combinatorics.h"
 

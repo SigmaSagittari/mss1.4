@@ -5,7 +5,7 @@
 #include <utility>
 #include <vector>
 
-#include "algo/structure.h"
+#include "algo/probability_engine/structure.h"
 #include "core/types.h"
 #include "core/utility/combinatorics.h"
 #include "core/utility/flat_hashtable.h"

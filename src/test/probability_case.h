@@ -7,7 +7,7 @@
 #include <string_view>
 #include <vector>
 
-#include "algo/observed_board.h"
+#include "algo/probability_engine/observed_board.h"
 #include "test/common.h"
 
 namespace test {

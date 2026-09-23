@@ -7,7 +7,7 @@
 #include <utility>
 #include <vector>
 
-#include "algo/observed_board.h"
+#include "algo/probability_engine/observed_board.h"
 #include "core/utility/hash.h"
 #include "core/utility/rng.h"
 #include "game/game.h"

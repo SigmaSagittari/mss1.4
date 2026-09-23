@@ -15,7 +15,7 @@
 
 namespace mss::workspace {
 
-// src/algo/basic.h
+// src/algo/probability_engine/basic.h
 struct Basic {
     // Basic::update
     struct Update {
@@ -26,7 +26,7 @@ struct Basic {
     inline static thread_local Update update;
 };
 
-// src/algo/structure.h
+// src/algo/probability_engine/structure.h
 struct Structure {
     // Structure::analyze
     struct Analyze {
@@ -95,7 +95,7 @@ struct RadixSort {
     inline static thread_local SortBuffers sort;
 };
 
-// src/algo/shape_solver/dfs_solver.h
+// src/algo/probability_engine/shape_solver/dfs_solver.h
 struct DfsSolver {
     // DfsSolver::forEachAssignment
     struct ForEachAssignment {
@@ -129,7 +129,7 @@ struct DfsSolver {
     inline static thread_local Analyze analyze;
 };
 
-// src/algo/shape_solver/graph_solver/graph_solver_order.h
+// src/algo/probability_engine/shape_solver/graph_solver/graph_solver_order.h
 struct GraphSolverOrder {
     // GraphSolver::orderScore
     struct OrderScore {
@@ -148,7 +148,7 @@ struct GraphSolverOrder {
     inline static thread_local MakeSAOrder makeSAOrder;
 };
 
-// src/algo/shape_solver/graph_solver/graph_solver_dp.h
+// src/algo/probability_engine/shape_solver/graph_solver/graph_solver_dp.h
 struct GraphSolverDp {
     // GraphSolver::analyze
     struct Layer {
@@ -202,7 +202,7 @@ struct GraphSolverDp {
     inline static thread_local Layer next;
 };
 
-// src/algo/probability/probability.h
+// src/algo/probability_engine/probability/probability.h
 struct Probability {
     // Probability::analyze
     struct Analyze {
@@ -236,7 +236,7 @@ struct Probability {
 };
 inline thread_local Probability::Analyze::Buffers Probability::globalWorkspace;
 
-// src/algo/probability/observe.h
+// src/algo/probability_engine/probability/observe.h
 struct ProbabilityObserve {
     // Probability::observe
     struct Transfer {
@@ -333,7 +333,7 @@ struct ProbabilityObserve {
 };
 inline thread_local ProbabilityObserve::Buffers ProbabilityObserve::observeWorkspace;
 
-// src/algo/bruteforce/bruteforce_normal.h
+// src/algo/probability_engine/bruteforce/bruteforce_normal.h
 struct BruteForceNormal {
     struct Scratch {
         struct Layer {
@@ -361,7 +361,7 @@ struct BruteForceNormal {
     inline static thread_local FlatHashTable<U128, int, U128Hash> cache;
 };
 
-// src/algo/bruteforce/bruteforce_multimask.h
+// src/algo/probability_engine/bruteforce/bruteforce_multimask.h
 struct BruteForceMultiMask {
     template <typename Mask> struct Layer {
         std::vector<int> deaths;
@@ -410,7 +410,7 @@ struct BruteForceMultiMask {
     template <typename Mask> inline static thread_local FlatHashTable<U128, int, U128Hash> cache;
 };
 
-// src/algo/ref/long_term_risk_helper.h
+// src/algo/winrate_solver/java_transplant/long_term_risk_helper.h
 struct LongTermRisk {
     template <typename ProbabilityResult, typename BoardDelta>
     struct ForceWorkspace {

@@ -6,7 +6,7 @@
 #include <utility>
 #include <vector>
 
-#include "algo/basic.h"
+#include "algo/probability_engine/basic.h"
 #include "core/types.h"
 #include "core/utility/flat_hashtable.h"
 #include "core/utility/hash.h"

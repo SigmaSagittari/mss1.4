@@ -9,9 +9,9 @@
 #include <utility>
 #include <vector>
 
-#include "algo/probability/probability_external.h"
-#include "algo/shape_solver/dfs_solver.h"
-#include "algo/shape_solver/graph_solver/graph_solver.h"
+#include "algo/probability_engine/probability/probability_external.h"
+#include "algo/probability_engine/shape_solver/dfs_solver.h"
+#include "algo/probability_engine/shape_solver/graph_solver/graph_solver.h"
 #include "core/assert.h"
 #include "core/utility/combinatorics.h"
 

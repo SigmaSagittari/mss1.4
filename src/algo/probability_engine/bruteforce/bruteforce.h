@@ -2,9 +2,9 @@
 
 #include <algorithm>
 
-#include "algo/bruteforce/bruteforce_common.h"
-#include "algo/bruteforce/bruteforce_normal.h"
-#include "algo/bruteforce/multimask/bruteforce_multimask.h"
+#include "algo/probability_engine/bruteforce/bruteforce_common.h"
+#include "algo/probability_engine/bruteforce/bruteforce_normal.h"
+#include "algo/probability_engine/bruteforce/multimask/bruteforce_multimask.h"
 #include "core/assert.h"
 
 //==============================================================================

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "algo/shape_solver/graph_solver/graph_solver.h"
+#include "algo/probability_engine/shape_solver/graph_solver/graph_solver.h"
 
 namespace mss {
 

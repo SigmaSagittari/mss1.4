@@ -3,18 +3,18 @@
 #include <span>
 #include <vector>
 
-#include "algo/basic.h"
-#include "algo/probability/probability.h"
-#include "algo/probability/probability_external.h"
-#include "algo/shape_solver/shape_solver.h"
-#include "algo/structure.h"
+#include "algo/probability_engine/basic.h"
+#include "algo/probability_engine/probability/probability.h"
+#include "algo/probability_engine/probability/probability_external.h"
+#include "algo/probability_engine/shape_solver/shape_solver.h"
+#include "algo/probability_engine/structure.h"
 #include "core/types.h"
 #include "core/workspace.h"
 
 namespace mss {
 
 // ─────────────────────────────────────────────────────────────
-// ref/long_term_risk_helper.h — Java LongTermRiskHelper 的忠实移植。
+// algo/winrate_solver/java_transplant/long_term_risk_helper.h — Java LongTermRiskHelper 的忠实移植。
 //
 // 全盘扫描"候选 50/50 结构"（2-tile 横/竖对、2x2 块），对每个结构用
 // countWithForces（把一组格强制为雷、另一组强制为安全后数全盘解数）求

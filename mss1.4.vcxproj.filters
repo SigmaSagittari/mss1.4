@@ -7,17 +7,26 @@
     <Filter Include="src\algo">
       <UniqueIdentifier>{6D0B2A2B-5BC2-4B0D-B765-86C20E4B5A3A}</UniqueIdentifier>
     </Filter>
-    <Filter Include="src\algo\bruteforce">
+    <Filter Include="src\algo\probability_engine">
+      <UniqueIdentifier>{8EFF810E-F461-498C-8880-E6DAC2C6A886}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\algo\probability_engine\bruteforce">
       <UniqueIdentifier>{B4BDB0EF-1C25-45B2-A35B-3B03DD2D98DD}</UniqueIdentifier>
     </Filter>
-    <Filter Include="src\algo\probability">
+    <Filter Include="src\algo\probability_engine\probability">
       <UniqueIdentifier>{D2E3F11F-9DE0-4688-8E70-5A6AB62311AC}</UniqueIdentifier>
     </Filter>
-    <Filter Include="src\algo\shape_solver">
+    <Filter Include="src\algo\probability_engine\shape_solver">
       <UniqueIdentifier>{7F6B3F4A-6018-4E2D-91D2-30B2BDBB8AD1}</UniqueIdentifier>
     </Filter>
-    <Filter Include="src\algo\shape_solver\graph_solver">
+    <Filter Include="src\algo\probability_engine\shape_solver\graph_solver">
       <UniqueIdentifier>{C5B30C1D-6D1A-4F0D-9C3B-2A8B4E7D6F90}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\algo\winrate_solver">
+      <UniqueIdentifier>{1E054D1F-6138-4FA3-BB4C-46E179E10C2D}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\algo\winrate_solver\java_transplant">
+      <UniqueIdentifier>{04D81B29-4FCB-4D42-A4BA-F123E2F2F5DA}</UniqueIdentifier>
     </Filter>
     <Filter Include="src\core">
       <UniqueIdentifier>{0ACB0F25-DDF1-44A7-A94C-A07B72E9BC85}</UniqueIdentifier>
@@ -28,7 +37,7 @@
     <Filter Include="src\test">
       <UniqueIdentifier>{A2BCF0D8-1BAE-4A88-A5C6-07C67F598A94}</UniqueIdentifier>
     </Filter>
-    <Filter Include="src\algo\bruteforce\multimask">
+    <Filter Include="src\algo\probability_engine\bruteforce\multimask">
       <UniqueIdentifier>{f7bf34fc-49a9-4f58-802f-675e88a13de9}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
@@ -38,50 +47,59 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="src\algo\basic.h">
-      <Filter>src\algo</Filter>
+    <ClInclude Include="src\algo\probability_engine\basic.h">
+      <Filter>src\algo\probability_engine</Filter>
     </ClInclude>
-    <ClInclude Include="src\algo\bruteforce\bruteforce.h">
-      <Filter>src\algo\bruteforce</Filter>
+    <ClInclude Include="src\algo\probability_engine\bruteforce\bruteforce.h">
+      <Filter>src\algo\probability_engine\bruteforce</Filter>
     </ClInclude>
-    <ClInclude Include="src\algo\bruteforce\bruteforce_common.h">
-      <Filter>src\algo\bruteforce</Filter>
+    <ClInclude Include="src\algo\probability_engine\bruteforce\bruteforce_common.h">
+      <Filter>src\algo\probability_engine\bruteforce</Filter>
     </ClInclude>
-    <ClInclude Include="src\algo\bruteforce\bruteforce_normal.h">
-      <Filter>src\algo\bruteforce</Filter>
+    <ClInclude Include="src\algo\probability_engine\bruteforce\bruteforce_normal.h">
+      <Filter>src\algo\probability_engine\bruteforce</Filter>
     </ClInclude>
-    <ClInclude Include="src\algo\observed_board.h">
-      <Filter>src\algo</Filter>
+    <ClInclude Include="src\algo\probability_engine\observed_board.h">
+      <Filter>src\algo\probability_engine</Filter>
     </ClInclude>
-    <ClInclude Include="src\algo\probability\probability.h">
-      <Filter>src\algo\probability</Filter>
+    <ClInclude Include="src\algo\probability_engine\probability\probability.h">
+      <Filter>src\algo\probability_engine\probability</Filter>
     </ClInclude>
-    <ClInclude Include="src\algo\probability\observe.h">
-      <Filter>src\algo\probability</Filter>
+    <ClInclude Include="src\algo\probability_engine\probability\observe.h">
+      <Filter>src\algo\probability_engine\probability</Filter>
     </ClInclude>
-    <ClInclude Include="src\algo\probability\probability_external.h">
-      <Filter>src\algo\probability</Filter>
+    <ClInclude Include="src\algo\probability_engine\probability\probability_external.h">
+      <Filter>src\algo\probability_engine\probability</Filter>
     </ClInclude>
-    <ClInclude Include="src\algo\shape_solver\dfs_solver.h">
-      <Filter>src\algo\shape_solver</Filter>
+    <ClInclude Include="src\algo\probability_engine\shape_solver\dfs_solver.h">
+      <Filter>src\algo\probability_engine\shape_solver</Filter>
     </ClInclude>
-    <ClInclude Include="src\algo\shape_solver\graph_solver\graph_solver.h">
-      <Filter>src\algo\shape_solver\graph_solver</Filter>
+    <ClInclude Include="src\algo\probability_engine\shape_solver\graph_solver\graph_solver.h">
+      <Filter>src\algo\probability_engine\shape_solver\graph_solver</Filter>
     </ClInclude>
-    <ClInclude Include="src\algo\shape_solver\graph_solver\graph_solver_dp.h">
-      <Filter>src\algo\shape_solver\graph_solver</Filter>
+    <ClInclude Include="src\algo\probability_engine\shape_solver\graph_solver\graph_solver_dp.h">
+      <Filter>src\algo\probability_engine\shape_solver\graph_solver</Filter>
     </ClInclude>
-    <ClInclude Include="src\algo\shape_solver\graph_solver\graph_solver_order.h">
-      <Filter>src\algo\shape_solver\graph_solver</Filter>
+    <ClInclude Include="src\algo\probability_engine\shape_solver\graph_solver\graph_solver_order.h">
+      <Filter>src\algo\probability_engine\shape_solver\graph_solver</Filter>
     </ClInclude>
-    <ClInclude Include="src\algo\shape_solver\shape_solver.h">
-      <Filter>src\algo\shape_solver</Filter>
+    <ClInclude Include="src\algo\probability_engine\shape_solver\shape_solver.h">
+      <Filter>src\algo\probability_engine\shape_solver</Filter>
     </ClInclude>
-    <ClInclude Include="src\algo\shape_solver\shape_solver_common.h">
-      <Filter>src\algo\shape_solver</Filter>
+    <ClInclude Include="src\algo\probability_engine\shape_solver\shape_solver_common.h">
+      <Filter>src\algo\probability_engine\shape_solver</Filter>
     </ClInclude>
-    <ClInclude Include="src\algo\structure.h">
-      <Filter>src\algo</Filter>
+    <ClInclude Include="src\algo\probability_engine\structure.h">
+      <Filter>src\algo\probability_engine</Filter>
+    </ClInclude>
+    <ClInclude Include="src\algo\winrate_solver\java_transplant\java_evaluate.h">
+      <Filter>src\algo\winrate_solver\java_transplant</Filter>
+    </ClInclude>
+    <ClInclude Include="src\algo\winrate_solver\java_transplant\long_term_risk_helper.h">
+      <Filter>src\algo\winrate_solver\java_transplant</Filter>
+    </ClInclude>
+    <ClInclude Include="src\algo\winrate_solver\java_transplant\pseudo_helper.h">
+      <Filter>src\algo\winrate_solver\java_transplant</Filter>
     </ClInclude>
     <ClInclude Include="src\core\assert.h">
       <Filter>src\core</Filter>
@@ -149,11 +167,11 @@
     <ClInclude Include="src\test\real_endgame_performance.h">
       <Filter>src\test</Filter>
     </ClInclude>
-    <ClInclude Include="src\algo\bruteforce\multimask\bruteforce_multimask.h">
-      <Filter>src\algo\bruteforce\multimask</Filter>
+    <ClInclude Include="src\algo\probability_engine\bruteforce\multimask\bruteforce_multimask.h">
+      <Filter>src\algo\probability_engine\bruteforce\multimask</Filter>
     </ClInclude>
-    <ClInclude Include="src\algo\bruteforce\multimask\bruteforce_multimask_rootparallel.h">
-      <Filter>src\algo\bruteforce\multimask</Filter>
+    <ClInclude Include="src\algo\probability_engine\bruteforce\multimask\bruteforce_multimask_rootparallel.h">
+      <Filter>src\algo\probability_engine\bruteforce\multimask</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <iostream>
 
-#include "algo/observed_board.h"
+#include "algo/probability_engine/observed_board.h"
 #include "test/common.h"
 
 namespace test {

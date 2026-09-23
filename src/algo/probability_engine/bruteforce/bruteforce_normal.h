@@ -5,7 +5,7 @@
 #include <deque>
 #include <utility>
 
-#include "algo/bruteforce/bruteforce_common.h"
+#include "algo/probability_engine/bruteforce/bruteforce_common.h"
 
 namespace mss {
 

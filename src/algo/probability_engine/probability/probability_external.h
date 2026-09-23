@@ -5,10 +5,10 @@
 #include <span>
 #include <vector>
 
-#include "algo/basic.h"
-#include "algo/observed_board.h"
-#include "algo/shape_solver/shape_solver.h"
-#include "algo/structure.h"
+#include "algo/probability_engine/basic.h"
+#include "algo/probability_engine/observed_board.h"
+#include "algo/probability_engine/shape_solver/shape_solver.h"
+#include "algo/probability_engine/structure.h"
 #include "core/workspace.h"
 
 namespace mss {

@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-#include "algo/shape_solver/shape_solver_common.h"
+#include "algo/probability_engine/shape_solver/shape_solver_common.h"
 #include "core/assert.h"
 #include "core/utility/rng.h"
 #include "core/workspace.h"
@@ -98,5 +98,5 @@ struct ShapeSolver::GraphSolver {
 
 } // namespace mss
 
-#include "algo/shape_solver/graph_solver/graph_solver_dp.h"
-#include "algo/shape_solver/graph_solver/graph_solver_order.h"
+#include "algo/probability_engine/shape_solver/graph_solver/graph_solver_dp.h"
+#include "algo/probability_engine/shape_solver/graph_solver/graph_solver_order.h"

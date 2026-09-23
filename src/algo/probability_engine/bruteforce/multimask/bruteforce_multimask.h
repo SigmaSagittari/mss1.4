@@ -63,7 +63,7 @@
 #include <utility>
 #include <vector>
 
-#include "algo/bruteforce/bruteforce_common.h"
+#include "algo/probability_engine/bruteforce/bruteforce_common.h"
 #include "core/config.h"
 #include "core/utility/bit_mask.h"
 
@@ -527,7 +527,7 @@ inline int BruteForce::MultiMaskSolver<Mask>::solve(const BruteForce::CommonSess
         int best = 0;
         std::array<std::vector<ConfigId>, 9> &groups = buf.groups;
         std::vector<int> &order = orderCandidates(common, s, configs, depth);
-        if (rootParallel && kMaxBruteforceCores > 1 && n >= kParallelConfigThreshold)
+        if (rootParallel && kMaxCores > 1 && n >= kParallelConfigThreshold)
             return solveCandidatesParallel<true>(common, s, configs, need, result);
         for (int candidate : order) {
             // 按揭示数字把 configs 分 9 桶；认为 candidate 是雷的方案直接出局，
@@ -662,7 +662,7 @@ inline int BruteForce::MultiMaskSolver<Mask>::solve(const BruteForce::CommonSess
         // n - deaths[candidate] 由此而来。
         std::vector<int> &order = orderCandidates(common, s, configs, depth);
         if constexpr (IsRoot)
-            if (rootParallel && kMaxBruteforceCores > 1 && n >= kParallelConfigThreshold)
+            if (rootParallel && kMaxCores > 1 && n >= kParallelConfigThreshold)
                 return solveCandidatesParallel<false>(common, s, configs, need, result);
         int best = 0;
         // upper 是"在所有已尝试候选上见过的最好上界"，与 best（最好精确值）互不覆盖；
@@ -748,4 +748,4 @@ inline int BruteForce::MultiMaskSolver<Mask>::solve(const BruteForce::CommonSess
 
 } // namespace mss
 
-#include "algo/bruteforce/multimask/bruteforce_multimask_rootparallel.h"
+#include "algo/probability_engine/bruteforce/multimask/bruteforce_multimask_rootparallel.h"

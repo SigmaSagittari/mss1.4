@@ -2,7 +2,7 @@
 
 #include <iostream>
 
-#include "algo/structure.h"
+#include "algo/probability_engine/structure.h"
 #include "test/common.h"
 
 namespace test {

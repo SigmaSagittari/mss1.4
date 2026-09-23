@@ -1,5 +1,5 @@
 /*
- * mss1.4 编码规约（强制；src/algo/ref/ 不适用）。
+ * mss1.4 编码规约（强制；src/algo/winrate_solver/java_transplant/ 不适用）。
  * 新增或修改代码前先遵守本规约；无法遵守时必须先说明原因并获批。
  *
  * 组织与依赖

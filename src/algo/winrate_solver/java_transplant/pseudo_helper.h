@@ -3,17 +3,17 @@
 #include <span>
 #include <vector>
 
-#include "algo/basic.h"
-#include "algo/probability/probability.h"
-#include "algo/probability/probability_external.h"
-#include "algo/shape_solver/shape_solver.h"
-#include "algo/structure.h"
+#include "algo/probability_engine/basic.h"
+#include "algo/probability_engine/probability/probability.h"
+#include "algo/probability_engine/probability/probability_external.h"
+#include "algo/probability_engine/shape_solver/shape_solver.h"
+#include "algo/probability_engine/structure.h"
 #include "core/types.h"
 
 namespace mss {
 
 // ─────────────────────────────────────────────────────────────
-// ref/pseudo_helper.h — Java PseudoHelper 的忠实移植。
+// algo/winrate_solver/java_transplant/pseudo_helper.h — Java PseudoHelper 的忠实移植。
 //
 // 找"伪 50/50"（pseudo）：一个 witness（数字约束）还差一雷时，若它不被墙或
 // 雷线锚定，就能把两条独立的猜链接起来拼成一个不可避免的 50/50。返回应优先

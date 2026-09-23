@@ -4,7 +4,7 @@
 #include <span>
 #include <vector>
 
-#include "algo/shape_solver/shape_solver_common.h"
+#include "algo/probability_engine/shape_solver/shape_solver_common.h"
 #include "core/workspace.h"
 
 namespace mss {

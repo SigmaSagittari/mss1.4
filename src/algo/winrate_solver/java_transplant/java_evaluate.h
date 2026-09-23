@@ -3,20 +3,20 @@
 #include <span>
 #include <vector>
 
-#include "algo/basic.h"
-#include "algo/probability/probability.h"
-#include "algo/probability/observe.h"
-#include "algo/probability/probability_external.h"
-#include "algo/ref/long_term_risk_helper.h"
-#include "algo/ref/pseudo_helper.h"
-#include "algo/shape_solver/shape_solver.h"
-#include "algo/structure.h"
+#include "algo/probability_engine/basic.h"
+#include "algo/probability_engine/probability/probability.h"
+#include "algo/probability_engine/probability/observe.h"
+#include "algo/probability_engine/probability/probability_external.h"
+#include "algo/winrate_solver/java_transplant/long_term_risk_helper.h"
+#include "algo/winrate_solver/java_transplant/pseudo_helper.h"
+#include "algo/probability_engine/shape_solver/shape_solver.h"
+#include "algo/probability_engine/structure.h"
 #include "core/types.h"
 
 namespace mss {
 
 // ─────────────────────────────────────────────────────────────
-// ref/java_evaluate.h — Java 猜牌参考入口的忠实移植。
+// algo/winrate_solver/java_transplant/java_evaluate.h — Java 猜牌参考入口的忠实移植。
 //
 // 覆盖 Java Solver 在"无确定安全格"时的完整决策链：
 //   1. pseudo 提前出口：LongTermRiskHelper 的 pseudos，或 PseudoHelper 的
@@ -93,23 +93,23 @@ struct JavaEvaluate {
 #include <utility>
 
 namespace mss {
-namespace {
+namespace JavaEvaluateInternal {
 
 constexpr bool kCheckDeadLocations = false;
 
 // ── 小工具 ──
 
-bool isNumberState(ObservedBoard::CellState state) {
+inline bool isNumberState(ObservedBoard::CellState state) {
     return (int)(state) <= (int)(ObservedBoard::CellState::Num8);
 }
 
-bool evaluateContains(std::span<const CellId> cells, CellId cell) {
+inline bool evaluateContains(std::span<const CellId> cells, CellId cell) {
     return std::find(cells.begin(), cells.end(), cell) != cells.end();
 }
 
 // 死格判定：Java 的 deadLocations（单结局）。一律用 observe 的数字分布：
 // 只有一个正概率结局即死格。
-bool deadByObserve(const Probability::ObserveResult &observation) {
+inline bool deadByObserve(const Probability::ObserveResult &observation) {
     int outcomes = 0;
     for (long double chance : observation.probability)
         if (chance != 0.0L)
@@ -118,15 +118,15 @@ bool deadByObserve(const Probability::ObserveResult &observation) {
 }
 
 // 单格雷迹 tally（Java Box.getTally() / offEdgeTally）。
-long double evaluateBoxTally(CellId cell, const Probability::Result &probability, const ObservedBoard::Result &board,
-                             const Basic::Result &basic, const Structure::Result &structure) {
+inline long double evaluateBoxTally(CellId cell, const Probability::Result &probability, const ObservedBoard::Result &board,
+                                    const Basic::Result &basic, const Structure::Result &structure) {
     return probability.mineProbability(cell, board, basic, structure) * probability.candidates();
 }
 
 // Java calculateHotspotSafety：未豁免热点（candidate = -1 = 全部）的
 // (1 + P(安全)) × 0.5 连乘。
-long double hotspotSafety(const LongTermRiskReference::Influence &risk, CellId candidate, const ObservedBoard::Result &board,
-                          const Basic::Result &basic, const Structure::Result &structure, const Probability::Result &probability) {
+inline long double hotspotSafety(const LongTermRiskReference::Influence &risk, CellId candidate, const ObservedBoard::Result &board,
+                                 const Basic::Result &basic, const Structure::Result &structure, const Probability::Result &probability) {
     long double result = 1.0L;
     for (const LongTermRiskReference::RiskHotspot &hotspot : risk.hotspots) {
         if (candidate != -1 && hotspot.isExempt(candidate))
@@ -138,7 +138,7 @@ long double hotspotSafety(const LongTermRiskReference::Influence &risk, CellId c
 }
 
 // Java isTileExempt：候选格是否被某个热点豁免（点了它等于破 50/50，不惩罚）。
-bool hotspotExempt(const LongTermRiskReference::Influence &risk, CellId cell) {
+inline bool hotspotExempt(const LongTermRiskReference::Influence &risk, CellId cell) {
     for (const LongTermRiskReference::RiskHotspot &hotspot : risk.hotspots)
         if (hotspot.isExempt(cell))
             return true;
@@ -160,7 +160,7 @@ struct Eval {
 };
 
 // Java SORT_BY_WEIGHT：defer 垫底，其次权重降序，其次 expectedClears 降序。
-bool evalLess(const Eval &lhs, const Eval &rhs) {
+inline bool evalLess(const Eval &lhs, const Eval &rhs) {
     if (lhs.deferGuessing != rhs.deferGuessing)
         return !lhs.deferGuessing;
     if (lhs.weight != rhs.weight)
@@ -168,44 +168,6 @@ bool evalLess(const Eval &lhs, const Eval &rhs) {
     if (lhs.expectedClears != rhs.expectedClears)
         return lhs.expectedClears > rhs.expectedClears;
     return lhs.cell < rhs.cell;
-}
-
-// ── 强制盘面重建（countWithForces 的公开件；这里复用同一流程拿更多信息）──
-
-struct ForcedView {
-    ObservedBoard::Result board;
-    Basic::Result basic;
-    Structure::Result structure;
-    Probability::Result probability;
-    bool valid = false;
-};
-
-ForcedView analyzeForced(const ObservedBoard::Result &board, const Basic::Result &basic, const Structure::Result &structure,
-                         Structure::structPool &shapes, ShapeSolver::Distribution::Pool &distributions, std::span<const CellId> mines,
-                         std::span<const CellId> safes) {
-    ForcedView out;
-    out.board = board;
-    out.basic = basic;
-    out.structure = structure;
-    // 增量更新（纯逻辑）：基础状态已是 analyze 后的完整盘面，只把强制事实
-    // 就地施加（Basic::update/Structure::update 与 analyze 结果逐位一致），
-    // 免去每次重建 Basic::analyze + Structure::analyze 的整盘开销。
-    ObservedBoard::Delta updates;
-    updates.changes.reserve(mines.size() + safes.size());
-    for (CellId cell : mines)
-        updates.changes.push_back({cell, ObservedBoard::CellState::ForcedMine});
-    for (CellId cell : safes)
-        updates.changes.push_back({cell, ObservedBoard::CellState::ForcedSafe});
-    ObservedBoard::update(out.board, updates);
-    Basic::Delta basicDelta;
-    Basic::update(out.basic, basicDelta, out.board, updates);
-    if (!out.basic.valid)
-        return out;
-    Structure::Delta structureDelta;
-    Structure::update(out.structure, structureDelta, out.board, out.basic, shapes, updates);
-    out.probability = Probability::analyze(out.board, out.basic, out.structure, shapes, distributions);
-    out.valid = true;
-    return out;
 }
 
 // Java getLivingClearCount / getEmptyBoxes / bestSafety 的一部分：
@@ -216,14 +178,13 @@ struct ForcedInfo {
     std::vector<std::vector<CellId>> emptyBoxes; // 每个 tally-0 盒的格集
 };
 
-ForcedInfo inspectForced(const ForcedView &forced, CellId exclude, const Structure::structPool &shapes) {
+inline ForcedInfo inspectForced(const Structure::Result &structure, const Probability::Result &probability, CellId exclude,
+                                const Structure::structPool &shapes) {
     ForcedInfo info;
-    const Structure::Result &fs = forced.structure;
-    const Probability::Result &fp = forced.probability;
-    for (int cid = 0; cid < (int)(fp.components().size()); ++cid) {
-        const Structure::Instance &inst = shapes.getInstance(fs.components[cid]);
+    for (int cid = 0; cid < (int)(probability.components().size()); ++cid) {
+        const Structure::Instance &inst = shapes.getInstance(structure.components[cid]);
         for (int bid = 0; bid < (int)(inst.boxes.count()); ++bid) {
-            if (fp.components()[cid].boxProbabilities[bid] != 0.0L)
+            if (probability.components()[cid].boxProbabilities[bid] != 0.0L)
                 continue; // tally-0 = 全安全
             std::vector<CellId> cells;
             for (int k = inst.boxes.boxOf.span(shapes.boxOf)[bid]; k < inst.boxes.boxOf.span(shapes.boxOf)[bid + 1]; ++k)
@@ -244,6 +205,35 @@ ForcedInfo inspectForced(const ForcedView &forced, CellId exclude, const Structu
     return info;
 }
 
+// 临时施加强制事实并回滚，复用父状态的 Board、Basic、Structure 容量。
+inline ForcedInfo analyzeForced(ObservedBoard::Result &board, Basic::Result &basic, Structure::Result &structure,
+                                Structure::structPool &shapes, ShapeSolver::Distribution::Pool &distributions, std::span<const CellId> mines,
+                                std::span<const CellId> safes, CellId exclude) {
+    ObservedBoard::Delta updates;
+    updates.changes.reserve(mines.size() + safes.size());
+    for (CellId cell : mines)
+        updates.changes.push_back({cell, ObservedBoard::CellState::ForcedMine});
+    for (CellId cell : safes)
+        updates.changes.push_back({cell, ObservedBoard::CellState::ForcedSafe});
+    ObservedBoard::update(board, updates);
+    Basic::Delta basicDelta;
+    Basic::update(basic, basicDelta, board, updates);
+    if (!basic.valid) {
+        Basic::applyDelta(basic, basicDelta, true);
+        ObservedBoard::applyDelta(board, updates, true);
+        return {};
+    }
+    Structure::Delta structureDelta;
+    Structure::update(structure, structureDelta, board, basic, shapes, updates);
+    Probability::Result probability;
+    Probability::analyze(board, basic, structure, shapes, distributions, probability);
+    ForcedInfo info = inspectForced(structure, probability, exclude, shapes);
+    Structure::applyDelta(structure, shapes, structureDelta, true);
+    Basic::applyDelta(basic, basicDelta, true);
+    ObservedBoard::applyDelta(board, updates, true);
+    return info;
+}
+
 // ── 新局面的摘要（Java ProbabilityEngineFast 的 bestSafety 族）──
 //   blendedSafety   = (最安全活格×weight1 + 次安全活格×weight2) / 和
 //   clears          = 活清空格数（tally-0 盒内非死格）
@@ -256,8 +246,9 @@ struct BoardSummary {
     std::vector<std::vector<CellId>> emptyBoxes;
 };
 
-BoardSummary summarizeBoard(const ObservedBoard::Result &board, const Basic::Result &basic, const Structure::Result &structure,
-                            const Probability::Result &probability, const Structure::structPool &shapes, const JavaEvaluate::Config &cfg) {
+inline BoardSummary summarizeBoard(const ObservedBoard::Result &board, const Basic::Result &basic, const Structure::Result &structure,
+                                   const Probability::Result &probability, const Structure::structPool &shapes,
+                                   const JavaEvaluate::Config &cfg) {
     BoardSummary out;
     long double best = 1.0L - probability.tCellProbability();
     long double second = best;
@@ -338,7 +329,8 @@ BoardSummary summarizeBoard(const ObservedBoard::Result &board, const Basic::Res
 }
 
 // Java mergeEmptyBoxes：按"格集完全相同"取各结局安全盒的交集。
-std::vector<std::vector<CellId>> intersectBoxes(const std::vector<std::vector<CellId>> &a, const std::vector<std::vector<CellId>> &b) {
+inline std::vector<std::vector<CellId>> intersectBoxes(const std::vector<std::vector<CellId>> &a,
+                                                       const std::vector<std::vector<CellId>> &b) {
     std::vector<std::vector<CellId>> out;
     for (const std::vector<CellId> &boxA : a)
         if (std::find(b.begin(), b.end(), boxA) != b.end())
@@ -346,7 +338,7 @@ std::vector<std::vector<CellId>> intersectBoxes(const std::vector<std::vector<Ce
     return out;
 }
 
-std::vector<CellId> flattenBoxes(const std::vector<std::vector<CellId>> &boxes) {
+inline std::vector<CellId> flattenBoxes(const std::vector<std::vector<CellId>> &boxes) {
     std::vector<CellId> out;
     for (const std::vector<CellId> &box : boxes)
         out.insert(out.end(), box.begin(), box.end());
@@ -356,10 +348,10 @@ std::vector<CellId> flattenBoxes(const std::vector<std::vector<CellId>> &boxes) 
 // ── 单格评估（Java doFullEvaluateTile）──
 // board/basic/structure 会被临时修改并回滚。observation 是该格的观测分布。
 // best：当前最高分（Java 的 best 字段，供乐观剪枝）；cell = -1 表示尚无第一名。
-Eval evaluate(ObservedBoard::Result &board, Basic::Result &basic, Structure::Result &structure, const Probability::Result &probability,
-              Structure::structPool &shapes, ShapeSolver::Distribution::Pool &distributions, const LongTermRiskReference::Influence &risk,
-              long double baseHotspot, const Probability::ObserveResult &observation, CellId cell, const Eval &best,
-              const JavaEvaluate::Config &cfg) {
+inline Eval evaluate(ObservedBoard::Result &board, Basic::Result &basic, Structure::Result &structure, const Probability::Result &probability,
+                     Structure::structPool &shapes, ShapeSolver::Distribution::Pool &distributions,
+                     const LongTermRiskReference::Influence &risk, long double baseHotspot,
+                     const Probability::ObserveResult &observation, CellId cell, const Eval &best, const JavaEvaluate::Config &cfg) {
     Eval out;
     out.cell = cell;
     out.safety = 1.0L - observation.probability[9];
@@ -378,8 +370,7 @@ Eval evaluate(ObservedBoard::Result &board, Basic::Result &basic, Structure::Res
     // dominated 快路径（Java doFullEvaluateTile 前半段）：强制本格安全后，
     // 存在不含本格的全安全盒（size>1）→ 信息冗余，直接按一次翻开的收益记分。
     const CellId selfCell[] = {cell};
-    ForcedView dominatedView = analyzeForced(board, basic, structure, shapes, distributions, std::span<const CellId>{}, selfCell);
-    const ForcedInfo dominatedInfo = inspectForced(dominatedView, cell, shapes);
+    const ForcedInfo dominatedInfo = analyzeForced(board, basic, structure, shapes, distributions, std::span<const CellId>{}, selfCell, cell);
     const long double linkedTilesCount = dominatedInfo.livingClears;
     if (dominatedInfo.dominated) {
         out.weight = out.safety * (1.0L + out.safety * cfg.progressContribution);
@@ -405,7 +396,6 @@ Eval evaluate(ObservedBoard::Result &board, Basic::Result &basic, Structure::Res
     ObservedBoard::Delta updates;
     updates.changes.resize(1);
     updates.changes[0].cell = cell;
-
     for (int value = 0; value <= 8; ++value) {
         const long double probV = observation.probability[value];
         if (probV == 0.0L)
@@ -487,7 +477,7 @@ Eval evaluate(ObservedBoard::Result &board, Basic::Result &basic, Structure::Res
 // ── 候选窗 / 离网候选 ──
 
 // Java SpaceCounter.meetsThreshold：未开格连通区（可跳过已揭示格）≥ 阈值。
-bool meetsSpaceThreshold(int startX, int startY, const ObservedBoard::Result &board, const Basic::Result &basic, int threshold) {
+inline bool meetsSpaceThreshold(int startX, int startY, const ObservedBoard::Result &board, const Basic::Result &basic, int threshold) {
     Grid<char> visited(board.rows, board.cols, 0);
     std::vector<std::pair<int, int>> stack{{startX, startY}};
     visited[startX][startY] = 1;
@@ -522,7 +512,7 @@ bool meetsSpaceThreshold(int startX, int startY, const ObservedBoard::Result &bo
 }
 
 // ── bestMove 支配替换（Java findAlternativeMove）──
-const Eval *findAlternativeMove(const Eval &move, const std::vector<Eval> &evaluated, const JavaEvaluate::Config &cfg) {
+inline const Eval *findAlternativeMove(const Eval &move, const std::vector<Eval> &evaluated, const JavaEvaluate::Config &cfg) {
     if (move.commonClears.empty())
         return nullptr;
     for (const Eval &candidate : evaluated) {
@@ -534,12 +524,23 @@ const Eval *findAlternativeMove(const Eval &move, const std::vector<Eval> &evalu
     return nullptr;
 }
 
-} // namespace
+} // namespace JavaEvaluateInternal
 
 JavaEvaluate::Result JavaEvaluate::solve(ObservedBoard::Result &board, Basic::Result &basic, Structure::Result &structure,
                                          const Probability::Result &probability, Structure::structPool &shapes,
                                          ShapeSolver::Distribution::Pool &distributions, const LongTermRiskReference::Influence &risk,
                                          std::span<const CellId> dead, const Config &cfg) {
+    using JavaEvaluateInternal::deadByObserve;
+    using JavaEvaluateInternal::evaluate;
+    using JavaEvaluateInternal::evaluateContains;
+    using JavaEvaluateInternal::Eval;
+    using JavaEvaluateInternal::evalLess;
+    using JavaEvaluateInternal::findAlternativeMove;
+    using JavaEvaluateInternal::hotspotSafety;
+    using JavaEvaluateInternal::isNumberState;
+    using JavaEvaluateInternal::kCheckDeadLocations;
+    using JavaEvaluateInternal::meetsSpaceThreshold;
+
     // 无解盘面（方案数 0）：引擎会产出 NaN/Inf，直接返回空结果，避免污染前端。
     if (probability.candidates() == 0.0L)
         return Result{};

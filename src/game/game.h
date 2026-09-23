@@ -7,13 +7,13 @@
 #include <utility>
 #include <vector>
 
-#include "algo/basic.h"
-#include "algo/bruteforce/bruteforce_common.h"
-#include "algo/observed_board.h"
-#include "algo/probability/probability.h"
-#include "algo/ref/java_evaluate.h"
-#include "algo/shape_solver/shape_solver.h"
-#include "algo/structure.h"
+#include "algo/probability_engine/basic.h"
+#include "algo/probability_engine/bruteforce/bruteforce_common.h"
+#include "algo/probability_engine/observed_board.h"
+#include "algo/probability_engine/probability/probability.h"
+#include "algo/winrate_solver/java_transplant/java_evaluate.h"
+#include "algo/probability_engine/shape_solver/shape_solver.h"
+#include "algo/probability_engine/structure.h"
 #include "core/assert.h"
 #include "core/types.h"
 #include "core/utility/grid.h"
@@ -300,6 +300,12 @@ inline std::vector<CellId> GameControl::Position::Suggest(SuggestMode mode, Stru
     }
 
     if (mode == SuggestMode::Java) {
+        if (probability_->candidates() < 5000.0L) {
+            const BruteForce::Result result = BruteForce::solve(
+                observedBoard, *basic_, *structure_, structPool, {false, 1, BruteForce::Solver::Bitwise});
+            if (!result.moves.empty())
+                return {observedBoard.id(result.moves.front().x, result.moves.front().y)};
+        }
         const LongTermRiskReference::Config riskConfig{};
         const LongTermRiskReference::Influence risk = LongTermRiskReference::findInfluence(
             observedBoard, *basic_, *structure_, *probability_, structPool, distributionPool, {}, riskConfig);

@@ -7,7 +7,7 @@
 #include <iostream>
 #include <vector>
 
-#include "algo/bruteforce/bruteforce.h"
+#include "algo/probability_engine/bruteforce/bruteforce.h"
 #include "core/utility/rng.h"
 #include "test/common.h"
 
@@ -160,7 +160,7 @@ inline void real_endgame_performance(const int l, const int r, const double seco
                 const std::chrono::steady_clock::time_point multimaskStarted = std::chrono::steady_clock::now();
                 const mss::BruteForce::Result multimaskResult =
                     mss::BruteForce::solve(position.observedBoard, position.basic(), position.structure(), game.shapePool(),
-                                           {false, 1, mss::BruteForce::Solver::Bitwise});
+                                           {false, 1, mss::BruteForce::Solver::BitwiseRootParallel});
                 const double multimaskMilliseconds =
                     std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - multimaskStarted).count();
                 mss::BruteForce::Result commonResult;

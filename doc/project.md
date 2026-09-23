@@ -11,13 +11,15 @@ MSS 1.4 是一个基于 C++20 的扫雷局面分析与残局求解项目。核�
 ```text
 src/
 ├─ algo/
-│  ├─ observed_board.h       观测棋盘和可逆更新
-│  ├─ basic.h                局部确定性约束传播
-│  ├─ structure.h            连通组件、Shape、Box 和池化
-│  ├─ probability/            全局概率与点开结果分布
-│  ├─ shape_solver/           组件分布求解和 Graph DP 顺序
-│  ├─ bruteforce/             残局暴力搜索后端
-│  └─ ref/                    参考实现和长期风险分析
+│  ├─ probability_engine/     概率引擎、结构分析和残局搜索
+│  │  ├─ observed_board.h     观测棋盘和可逆更新
+│  │  ├─ basic.h              局部确定性约束传播
+│  │  ├─ structure.h          连通组件、Shape、Box 和池化
+│  │  ├─ probability/         全局概率与点开结果分布
+│  │  ├─ shape_solver/        组件分布求解和 Graph DP 顺序
+│  │  └─ bruteforce/          残局暴力搜索后端
+│  └─ winrate_solver/
+│     └─ java_transplant/     Java 胜率求解器移植和长期风险分析
 ├─ core/
 │  ├─ types.h                句柄和基础类型
 │  ├─ workspace.h            按源文件集中管理的线程局部工作区

@@ -9,7 +9,7 @@
 #include <thread>
 #include <vector>
 
-#include "algo/bruteforce/multimask/bruteforce_multimask.h"
+#include "algo/probability_engine/bruteforce/multimask/bruteforce_multimask.h"
 #include "core/config.h"
 #include "core/utility/flat_hashtable.h"
 #include "core/utility/hash.h"
@@ -65,13 +65,13 @@ template <typename Mask> struct BruteForce::MultiMaskSolver<Mask>::SharedCache {
 template <typename Mask>
 template <bool CheckAllMoves>
 inline int BruteForce::MultiMaskSolver<Mask>::solveCandidatesParallel(const Common &common, Session &s, std::span<ConfigId> configs, int need, Result &result) {
-    static_assert(kMaxBruteforceCores > 0);
+    static_assert(kMaxCores > 0);
     const Layer &root = workspace::BruteForceMultiMask::scratch<Mask>.layer(0);
     const std::vector<int> order = root.order;
     const std::vector<int> deaths = root.deaths;
     const int count = order.size();
     const int n = configs.size();
-    const int threadCount = (std::min)(kMaxBruteforceCores, count);
+    const int threadCount = (std::min)(kMaxCores, count);
     std::atomic<int> next{0};
     // 高位为胜局数，低位为原搜索顺序的反序；同分始终保留原来先尝试的候选。
     std::atomic<long long> best{0};

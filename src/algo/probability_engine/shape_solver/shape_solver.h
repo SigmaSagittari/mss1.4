@@ -1,10 +1,10 @@
 #pragma once
 
-#include "algo/shape_solver/shape_solver_common.h"
+#include "algo/probability_engine/shape_solver/shape_solver_common.h"
 
 //==============================================================================
-#include "algo/shape_solver/dfs_solver.h"
-#include "algo/shape_solver/graph_solver/graph_solver.h"
+#include "algo/probability_engine/shape_solver/dfs_solver.h"
+#include "algo/probability_engine/shape_solver/graph_solver/graph_solver.h"
 
 namespace mss {
 
