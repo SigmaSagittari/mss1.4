@@ -2,8 +2,8 @@
 
 //==============================================================================
 // 多掩码残局后端：普通后端（bruteforce_normal.h）的“位运算加速版”，不是另一套
-// 算法。两者必须返回相同的 possibilities、Move::wins 和动作顺序，
-// test::bruteforce() 用 Route::Common 对拍；读本文件时请随时对照 normal 后端。
+// 算法。两者必须返回相同的 Move::wins 和动作顺序，
+// test::bruteforce() 用 Solver::Common 对拍；读本文件时请随时对照 normal 后端。
 //
 // 【结构】
 //   位集合本体在 core/utility/bit_mask.h（与 DynamicBitset 平级的通用定宽掩码），
@@ -101,9 +101,8 @@ template <typename Mask> struct BruteForce::MultiMaskSolver {
     struct SharedCache;
     // 仅在本线程参与一次并行搜索期间指向该次调用拥有的共享缓存。
     inline static thread_local SharedCache *sharedCache = nullptr;
-    // 根节点的并行闸门，由 BruteForce::solve 按 config.solver 在每次求解开始时设置：
-    // Solver::BitwiseRootParallel / BitwiseMultithread 为 true，Solver::Bitwise 为
-    // false。递归层不改动它，于是"哪个后端会并行"只由调用入口一个地方决定。
+    // 根节点的并行闸门，由 BruteForce::solve 按 config.solver 在每次求解开始时设置；
+    // 递归层不改动它，因此并行开关只由调用入口决定。
     inline static thread_local bool rootParallel = false;
 
     // 把完整方案表转换成多 word 雷掩码和揭示数字表。

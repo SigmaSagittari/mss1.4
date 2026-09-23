@@ -18,7 +18,7 @@
 namespace mss {
 
 struct BruteForce {
-    // 残局搜索后端。四个成员都必须返回相同的 possibilities、Move::wins 和动作
+    // 残局搜索后端。三个成员都必须返回相同的 Move::wins 和动作
     // 顺序，只在耗时与适用规模上不同；测试层用 Solver::Common 做逐项对拍。
     enum class Solver {
         // 普通递归后端（bruteforce_normal.h）。规模不限，总是可用。
@@ -27,8 +27,6 @@ struct BruteForce {
         Bitwise,
         // 掩码后端 + 根节点按候选并行。
         BitwiseRootParallel,
-        // 掩码后端 + 多线程。设计已定但实现未落地，暂时与 rootparallel 同路。
-        BitwiseMultithread,
     };
 
     struct Config {
@@ -45,24 +43,21 @@ struct BruteForce {
             // 候选格的实际棋盘坐标。
             int x = 0;
             int y = 0;
-            // 点击此格后仍能保证继续赢下去的完整雷位方案数。
+            // 点击此格后仍能保证继续赢下去的完整布局数，不是概率。
             int wins = 0;
         };
 
-        // buildCommonSession 枚举得到的完整雷位方案总数。
-        int possibilities = 0;
         // 递归 solve 实际访问的节点数。
         long long nodes = 0;
         // 根节点输出的动作；单推荐格模式最多保留一个动作。
         std::vector<Move> moves;
     };
 
-    // possibilities 是 buildCommonSession 枚举到的完整雷位方案数；moves 在
-    // checkAllMoves=true 时保留根节点每个候选的 wins，否则只保留达到 minWins 的一格。
-    // Move::wins 是该点击在所有揭示分支上可保证继续赢下去的方案数，不是概率。
+    // BruteForce::Result 只返回搜索结果；完整布局总数和各格概率由 Probability 层提供。
+    // Move::wins 是点击该格后仍能保证最终获胜的布局数，不是概率。
 
-    // 在当前盘面可能性上进行残局搜索；minWins 只影响单推荐格模式。
-    // solver 用于选择后端。所有后端必须返回相同的 possibilities、wins 和动作
+    // 在当前观测和约束允许的完整雷位布局上搜索；minWins 只影响单推荐格模式。
+    // solver 用于选择后端。所有后端必须返回相同的 wins 和动作
     // 顺序，测试层用 Solver::Common 做逐项对拍。
     static Result solve(const ObservedBoard::Result &board, const Basic::Result &basic, const Structure::Result &structure,
                         const Structure::Pool &shapes, const Config &config);

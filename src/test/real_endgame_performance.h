@@ -43,23 +43,23 @@ inline void real_endgame_performance(const int l, const int r, const double seco
     constexpr int kCols = 16;
     constexpr int kMines = 99;
 
-    struct PossibilityBucket {
+    struct LayoutBucket {
         int low;
         int high;
         long long calls = 0;
         long long nodes = 0;
         long long commonNodes = 0;
-        long long possibilities = 0;
+        long double layouts = 0.0L;
         double milliseconds = 0.0;
         double commonMilliseconds = 0.0;
     };
     const int range = r - l;
-    const std::array<PossibilityBucket, 5> bucketTemplate{{{l, l + range / 10},
-                                                           {l + range / 10, l + range / 5},
-                                                           {l + range / 5, l + range * 2 / 5},
-                                                           {l + range * 2 / 5, l + range * 7 / 10},
-                                                           {l + range * 7 / 10, r + 1}}};
-    std::array<PossibilityBucket, 5> possibilityBuckets = bucketTemplate;
+    const std::array<LayoutBucket, 5> bucketTemplate{{{l, l + range / 10},
+                                                       {l + range / 10, l + range / 5},
+                                                       {l + range / 5, l + range * 2 / 5},
+                                                       {l + range * 2 / 5, l + range * 7 / 10},
+                                                       {l + range * 7 / 10, r + 1}}};
+    std::array<LayoutBucket, 5> layoutBuckets = bucketTemplate;
 
     TimeBox timebox(seconds);
     mss::Random rng(0xC0FFEE12345ULL, 0xD1B54A32D192ED03ULL);
@@ -69,7 +69,7 @@ inline void real_endgame_performance(const int l, const int r, const double seco
     long long gamesWithCalls = 0;
     long long totalNodes = 0;
     long long commonTotalNodes = 0;
-    long long totalPossibilities = 0;
+    long double totalLayouts = 0.0L;
     long long positions = 0;
     long long noSafePositions = 0;
     long long moves = 0;
@@ -91,13 +91,13 @@ inline void real_endgame_performance(const int l, const int r, const double seco
     long long tieMoveDifferences = 0;
     int minCandidates = r + 1;
     int maxCandidates = 0;
-    int minPossibilities = 0;
-    int maxPossibilities = 0;
+    long double minLayouts = 0.0L;
+    long double maxLayouts = 0.0L;
     double slowestMilliseconds = 0.0;
     long long slowestGame = 0;
     int slowestMove = 0;
     int slowestCandidates = 0;
-    int slowestPossibilities = 0;
+    long double slowestLayouts = 0.0L;
     long long slowestNodes = 0;
     mss::ObservedBoard::Result slowestBoard;
 
@@ -155,8 +155,8 @@ inline void real_endgame_performance(const int l, const int r, const double seco
             ++positions;
             if (noSafe)
                 ++noSafePositions;
-            const long double possibilities = game.probability().candidates();
-            if (noSafe && l <= possibilities && possibilities <= r) {
+            const long double layoutCount = game.probability().candidates();
+            if (noSafe && l <= layoutCount && layoutCount <= r) {
                 const std::chrono::steady_clock::time_point multimaskStarted = std::chrono::steady_clock::now();
                 const mss::BruteForce::Result multimaskResult =
                     mss::BruteForce::solve(position.observedBoard, position.basic(), position.structure(), game.shapePool(),
@@ -175,8 +175,7 @@ inline void real_endgame_performance(const int l, const int r, const double seco
                         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - commonStarted).count();
                     commonTotalMilliseconds += commonMilliseconds;
                     commonTotalNodes += commonResult.nodes;
-                    sameValue = multimaskResult.possibilities == commonResult.possibilities &&
-                                multimaskResult.moves.size() == commonResult.moves.size() &&
+                    sameValue = multimaskResult.moves.size() == commonResult.moves.size() &&
                                 std::equal(multimaskResult.moves.begin(), multimaskResult.moves.end(), commonResult.moves.begin(),
                                            [](const auto &a, const auto &b) {
                                                return a.wins == b.wins;
@@ -197,19 +196,19 @@ inline void real_endgame_performance(const int l, const int r, const double seco
                 totalMilliseconds += multimaskMilliseconds;
                 ++calls;
                 totalNodes += multimaskResult.nodes;
-                totalPossibilities += multimaskResult.possibilities;
-                for (PossibilityBucket &bucket : possibilityBuckets)
-                    if (bucket.low <= multimaskResult.possibilities && multimaskResult.possibilities < bucket.high) {
+                totalLayouts += layoutCount;
+                for (LayoutBucket &bucket : layoutBuckets)
+                    if (bucket.low <= layoutCount && layoutCount < bucket.high) {
                         ++bucket.calls;
                         bucket.nodes += multimaskResult.nodes;
                         bucket.commonNodes += commonResult.nodes;
-                        bucket.possibilities += multimaskResult.possibilities;
+                        bucket.layouts += layoutCount;
                         bucket.milliseconds += multimaskMilliseconds;
                         bucket.commonMilliseconds += commonMilliseconds;
                         break;
                     }
                 std::cout << "performance/real_endgame/search game=" << gameNumber << " move=" << moveNumber
-                          << " candidates=" << candidates << " possibilities=" << multimaskResult.possibilities
+                          << " candidates=" << candidates << " layouts=" << layoutCount
                           << " multimask_nodes=" << multimaskResult.nodes << " multimask_time_ms=" << std::fixed << std::setprecision(3)
                           << multimaskMilliseconds;
                 if (compareCommon)
@@ -221,7 +220,7 @@ inline void real_endgame_performance(const int l, const int r, const double seco
                     slowestGame = gameNumber;
                     slowestMove = moveNumber;
                     slowestCandidates = candidates;
-                    slowestPossibilities = multimaskResult.possibilities;
+                    slowestLayouts = layoutCount;
                     slowestNodes = multimaskResult.nodes;
                     slowestBoard = position.observedBoard;
                 }
@@ -231,9 +230,9 @@ inline void real_endgame_performance(const int l, const int r, const double seco
                 }
                 minCandidates = (std::min)(minCandidates, candidates);
                 maxCandidates = (std::max)(maxCandidates, candidates);
-                if (minPossibilities == 0 || multimaskResult.possibilities < minPossibilities)
-                    minPossibilities = multimaskResult.possibilities;
-                maxPossibilities = (std::max)(maxPossibilities, multimaskResult.possibilities);
+                if (minLayouts == 0.0L || layoutCount < minLayouts)
+                    minLayouts = layoutCount;
+                maxLayouts = (std::max)(maxLayouts, layoutCount);
             }
 
             updates.clear();
@@ -250,7 +249,7 @@ inline void real_endgame_performance(const int l, const int r, const double seco
         ++games;
     }
 
-    std::cout << "performance/real_endgame: " << kRows << 'x' << kCols << '/' << kMines << " games=" << games << " possibility_range=[" << l
+    std::cout << "performance/real_endgame: " << kRows << 'x' << kCols << '/' << kMines << " games=" << games << " layout_count_range=[" << l
               << ',' << r << "] wins=" << wins << " (" << (games == 0 ? 0 : 100.0 * wins / games) << "%)"
               << " moves=" << moves << " safe_moves=" << safeMoves << " java_moves=" << javaMoves << " java_safe_moves=" << javaSafeMoves
               << " no_safe_moves=" << noSafeMoves << " no_safe_lowest_safe_moves=" << noSafeLowestSafeMoves
@@ -260,8 +259,8 @@ inline void real_endgame_performance(const int l, const int r, const double seco
               << ',' << maxAllCandidates << "]"
               << " positions=" << positions << " no_safe=" << noSafePositions
               << " calls=" << calls << " games_with_calls=" << gamesWithCalls << " candidates=[" << (calls == 0 ? 0 : minCandidates) << ','
-              << maxCandidates << "] possibilities=[" << minPossibilities << ',' << maxPossibilities
-              << "] possibilities_total=" << totalPossibilities << " nodes=" << totalNodes << " search_time_ms=" << std::fixed
+              << maxCandidates << "] layouts=[" << minLayouts << ',' << maxLayouts
+              << "] layout_count_total=" << totalLayouts << " nodes=" << totalNodes << " search_time_ms=" << std::fixed
               << std::setprecision(3) << totalMilliseconds;
     if (compareCommon)
         std::cout << " common_nodes=" << commonTotalNodes << " common_search_time_ms=" << commonTotalMilliseconds
@@ -271,17 +270,17 @@ inline void real_endgame_performance(const int l, const int r, const double seco
         std::cout << " avg_nodes=" << totalNodes / calls << " avg_time_ms=" << totalMilliseconds / calls;
     if (compareCommon && calls != 0)
         std::cout << " common_avg_nodes=" << commonTotalNodes / calls << " common_avg_time_ms=" << commonTotalMilliseconds / calls;
-    std::cout << " by_possibilities=";
+    std::cout << " by_layout_count=";
     bool firstBucket = true;
-    for (const PossibilityBucket &bucket : possibilityBuckets) {
+    for (const LayoutBucket &bucket : layoutBuckets) {
         if (bucket.calls == 0)
             continue;
         if (!firstBucket)
             std::cout << ';';
         firstBucket = false;
         std::cout << '[' << bucket.low << ',' << bucket.high << ")=" << bucket.calls << ",nodes=" << bucket.nodes
-                  << ",configs=" << bucket.possibilities << ",time_ms=" << bucket.milliseconds
-                  << ",avg_nodes=" << bucket.nodes / bucket.calls << ",avg_configs=" << bucket.possibilities / bucket.calls
+                  << ",layouts=" << bucket.layouts << ",time_ms=" << bucket.milliseconds
+                  << ",avg_nodes=" << bucket.nodes / bucket.calls << ",avg_layouts=" << bucket.layouts / bucket.calls
                   << ",avg_time_ms=" << bucket.milliseconds / bucket.calls;
         if (compareCommon)
             std::cout << ",common_nodes=" << bucket.commonNodes << ",common_time_ms=" << bucket.commonMilliseconds
@@ -291,7 +290,7 @@ inline void real_endgame_performance(const int l, const int r, const double seco
     std::cout << '\n';
     if (slowestGame != 0) {
         std::cout << "performance/real_endgame/slowest game=" << slowestGame << " move=" << slowestMove
-                  << " candidates=" << slowestCandidates << " possibilities=" << slowestPossibilities << " nodes=" << slowestNodes
+                  << " candidates=" << slowestCandidates << " layouts=" << slowestLayouts << " nodes=" << slowestNodes
                   << " time_ms=" << slowestMilliseconds << " observed_board:\n";
         for (int x = 1; x <= slowestBoard.rows; ++x) {
             for (int y = 1; y <= slowestBoard.cols; ++y) {

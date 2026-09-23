@@ -6,6 +6,7 @@
 
 #include "algo/probability_engine/bruteforce/bruteforce.h"
 #include "algo/probability_engine/observed_board.h"
+#include "algo/probability_engine/probability/probability.h"
 #include "test/common.h"
 
 namespace test {
@@ -27,11 +28,13 @@ inline void bruteforce() {
     const mss::Basic::Result basic = mss::Basic::analyze(board);
     mss::Structure::structPool shapes;
     const mss::Structure::Result structure = mss::Structure::analyze(board, basic, shapes);
+    mss::ShapeSolver::Distribution::Pool distributions;
+    const mss::Probability::Result probability = mss::Probability::analyze(board, basic, structure, shapes, distributions);
     const mss::BruteForce::Config config{false, 1, mss::BruteForce::Solver::BitwiseRootParallel};
     const std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
     const mss::BruteForce::Result result = mss::BruteForce::solve(board, basic, structure, shapes, config);
     const double milliseconds = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-    check(result.possibilities == 134550, "slow endgame possibility count changed");
+    check(probability.candidates() == 134550.0L, "slow endgame layout count changed");
     check(!result.moves.empty() && result.moves[0].wins == 83553, "slow endgame win count changed");
     std::cout << "test/bruteforce: slow-endgame wins=" << (result.moves.empty() ? 0 : result.moves[0].wins) << " nodes=" << result.nodes
               << " time_ms=" << milliseconds << '\n';

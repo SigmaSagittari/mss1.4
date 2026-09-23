@@ -52,7 +52,6 @@ inline BruteForce::Result BruteForce::runSolver(const CommonSession &common, Ses
     // 外层负责把带符号的递归结果翻译成公开的 moves：负值只是"未达到 minWins 的
     // 可赢上界"，绝不能泄漏成公开的 Move::wins。多掩码与普通后端共用这段驱动。
     Result result;
-    result.possibilities = common.possibilityCount;
     std::vector<ConfigId> configs(common.possibilityCount);
     for (int i = 0; i < (int)(configs.size()); ++i)
         configs[i] = i;
@@ -212,13 +211,12 @@ inline BruteForce::Result BruteForce::solve(const ObservedBoard::Result &board, 
     // 递归 Session 之前，因为普通后端与掩码后端的 unopened / mine 存储完全不同。
     CommonSession common = buildCommonSession(board, basic, structure, shapes);
     Result result;
-    result.possibilities = common.possibilityCount;
     if (common.possibilityCount == 0 || common.candidateCount == 0)
         return result;
-    // bitwise 三兄弟共用的入口：Mask 宽度按候选数选最小够用的那档，四档求解流程
-    // 完全相同，只是根节点是否并行由 rootParallel 决定（见 multimask 后端）。
+    // 掩码后端按候选数选最小够用的 Mask；四档求解流程相同，根节点并行由
+    // rootParallel 决定（见 multimask 后端）。
     // 候选数超过阈值时 Mask::all 会断言，所以这里必须先退化成普通后端。
-    MultiMaskSolver<u64>::rootParallel = config.solver == Solver::BitwiseRootParallel || config.solver == Solver::BitwiseMultithread;
+    MultiMaskSolver<u64>::rootParallel = config.solver == Solver::BitwiseRootParallel;
     if (config.solver != Solver::Common && common.possibilityCount > 1 && common.candidateCount <= multiMaskCandidateThreshold) {
         if (common.candidateCount <= 64)
             return solveWithMask<u64>(common, config);
