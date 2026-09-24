@@ -113,6 +113,9 @@
     <ClInclude Include="src\algo\winrate_solver\java_transplant\java_evaluate.h" />
     <ClInclude Include="src\algo\winrate_solver\java_transplant\long_term_risk_helper.h" />
     <ClInclude Include="src\algo\winrate_solver\java_transplant\pseudo_helper.h" />
+    <ClInclude Include="src\algo\winrate_solver\native_solver\logic_component_solver.h" />
+    <ClInclude Include="src\algo\winrate_solver\native_solver\logic_structure.h" />
+    <ClInclude Include="src\algo\winrate_solver\native_solver\native_solver.h" />
     <ClInclude Include="src\core\assert.h" />
     <ClInclude Include="src\core\config.h" />
     <ClInclude Include="src\core\types.h" />

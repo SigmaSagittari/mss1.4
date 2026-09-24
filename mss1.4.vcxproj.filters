@@ -28,6 +28,9 @@
     <Filter Include="src\algo\winrate_solver\java_transplant">
       <UniqueIdentifier>{04D81B29-4FCB-4D42-A4BA-F123E2F2F5DA}</UniqueIdentifier>
     </Filter>
+    <Filter Include="src\algo\winrate_solver\native_solver">
+      <UniqueIdentifier>{6555C808-EE28-4D59-B19B-AA3ADAD10AEC}</UniqueIdentifier>
+    </Filter>
     <Filter Include="src\core">
       <UniqueIdentifier>{0ACB0F25-DDF1-44A7-A94C-A07B72E9BC85}</UniqueIdentifier>
     </Filter>
@@ -101,6 +104,15 @@
     <ClInclude Include="src\algo\winrate_solver\java_transplant\pseudo_helper.h">
       <Filter>src\algo\winrate_solver\java_transplant</Filter>
     </ClInclude>
+    <ClInclude Include="src\algo\winrate_solver\native_solver\logic_component_solver.h">
+      <Filter>src\algo\winrate_solver\native_solver</Filter>
+    </ClInclude>
+    <ClInclude Include="src\algo\winrate_solver\native_solver\logic_structure.h">
+      <Filter>src\algo\winrate_solver\native_solver</Filter>
+    </ClInclude>
+    <ClInclude Include="src\algo\winrate_solver\native_solver\native_solver.h">
+      <Filter>src\algo\winrate_solver\native_solver</Filter>
+    </ClInclude>
     <ClInclude Include="src\core\assert.h">
       <Filter>src\core</Filter>
     </ClInclude>
@@ -147,6 +159,9 @@
       <Filter>src\test</Filter>
     </ClInclude>
     <ClInclude Include="src\test\harness.h">
+      <Filter>src\test</Filter>
+    </ClInclude>
+    <ClInclude Include="src\test\logic_component_solver.h">
       <Filter>src\test</Filter>
     </ClInclude>
     <ClInclude Include="src\test\observed_board.h">
