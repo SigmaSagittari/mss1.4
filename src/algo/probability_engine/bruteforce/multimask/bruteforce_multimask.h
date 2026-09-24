@@ -101,7 +101,7 @@ template <typename Mask> struct BruteForce::MultiMaskSolver {
     struct SharedCache;
     // 仅在本线程参与一次并行搜索期间指向该次调用拥有的共享缓存。
     inline static thread_local SharedCache *sharedCache = nullptr;
-    // 根节点的并行闸门，由 BruteForce::solve 按 config.solver 在每次求解开始时设置；
+    // 根节点的并行闸门，由 BruteForce::solve 按 options.solver 在每次求解开始时设置；
     // 递归层不改动它，因此并行开关只由调用入口决定。
     inline static thread_local bool rootParallel = false;
 

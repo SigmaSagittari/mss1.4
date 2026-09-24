@@ -129,6 +129,7 @@
     <ClInclude Include="src\test\common.h" />
     <ClInclude Include="src\test\flat_hashtable.h" />
     <ClInclude Include="src\test\harness.h" />
+    <ClInclude Include="src\test\logic_component_solver.h" />
     <ClInclude Include="src\test\observed_board.h" />
     <ClInclude Include="src\test\performance.h" />
     <ClInclude Include="src\test\probability_case.h" />

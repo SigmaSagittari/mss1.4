@@ -273,6 +273,26 @@ inline std::vector<CellId> GameControl::Position::Suggest(SuggestMode mode, Stru
     if (probability_->candidates() == 0.0L)
         return {};
 
+    // 严禁任何 eps 判 0/1 的方法；确定安全/确定雷必须直接写成 == 0.0L / == 1.0L。
+    ObservedBoard::Delta forcedMineUpdates;
+    probability_->frontierCells(observedBoard, *structure_, structPool, [&](int x, int y, long double mineProbability) {
+        if (mineProbability == 1.0L)
+            forcedMineUpdates.changes.push_back({observedBoard.id(x, y), ObservedBoard::CellState::ForcedMine});
+    });
+    if (probability_->tCellProbability() == 1.0L && basic_->unknownSum != 0)
+        for (int x = 1; x <= observedBoard.rows; ++x)
+            for (int y = 1; y <= observedBoard.cols; ++y)
+                if (observedBoard.board[x][y] == ObservedBoard::CellState::Hidden && basic_->marks[x][y] == Basic::Mark::Unknown)
+                    forcedMineUpdates.changes.push_back({observedBoard.id(x, y), ObservedBoard::CellState::ForcedMine});
+    if (!forcedMineUpdates.changes.empty()) {
+        update(forcedMineUpdates, structPool);
+        safeCells = safeMove(structPool, distributionPool);
+        if (!safeCells.empty() || error.failed || !basic_->valid)
+            return safeCells;
+        if (probability_->candidates() == 0.0L)
+            return {};
+    }
+
     if (mode == SuggestMode::LowRisk) {
         CellId safest = -1;
         long double lowestMineProbability = 2.0L;

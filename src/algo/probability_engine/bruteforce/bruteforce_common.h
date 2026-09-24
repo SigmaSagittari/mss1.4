@@ -31,11 +31,17 @@ struct BruteForce {
 
     struct Config {
         // 是否在根节点求出每一个候选格的精确可赢数。
-        bool checkAllMoves;
+        bool checkAllMoves = false;
         // 单推荐格模式要求当前动作至少能保证的胜局数。
-        int minWins;
+        int minWins = 0;
         // 指定后端；退化规则见 solve 内的注释。
         Solver solver = Solver::Bitwise;
+
+        static Config allMoves() {
+            Config options;
+            options.checkAllMoves = true;
+            return options;
+        }
     };
 
     struct Result {
@@ -60,7 +66,9 @@ struct BruteForce {
     // solver 用于选择后端。所有后端必须返回相同的 wins 和动作
     // 顺序，测试层用 Solver::Common 做逐项对拍。
     static Result solve(const ObservedBoard::Result &board, const Basic::Result &basic, const Structure::Result &structure,
-                        const Structure::Pool &shapes, const Config &config);
+                        const Structure::Pool &shapes, const Config &options);
+    // 在给定组件的候选格中固定雷数，返回组件内所有首步的精确可赢布局数。
+    static Result solveComponent(const ObservedBoard::Result &board, const Basic::Result &basic, std::span<const Structure::Instance> components, std::span<const CellId> offFrontierCells, const Structure::Pool &shapes, int mines, const Config &options);
 
   private:
     // ConfigId 是完整雷位方案在 CommonSession 中的下标。
@@ -88,14 +96,20 @@ struct BruteForce {
     // 把盘面约束压缩为候选格、链接关系和完整雷位方案。
     static CommonSession buildCommonSession(const ObservedBoard::Result &board, const Basic::Result &basic,
                                             const Structure::Result &structure, const Structure::Pool &shapes);
+    // 只从给定组件的 H/T 格构造固定雷数的方案表。
+    static CommonSession buildComponentCommonSession(const ObservedBoard::Result &board, const Basic::Result &basic, std::span<const Structure::Instance> components, std::span<const CellId> offFrontierCells, const Structure::Pool &shapes, int mines);
+    // 整盘与组件入口共用的链接、Shape 赋值和具体格子展开逻辑。
+    static void populateCommonSession(CommonSession &session, const ObservedBoard::Result &board, const Basic::Result &basic, const Structure::Pool &shapes, const std::vector<int> &candidateAt, std::span<const Structure::Instance> components, std::span<const CandidateId> tCells, int mines);
+    // 将已构造的方案表送入现有搜索后端。
+    static Result solveCommonSession(const CommonSession &common, const Config &options);
     // 预计算普通后端所需的方案雷表和揭示数字表。
     static Session buildSession(const CommonSession &common);
     // 两个多掩码宽度的统一驱动：建 Session 后交给 MultiMaskSolver 求解。
-    template <typename Mask> static Result solveWithMask(const CommonSession &common, const Config &config);
+    template <typename Mask> static Result solveWithMask(const CommonSession &common, const Config &options);
     // 两个后端共用的求解驱动：按 checkAllMoves/minWins 分派两个 solve 入口，
     // 并把带符号的递归返回值翻译成公开的 Move::wins。
     template <typename Solver, typename SessionT>
-    static Result runSolver(const CommonSession &common, SessionT &session, const Config &config,
+    static Result runSolver(const CommonSession &common, SessionT &session, const Config &options,
                             FlatHashTable<U128, int, U128Hash> &table);
     template <bool CheckAllMoves, bool IsRoot>
     static int solve(const CommonSession &common, Session &s, std::span<ConfigId> configs, int need, int depth,

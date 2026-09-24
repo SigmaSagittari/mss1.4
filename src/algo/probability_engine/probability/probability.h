@@ -16,20 +16,94 @@ namespace mss {
 
 // 高性能复用入口：result 由本函数完全重建，内部容量可跨次调用复用。
 
-inline void Probability::polyMultiply(int leftStart, std::span<const long double> left, int rightStart, std::span<const long double> right,
-                                      Poly &out) {
-    // 卷积两个稀疏区间多项式；树节点用它合并左右组件，out 必须拥有自己的系数，
-    // 不能继续借用任一输入视图。
-    const int size = left.size() + right.size() - 1;
+inline void Probability::polyMultiply(Poly left, Poly right, TreePoly &out) {
+    // 卷积两个稀疏区间多项式，结果由树节点拥有。
+    const std::span<const long double> leftCoefficients = left.coefficients();
+    const std::span<const long double> rightCoefficients = right.coefficients();
+    const int size = leftCoefficients.size() + rightCoefficients.size() - 1;
     out.view = {};
     out.coeffs.assign(size, 0.0L);
-    for (int i = 0; i < (int)(left.size()); ++i)
-        for (int j = 0; j < (int)(right.size()); ++j)
-            out.coeffs[i + j] += left[i] * right[j];
-    out.start = leftStart + rightStart;
+    for (int i = 0; i < (int)(leftCoefficients.size()); ++i)
+        for (int j = 0; j < (int)(rightCoefficients.size()); ++j)
+            out.coeffs[i + j] += leftCoefficients[i] * rightCoefficients[j];
+    out.start = left.start + right.start;
 }
 
-inline long double Probability::denominator(const Poly &polynomial, int totalMines, int tSum) {
+inline Probability::DistributionProbabilityResult Probability::analyzeDistributions(std::span<const Poly> distributions, int tMines,
+                                                                                    int totalMines) {
+    std::size_t probabilityCount = 0;
+    for (const Poly &distribution : distributions) {
+        if (distribution.coefficients().empty())
+            return {{}, 0.0L, 0.0L};
+        probabilityCount += distribution.coefficients().size();
+    }
+
+    Workspace &ws = workspace::Probability::globalWorkspace;
+    const Poly identity{0, std::span<const long double>(ws.identity)};
+    if (distributions.empty()) {
+        const long double candidates = denominator(identity, totalMines, tMines);
+        if (candidates == 0.0L)
+            return {{}, 0.0L, 0.0L};
+        const long double tCellProbability = unknownMineProbability(identity, totalMines, tMines, candidates);
+        return {{}, candidates, limitProbability(tCellProbability)};
+    }
+
+    const std::size_t leafBase = std::bit_ceil(distributions.size());
+    const std::size_t treeSize = 2 * leafBase;
+    if (ws.tree.size() < treeSize)
+        ws.tree.resize(treeSize);
+    if (ws.outside.size() < treeSize)
+        ws.outside.resize(treeSize);
+    for (int i = 0; i < (int)(leafBase); ++i) {
+        if (i < (int)(distributions.size()))
+            ws.tree[leafBase + i].setView(distributions[i]);
+        else
+            ws.tree[leafBase + i].setView(identity);
+    }
+    for (int i = (int)(leafBase)-1; i > 0; --i) {
+        const Poly left = ws.tree[i << 1].asPoly();
+        const Poly right = ws.tree[i << 1 | 1].asPoly();
+        polyMultiply(left, right, ws.tree[i]);
+    }
+
+    ws.outside[1].setView(identity);
+    for (int i = 1; i < (int)(leafBase); ++i) {
+        const Poly outside = ws.outside[i].asPoly();
+        polyMultiply(outside, ws.tree[i << 1 | 1].asPoly(), ws.outside[i << 1]);
+        polyMultiply(outside, ws.tree[i << 1].asPoly(), ws.outside[i << 1 | 1]);
+    }
+    const Poly all = ws.tree[1].asPoly();
+    const long double candidates = denominator(all, totalMines, tMines);
+    if (candidates == 0.0L)
+        return {{}, 0.0L, 0.0L};
+    const long double tCellProbability = limitProbability(unknownMineProbability(all, totalMines, tMines, candidates));
+
+    ws.distributionProbabilities.resize(probabilityCount);
+    ws.distributionProbabilityViews.resize(distributions.size());
+    std::size_t probabilityOffset = 0;
+    for (int i = 0; i < (int)(distributions.size()); ++i) {
+        const Poly &distribution = distributions[i];
+        const Poly dominator = ws.outside[leafBase + i].asPoly();
+        const std::span<const long double> dominatorWays = dominator.coefficients();
+        const std::span<long double> componentProbabilities(ws.distributionProbabilities.data() + probabilityOffset,
+                                                            distribution.coefficients().size());
+        for (int k = 0; k < (int)(distribution.coefficients().size()); ++k) {
+            const int componentMines = distribution.start + k;
+            long double numerator = 0.0L;
+            for (int j = 0; j < (int)(dominatorWays.size()); ++j) {
+                const int freeMines = totalMines - componentMines - dominator.start - j;
+                if (freeMines >= 0 && freeMines <= tMines)
+                    numerator += dominatorWays[j] * binom(tMines, freeMines);
+            }
+            componentProbabilities[k] = distribution.coefficients()[k] * numerator / candidates;
+        }
+        ws.distributionProbabilityViews[i] = componentProbabilities;
+        probabilityOffset += distribution.coefficients().size();
+    }
+    return {ws.distributionProbabilityViews, candidates, tCellProbability};
+}
+
+inline long double Probability::denominator(Poly polynomial, int totalMines, int tSum) {
     // 用组件雷数多项式与 Unknown 的 C(tSum,tMines) 组合数相乘，得到全局条件化
     // 分母；同一分母同时归一化组件和组件外格子的概率。
     long double result = 0.0L;
@@ -43,7 +117,7 @@ inline long double Probability::denominator(const Poly &polynomial, int totalMin
     return result;
 }
 
-inline long double Probability::unknownMineProbability(const Poly &polynomial, int totalMines, int tSum, long double denom) {
+inline long double Probability::unknownMineProbability(Poly polynomial, int totalMines, int tSum, long double denom) {
     // 固定一个组件外 Unknown 为雷，把组合数改为 C(tSum-1,tMines)，计算该格的
     // 条件雷概率；denom 必须是同一 polynomial 的总方案数。
     assert_(denom > 0.0L, "Probability::unknownMineProbability: 分母为零");
@@ -91,92 +165,34 @@ inline void Probability::analyze(const ObservedBoard::Result &board, const Basic
     const int totalMines = board.totalMines - basic.mineSum;
     const int tSum = basic.unknownSum;
     const std::size_t componentCount = ws.distributions.size();
-    ws.identity.start = 0;
-    ws.identity.coeffs.assign(1, 1.0L);
     ws.componentBoxCounts.resize(componentCount);
-    for (int i = 0; i < (int)(componentCount); ++i)
+    ws.factors.resize(componentCount);
+    for (int i = 0; i < (int)(componentCount); ++i) {
+        const ShapeSolver::Distribution::Result &distribution = distributions.get(ws.distributions[i]);
+        ws.factors[i] = {distribution.start(), distribution.ways()};
         ws.componentBoxCounts[i] = shapes.get(shapes.getInstance(structure.components[i]).shape).boxes.size;
+    }
     result.reset(ws.componentBoxCounts);
 
-    long double candidates;
-    long double tCellProbability;
-    if (componentCount == 0) {
-        candidates = denominator(ws.identity, totalMines, tSum);
-        if (candidates == 0.0L) {
-            result.tCellProbability_ = 0.0L;
-            result.candidates_ = 0.0L;
-            return;
-        }
-        tCellProbability = unknownMineProbability(ws.identity, totalMines, tSum, candidates);
-        result.tCellProbability_ = limitProbability(tCellProbability);
-        result.candidates_ = candidates;
+    const DistributionProbabilityResult distributionResult = analyzeDistributions(ws.factors, tSum, totalMines);
+    result.tCellProbability_ = distributionResult.tCellProbability;
+    result.candidates_ = distributionResult.candidates;
+    if (distributionResult.candidates == 0.0L || componentCount == 0)
         return;
-    }
-
-    const std::size_t leafBase = std::bit_ceil(componentCount);
-    const std::size_t treeSize = 2 * leafBase;
-    if (ws.tree.size() < treeSize)
-        ws.tree.resize(treeSize);
-    if (ws.outside.size() < treeSize)
-        ws.outside.resize(treeSize);
-    for (int i = 0; i < (int)(leafBase); ++i) {
-        if (i < (int)(componentCount)) {
-            const ShapeSolver::Distribution::Result &distribution = distributions.get(ws.distributions[i]);
-            ws.tree[leafBase + i].setView(distribution.start(), distribution.ways());
-        } else {
-            ws.tree[leafBase + i].setView(ws.identity.start, ws.identity.coeffs);
-        }
-    }
-    for (int i = (int)(leafBase)-1; i > 0; --i) {
-        const Poly &left = ws.tree[i << 1];
-        const Poly &right = ws.tree[i << 1 | 1];
-        polyMultiply(left.start, left.coefficients(), right.start, right.coefficients(), ws.tree[i]);
-    }
-
-    candidates = denominator(ws.tree[1], totalMines, tSum);
-    if (candidates == 0.0L) {
-        result.tCellProbability_ = 0.0L;
-        result.candidates_ = 0.0L;
-        return;
-    }
-    tCellProbability = unknownMineProbability(ws.tree[1], totalMines, tSum, candidates);
-    tCellProbability = limitProbability(tCellProbability);
-    ws.outside[1].setView(ws.identity.start, ws.identity.coeffs);
-    for (int i = 1; i < (int)(leafBase); ++i) {
-        const Poly &right = ws.tree[i << 1 | 1];
-        polyMultiply(ws.outside[i].start, ws.outside[i].coefficients(), right.start, right.coefficients(), ws.outside[i << 1]);
-        const Poly &left = ws.tree[i << 1];
-        polyMultiply(ws.outside[i].start, ws.outside[i].coefficients(), left.start, left.coefficients(), ws.outside[i << 1 | 1]);
-    }
 
     std::size_t boxOffset = 0;
     for (int cid = 0; cid < (int)(componentCount); ++cid) {
         const ShapeSolver::Distribution::Result &distribution = distributions.get(ws.distributions[cid]);
-        const std::span<const long double> ways = distribution.ways();
-        const Poly &others = ws.outside[leafBase + cid];
-        ws.entryProbabilities.assign(ways.size(), 0.0L);
-        for (int i = 0; i < (int)(ways.size()); ++i) {
-            const int componentMines = distribution.start() + i;
-            long double numerator = 0.0L;
-            const std::span<const long double> otherCoefficients = others.coefficients();
-            for (int k = 0; k < (int)(otherCoefficients.size()); ++k) {
-                const int tMines = totalMines - componentMines - others.start - k;
-                if (tMines >= 0 && tMines <= tSum)
-                    numerator += otherCoefficients[k] * binom(tSum, tMines);
-            }
-            ws.entryProbabilities[i] = ways[i] * numerator / candidates;
-        }
+        const std::span<const long double> mineCountProbabilities = distributionResult.mineCountProbabilities[cid];
         const Structure::Shape &shape = shapes.get(shapes.getInstance(structure.components[cid]).shape);
         for (int box = 0; box < shape.boxes.size; ++box) {
             long double probability = 0.0L;
-            for (int i = 0; i < (int)(ways.size()); ++i)
-                probability += ws.entryProbabilities[i] * distribution.perBoxExpectation(i)[box];
+            for (int i = 0; i < (int)(mineCountProbabilities.size()); ++i)
+                probability += mineCountProbabilities[i] * distribution.perBoxExpectation(i)[box];
             result.boxProbabilities_[boxOffset + box] = probability / shape.boxes.span(shapes.boxes)[box].size;
         }
         boxOffset += shape.boxes.size;
     }
-    result.tCellProbability_ = tCellProbability;
-    result.candidates_ = candidates;
 }
 
 } // namespace mss

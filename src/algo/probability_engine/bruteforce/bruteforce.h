@@ -47,23 +47,23 @@ inline void BruteForce::saveFail(const U128 &key, int upper, int count, FlatHash
 }
 
 template <typename Solver, typename SessionT>
-inline BruteForce::Result BruteForce::runSolver(const CommonSession &common, SessionT &session, const Config &config,
+inline BruteForce::Result BruteForce::runSolver(const CommonSession &common, SessionT &session, const Config &options,
                                                 FlatHashTable<U128, int, U128Hash> &table) {
     // 外层负责把带符号的递归结果翻译成公开的 moves：负值只是"未达到 minWins 的
     // 可赢上界"，绝不能泄漏成公开的 Move::wins。多掩码与普通后端共用这段驱动。
     Result result;
-    std::vector<ConfigId> configs(common.possibilityCount);
-    for (int i = 0; i < (int)(configs.size()); ++i)
-        configs[i] = i;
-    if (config.checkAllMoves) {
+    std::vector<ConfigId> possibilityIds(common.possibilityCount);
+    for (int i = 0; i < (int)(possibilityIds.size()); ++i)
+        possibilityIds[i] = i;
+    if (options.checkAllMoves) {
         // 该模式直接暴露根节点各候选的可赢数；递归负值不写进公开的 Move::wins。
-        Solver::template solve<true, true>(common, session, configs, 1, 0, table, result);
+        Solver::template solve<true, true>(common, session, possibilityIds, 1, 0, table, result);
     } else {
         result.moves.resize(1);
         // 单推荐格模式把 minWins 交给递归做阈值剪枝；只有正返回值才形成推荐步，
         // 负值说明最多只能赢 abs(value) 局，因此清空公开动作结果。
-        const int wins = Solver::template solve<false, true>(common, session, configs, config.minWins, 0, table, result);
-        if (wins >= config.minWins)
+        const int wins = Solver::template solve<false, true>(common, session, possibilityIds, options.minWins, 0, table, result);
+        if (wins >= options.minWins)
             result.moves[0].wins = wins;
         else
             result.moves.clear();
@@ -73,13 +73,13 @@ inline BruteForce::Result BruteForce::runSolver(const CommonSession &common, Ses
 }
 
 template <typename Mask>
-inline BruteForce::Result BruteForce::solveWithMask(const CommonSession &common, const Config &config) {
+inline BruteForce::Result BruteForce::solveWithMask(const CommonSession &common, const Config &options) {
     // 掩码后端需要自己的 scratch/cache，二者都是跨调用复用的 thread_local。
     MultiMaskSession<Mask> session = MultiMaskSolver<Mask>::buildSession(common);
     session.unopenedCandidates = Mask::all(common.candidateCount);
     workspace::BruteForceMultiMask::scratch<Mask>.reset();
     workspace::BruteForceMultiMask::cache<Mask>.clear();
-    return runSolver<MultiMaskSolver<Mask>>(common, session, config, workspace::BruteForceMultiMask::cache<Mask>);
+    return runSolver<MultiMaskSolver<Mask>>(common, session, options, workspace::BruteForceMultiMask::cache<Mask>);
 }
 
 inline BruteForce::CommonSession BruteForce::buildCommonSession(const ObservedBoard::Result &board, const Basic::Result &basic,
@@ -100,6 +100,43 @@ inline BruteForce::CommonSession BruteForce::buildCommonSession(const ObservedBo
             candidateAt[board.id(x, y)] = session.candidateCount++;
             session.candidates.push_back({x, y, 0, 0, 0});
         }
+    std::vector<Structure::Instance> components;
+    components.reserve(structure.components.size());
+    for (InstanceId component : structure.components)
+        components.push_back(shapes.getInstance(component));
+    std::vector<CandidateId> tCells;
+    for (int candidate = 0; candidate < (int)session.candidates.size(); ++candidate)
+        if (basic.marks[session.candidates[candidate].x][session.candidates[candidate].y] == Basic::Mark::T)
+            tCells.push_back(candidate);
+    populateCommonSession(session, board, basic, shapes, candidateAt, components, tCells, board.totalMines - basic.mineSum);
+    return session;
+}
+
+// 只遍历组件自己的 H/T 格；公共部分继续负责相邻链接和具体摆法枚举。
+inline BruteForce::CommonSession BruteForce::buildComponentCommonSession(const ObservedBoard::Result &board, const Basic::Result &basic, std::span<const Structure::Instance> components, std::span<const CellId> offFrontierCells, const Structure::Pool &shapes, int mines) {
+    CommonSession session;
+    std::vector<int> candidateAt((board.rows + 1) * (board.cols + 1), -1);
+    for (const Structure::Instance &instance : components)
+        for (CellId cell : instance.boxes.cells.span(shapes.cells)) {
+            candidateAt[cell] = session.candidateCount++;
+            const auto [x, y] = board.pos(cell);
+            session.candidates.push_back({x, y, 0, 0, 0});
+        }
+    for (CellId cell : offFrontierCells) {
+        candidateAt[cell] = session.candidateCount++;
+        const auto [x, y] = board.pos(cell);
+        session.candidates.push_back({x, y, 0, 0, 0});
+    }
+    std::vector<CandidateId> tCells;
+    tCells.reserve(offFrontierCells.size());
+    for (CellId cell : offFrontierCells)
+        tCells.push_back(candidateAt[cell]);
+    populateCommonSession(session, board, basic, shapes, candidateAt, components, tCells, mines);
+    return session;
+}
+
+// 建立候选格邻接信息，并枚举输入组件在固定雷数下的具体布局。
+inline void BruteForce::populateCommonSession(CommonSession &session, const ObservedBoard::Result &board, const Basic::Result &basic, const Structure::Pool &shapes, const std::vector<int> &candidateAt, std::span<const Structure::Instance> components, std::span<const CandidateId> tCells, int mines) {
     for (int candidate = 0; candidate < (int)session.candidates.size(); ++candidate) {
         CommonSession::Candidate &current = session.candidates[candidate];
         current.linksOffset = session.links.size();
@@ -112,21 +149,15 @@ inline BruteForce::CommonSession BruteForce::buildCommonSession(const ObservedBo
         });
         current.linksCount = session.links.size() - current.linksOffset;
     }
-    std::vector<CandidateId> tCells;
-    for (int candidate = 0; candidate < (int)session.candidates.size(); ++candidate)
-        if (basic.marks[session.candidates[candidate].x][session.candidates[candidate].y] == Basic::Mark::T)
-            tCells.push_back(candidate);
-
     std::vector<CandidateId> placed;
-    const int mines = board.totalMines - basic.mineSum;
     session.minesPerConfig = mines;
-    const int componentCount = structure.components.size();
+    const int componentCount = components.size();
     std::vector<std::uint32_t> assignmentOffsets(componentCount + 1);
     std::vector<std::uint32_t> assignmentCounts(componentCount);
     std::vector<char> assignments;
     for (int component = 0; component < componentCount; ++component) {
         assignmentOffsets[component] = assignments.size();
-        const Structure::Instance &instance = shapes.getInstance(structure.components[component]);
+        const Structure::Instance &instance = components[component];
         const Structure::Shape &shape = shapes.get(instance.shape);
         const int boxCount = instance.boxes.count();
         ShapeSolver::DfsSolver::forEachAssignment(shape, shapes, [&](auto assignment, long double) {
@@ -156,7 +187,7 @@ inline BruteForce::CommonSession BruteForce::buildCommonSession(const ObservedBo
             chooseT(chooseT, 0, left);
             return;
         }
-        const Structure::Instance &instance = shapes.getInstance(structure.components[component]);
+        const Structure::Instance &instance = components[component];
         const int boxCount = instance.boxes.count();
         const std::uint32_t assignmentOffset = assignmentOffsets[component];
         for (std::uint32_t index = 0; index < assignmentCounts[component]; ++index) {
@@ -202,29 +233,37 @@ inline BruteForce::CommonSession BruteForce::buildCommonSession(const ObservedBo
         ++config;
     };
     enumerateComponents(enumerateComponents, 0, 0, storeConfig);
-    return session;
+}
+
+inline BruteForce::Result BruteForce::solveComponent(const ObservedBoard::Result &board, const Basic::Result &basic, std::span<const Structure::Instance> components, std::span<const CellId> offFrontierCells, const Structure::Pool &shapes, int mines, const Config &options) {
+    const CommonSession common = buildComponentCommonSession(board, basic, components, offFrontierCells, shapes, mines);
+    return solveCommonSession(common, options);
 }
 
 inline BruteForce::Result BruteForce::solve(const ObservedBoard::Result &board, const Basic::Result &basic,
-                                            const Structure::Result &structure, const Structure::Pool &shapes, const Config &config) {
-    // 按 config.solver 选择后端，返回候选动作及可赢方案数。分流必须发生在构建
+                                            const Structure::Result &structure, const Structure::Pool &shapes, const Config &options) {
+    const CommonSession common = buildCommonSession(board, basic, structure, shapes);
+    return solveCommonSession(common, options);
+}
+
+inline BruteForce::Result BruteForce::solveCommonSession(const CommonSession &common, const Config &options) {
+    // 按 options.solver 选择后端，返回候选动作及可赢方案数。分流必须发生在构建
     // 递归 Session 之前，因为普通后端与掩码后端的 unopened / mine 存储完全不同。
-    CommonSession common = buildCommonSession(board, basic, structure, shapes);
     Result result;
     if (common.possibilityCount == 0 || common.candidateCount == 0)
         return result;
     // 掩码后端按候选数选最小够用的 Mask；四档求解流程相同，根节点并行由
     // rootParallel 决定（见 multimask 后端）。
     // 候选数超过阈值时 Mask::all 会断言，所以这里必须先退化成普通后端。
-    MultiMaskSolver<u64>::rootParallel = config.solver == Solver::BitwiseRootParallel;
-    if (config.solver != Solver::Common && common.possibilityCount > 1 && common.candidateCount <= multiMaskCandidateThreshold) {
+    MultiMaskSolver<u64>::rootParallel = options.solver == Solver::BitwiseRootParallel;
+    if (options.solver != Solver::Common && common.possibilityCount > 1 && common.candidateCount <= multiMaskCandidateThreshold) {
         if (common.candidateCount <= 64)
-            return solveWithMask<u64>(common, config);
+            return solveWithMask<u64>(common, options);
         if (common.candidateCount <= 128)
-            return solveWithMask<u128>(common, config);
+            return solveWithMask<u128>(common, options);
         if (common.candidateCount <= 256)
-            return solveWithMask<u256>(common, config);
-        return solveWithMask<u512>(common, config);
+            return solveWithMask<u256>(common, options);
+        return solveWithMask<u512>(common, options);
     }
     // 普通后端：scratch/cache 都是跨调用复用的 thread_local，必须先清空。
     workspace::BruteForceNormal::scratch.reset();
@@ -232,7 +271,7 @@ inline BruteForce::Result BruteForce::solve(const ObservedBoard::Result &board, 
     Session session = buildSession(common);
     session.unopenedCandidates.resize(common.candidateCount);
     session.unopenedCandidates.setAll();
-    return runSolver<BruteForce>(common, session, config, workspace::BruteForceNormal::cache);
+    return runSolver<BruteForce>(common, session, options, workspace::BruteForceNormal::cache);
 }
 
 } // namespace mss

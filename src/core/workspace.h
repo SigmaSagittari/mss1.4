@@ -208,6 +208,15 @@ struct Probability {
     struct Analyze {
         struct Poly {
             int start = 0;
+            std::span<const long double> coeffs;
+
+            std::span<const long double> coefficients() const {
+                return coeffs;
+            }
+        };
+
+        struct TreePoly {
+            int start = 0;
             std::vector<long double> coeffs;
             std::span<const long double> view;
 
@@ -215,20 +224,26 @@ struct Probability {
                 return view.empty() ? std::span<const long double>(coeffs) : view;
             }
 
-            void setView(int newStart, std::span<const long double> newCoefficients) {
-                start = newStart;
+            Poly asPoly() const {
+                return {start, coefficients()};
+            }
+
+            void setView(Poly poly) {
+                start = poly.start;
                 coeffs.clear();
-                view = newCoefficients;
+                view = poly.coefficients();
             }
         };
 
         struct Buffers {
-            Poly identity;
+            std::array<long double, 1> identity{1.0L};
             std::vector<DistributionId> distributions;
             std::vector<std::size_t> componentBoxCounts;
-            std::vector<long double> entryProbabilities;
-            std::vector<Poly> tree;
-            std::vector<Poly> outside;
+            std::vector<Poly> factors;
+            std::vector<long double> distributionProbabilities;
+            std::vector<std::span<const long double>> distributionProbabilityViews;
+            std::vector<TreePoly> tree;
+            std::vector<TreePoly> outside;
         };
     };
 

@@ -22,11 +22,22 @@ struct Probability {
     struct ObserveResult;
 
   public:
-    // 逻辑确定的雷/安全格必须输出浮点精确的 1.0L/0.0L；只有未确定格
-    // 才允许保留 (0, 1) 内的概率，尾差只向精确的一收敛。
+    // coeffs[k] 是恰有 start + k 雷的前沿方案数。
+    using Poly = workspace::Probability::Analyze::Poly;
+
+    struct DistributionProbabilityResult {
+        std::span<const std::span<const long double>> mineCountProbabilities;
+        long double candidates;
+        long double tCellProbability;
+    };
+
     inline static long double limitProbability(long double probability) {
         return probability >= 1.0L - 1e-10L ? 1.0L : probability;
     }
+
+    // tMines 是可自由分配的 T 格数量，totalMines 是剩余总雷数；mineCountProbabilities[i][k] 对应 distributions[i].start + k 雷。
+    // 返回的分布视图只能使用到本线程下一次调用此函数或 analyze。
+    static DistributionProbabilityResult analyzeDistributions(std::span<const Poly> distributions, int tMines, int totalMines);
 
     class Result {
       public:
@@ -99,15 +110,14 @@ struct Probability {
     static void buildGraphTable(const Structure::Shape &shape, const Structure::Pool &shapes, std::span<const int> adjacentBoxCells,
                                 int xBox, std::vector<ObserveTransfer> &out);
 
-    using Poly = workspace::Probability::Analyze::Poly;
+    using TreePoly = workspace::Probability::Analyze::TreePoly;
     using Workspace = workspace::Probability::Analyze::Buffers;
     // 卷积全局概率使用的两个生成函数多项式。
-    static void polyMultiply(int leftStart, std::span<const long double> left, int rightStart, std::span<const long double> right,
-                             Poly &out);
+    static void polyMultiply(Poly left, Poly right, TreePoly &out);
     // 计算全局总雷数条件下的加权方案数。
-    static long double denominator(const Poly &polynomial, int totalMines, int tSum);
+    static long double denominator(Poly polynomial, int totalMines, int tSum);
     // 计算组件外 Unknown 格子的条件雷概率。
-    static long double unknownMineProbability(const Poly &polynomial, int totalMines, int tSum, long double candidates);
+    static long double unknownMineProbability(Poly polynomial, int totalMines, int tSum, long double candidates);
 
   public:
     // 根据组件分布创建并返回一次全局概率分析结果。
