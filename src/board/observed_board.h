@@ -5,7 +5,6 @@
 #include <vector>
 
 #include "core/assert.h"
-#include "core/types.h"
 #include "core/utility/grid.h"
 
 namespace mss {
@@ -22,7 +21,7 @@ namespace mss {
 //
 // 【坐标与存储】
 //   坐标 1-based；Grid<CellState> 内部垫一行一列，下标 = x*(cols+1)+y。
-//   CellId 就是这个下标，可直接作为 Grid/RawGrid 的索引（cellLoc 依赖这一点）。
+//   ObservedBoard::CellId 就是这个下标，可直接作为 Grid/RawGrid 的索引（Structure::cellLoc 依赖这一点）。
 //   padding（x==0 或 y==0）不是真实格子，分析层不得访问。
 //
 // 【唯一合法迁移】
@@ -47,6 +46,11 @@ namespace mss {
 // ═══════════════════════════════════════════════════════════════════════
 
 struct ObservedBoard {
+    // 棋盘格句柄：Grid<CellState> 的存储下标，即 x*(cols+1)+y。
+    // 合法范围 1..rows × 1..cols；-1 表示"无此格"。
+    // 注意：它是 int 别名 —— 嵌套只表达归属，不提供类型安全（编译器把它和任何 int 视为同一种类型）。
+    using CellId = int;
+
     enum class CellState : std::uint8_t {
         Num0 = 0,
         Num1,

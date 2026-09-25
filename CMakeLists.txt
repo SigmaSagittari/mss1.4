@@ -15,7 +15,6 @@ set(MSS_SOURCES
     src/board/observed_board.h
     src/board/observed_board.cpp
     src/core/assert.h
-    src/core/types.h
     src/core/utility/grid.h
 )
 set(MSS_TEST_SOURCES

@@ -8,7 +8,7 @@ ObservedBoard::Result::Result(int rows, int cols, int mines)
     : rows(rows), cols(cols), totalMines(mines), board(rows, cols, CellState::Hidden) {
 }
 
-CellId ObservedBoard::Result::id(int x, int y) const {
+ObservedBoard::CellId ObservedBoard::Result::id(int x, int y) const {
     return x * (cols + 1) + y;
 }
 

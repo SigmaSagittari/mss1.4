@@ -60,7 +60,7 @@ void testGeometry() {
     const mss::ObservedBoard::Result board = mss::ObservedBoard::analyze(3, 3, 1);
     for (int x = 1; x <= board.rows; ++x)
         for (int y = 1; y <= board.cols; ++y) {
-            const mss::CellId cell = board.id(x, y);
+            const mss::ObservedBoard::CellId cell = board.id(x, y);
             check(cell == x * (board.cols + 1) + y, "CellId 公式");
             const auto [px, py] = board.pos(cell);
             check(px == x && py == y, "id/pos 往返");
