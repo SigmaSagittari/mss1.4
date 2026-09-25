@@ -106,6 +106,26 @@ namespace mss {
 // 【analyze / update 的前置条件】
 //   · update 之前，updates 必须已由 ObservedBoard::update 应用到 board、且 Basic 已同步更新。
 //   · update 只重建受 updates 影响的组件；未受影响的组件与其 cellLoc 映射保持原样（原地不动）。
+//
+// 【实现要点】（声明看不出内部在干什么，这里说清楚；代码在 structure.cpp）
+//   组件发现  从任一 H 格出发，在"数字 ↔ H 候选"二部图上 BFS（数字找 H 邻居、H 找数字邻居），
+//              得到一个连通的约束组件。
+//   Box 压缩  每个 H 格算一个 128 位签名 = Σ splitmix64(位置种子(每个相邻数字))；签名相同
+//              等价于"邻接数字集合相同"（128 位哈希，碰撞可忽略），这些格合并成一个 Box。
+//   cellHash  一物两用：先存签名（分组用），分组完成后同一张表改存该格的 BoxId，
+//              供紧接的约束构造回查 —— 省一张按格的表。
+//   约束      sum = 数字值 − 邻域内 Basic 判定的雷数（F）；boxIds = 邻域里出现过的 Box（去重）。
+//   实例布局  格子按 Box 连续存放，另存偏移表 boxOf —— 于是"第 b 个 Box 的格子"是一段
+//              连续区间，暴力枚举可以顺着扫。
+//   interning Shape / Instance 按内容哈希去重；命中时把刚写进池尾的内容弹回去（pop_back），
+//              于是"同一形状/布局只存一份"，且句柄稳定。
+//   update    三段式：① 观测变化的格 + 八邻域 = 脏区起点；② 脏区里凡属于某组件的格子，
+//              整个组件失效（清它的 cellLoc，并把它的全部格子补进脏区）；③ 从脏区重新
+//              发现组件并重建。
+//   删组件    用尾元素搬移：失效组件的空位由数组最后一个元素填上，保持 components 稠密；
+//              Delta 按**下标降序**记录被搬走的顺序，反向回放倒着走即可还原。
+//   Scratch   复用而非重建：analyze 与 update 不会并发，共用 visited / cellHash / cells；
+//              脏标记在 update 结束按脏格清单逐格清掉，不整表 fill。
 // ═══════════════════════════════════════════════════════════════════════
 
 struct Structure {
@@ -258,20 +278,23 @@ struct Structure {
     // analyze / update 的复用缓冲（聚合在 mss::Workspace 的 structure 成员）。
     // analyze 与 update 不会并发，visited / cellHash / cells 由两者共用。
     struct Scratch {
-        Grid<char> visited;
-        Grid<U128> cellHash;
-        std::vector<ObservedBoard::CellId> cells;
+        // ── 组件发现（analyze / update 共用）──
+        Grid<char> visited;                       // BFS 去重标记（按格）
+        Grid<U128> cellHash;                      // 按格一物两用：先存邻接签名，再改存 BoxId
+        std::vector<ObservedBoard::CellId> cells; // 当前组件的格子（BFS 结果，含数字格）
 
-        Grid<char> dirty;
-        std::vector<ObservedBoard::CellId> dirtyCells;
-        std::vector<char> removed;
-        std::vector<InstanceId> staged;
+        // ── update 的脏区 ──
+        Grid<char> dirty;                         // 脏标记（按格）
+        std::vector<ObservedBoard::CellId> dirtyCells; // 脏格清单；invalidate 会边扫边追加
+        std::vector<char> removed;                // 按组件下标：本轮是否失效
+        std::vector<InstanceId> staged;           // 本轮重建出的实例，最后统一追加
 
-        FlatHashTable<U128, BoxId, U128Hash> hashBox;
-        std::vector<int> boxOfCells;
-        std::vector<std::array<ObservedBoard::CellId, 8>> buckets;
-        std::vector<std::uint8_t> bucketSize;
-        std::vector<char> boxUsed; // 按 BoxId 索引：本条约束里该 Box 是否已记过
+        // ── buildComponent 的临时表（每个组件开工前清空）──
+        FlatHashTable<U128, BoxId, U128Hash> hashBox; // 签名 → BoxId
+        std::vector<int> boxOfCells;                  // 每个格子 → 它的 BoxId（-1 = 数字格）
+        std::vector<std::array<ObservedBoard::CellId, kMaxBoxSize>> buckets; // 按 Box 分桶
+        std::vector<std::uint8_t> bucketSize;         // 每桶实际格数（<= kMaxBoxSize）
+        std::vector<char> boxUsed;                    // 按 BoxId：当前约束是否已记过它
     };
 
     // 全量构建：扫出所有组件 → 压缩 Box → 建约束 → 写池 → 铺 cellLoc。
