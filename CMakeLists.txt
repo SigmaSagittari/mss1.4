@@ -9,17 +9,29 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # 代价：改了 CMakeLists 之后要重新 configure（build.bat 每次都 configure）。
 set(CMAKE_SUPPRESS_REGENERATION ON)
 
-add_library(mss STATIC
+# 文件清单显式列出（头文件也要列，否则 VS 工程里看不到它们）
+set(MSS_SOURCES
+    src/version.h
+    src/board/observed_board.h
     src/board/observed_board.cpp
+    src/core/assert.h
+    src/core/types.h
+    src/core/utility/grid.h
 )
-target_include_directories(mss PUBLIC src)
-
-# 测试入口：唯一 exe，跑全部用例；带参数时只跑指定名字的用例。
-add_executable(mss_tests
+set(MSS_TEST_SOURCES
+    tests/harness.h
     tests/main.cpp
     tests/board_transitions.cpp
 )
+
+add_library(mss STATIC ${MSS_SOURCES})
+target_include_directories(mss PUBLIC src)
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/src FILES ${MSS_SOURCES})
+
+# 测试入口：唯一 exe，跑全部用例；带参数时只跑指定名字的用例。
+add_executable(mss_tests ${MSS_TEST_SOURCES})
 target_link_libraries(mss_tests PRIVATE mss)
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/tests FILES ${MSS_TEST_SOURCES})
 
 # 两条可执行的门禁：/W4 和 -Wold-style-cast（1.5 的新代码不许再有 C 风格转换）
 if(MSVC)
