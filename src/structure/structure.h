@@ -22,8 +22,8 @@ namespace mss {
 //   干什么  把"数字 ↔ H 候选"的约束图切成组件；组件内把邻接数字集合相同的
 //           H 格压成一个 Box。下游只枚举 Box 雷数，不枚举每格雷位。
 //   怎么读  消费者只用 Pool 的访问器（不再自己解句柄）：
-//             Shape 侧：shapeBoxCount / shapeBoxSize / shapeConstraintSum /
-//                       shapeConstraintBoxCount / shapeConstraintBox
+//             Shape 侧：shapeCount / shapeBoxCount / shapeBoxSize /
+//                       shapeConstraintCount / shapeConstraint（返回 {sum, span<BoxId>}）
 //             Instance 侧：instanceBoxCount / instanceBoxCellCount / instanceBoxCell /
 //                       instanceCells（span）/ instanceCellsData（裸指针）/ instanceShape
 //           遍历组件：result.components（InstanceId 列表）+ result.cellLoc[cell]
@@ -110,8 +110,8 @@ namespace mss {
 
 struct Structure {
     // 一个格子的邻居上限是 8：Box 尺寸与每条约束引用的 Box 数都受它约束。
-    static constexpr int kMaxBoxSize = 8;
-    static constexpr int kMaxConstraintBoxes = 8;
+    static constexpr int kMaxBoxSize = 8;         // Box 尺寸上限
+    static constexpr int kMaxConstraintBoxes = 8; // 一条约束引用的 Box 数上限
 
     using ComponentId = int;
     using BoxId = int;
@@ -121,6 +121,8 @@ struct Structure {
     struct CellLocation {
         ComponentId component = -1;
         BoxId box = -1;
+
+        bool operator==(const CellLocation &) const = default;
     };
 
     struct Pool;
@@ -183,21 +185,52 @@ struct Structure {
 
     struct Pool {
         // ── 读：Shape 侧 ──
-        std::size_t shapeCount() const;
-        int shapeBoxCount(ShapeId shape) const;
-        int shapeBoxSize(ShapeId shape, BoxId box) const;
-        std::size_t shapeConstraintCount(ShapeId shape) const;
-        Shape::ConstraintView shapeConstraint(ShapeId shape, std::size_t index) const;
+        // 全部 inline 在头文件里：消费者的内层循环要能真正内联掉它们。
+        std::size_t shapeCount() const {
+            return shapes_.size();
+        }
+        int shapeBoxCount(ShapeId shape) const {
+            return static_cast<int>(shapes_[shape].boxes_.size);
+        }
+        int shapeBoxSize(ShapeId shape, BoxId box) const {
+            return shapes_[shape].boxes_.span(boxes_)[box].size;
+        }
+        std::size_t shapeConstraintCount(ShapeId shape) const {
+            return shapes_[shape].constraints_.size;
+        }
+        Shape::ConstraintView shapeConstraint(ShapeId shape, std::size_t index) const {
+            const Shape::Constraint &constraint = shapes_[shape].constraints_.span(constraints_)[index];
+            return {constraint.sum, constraint.boxIds.span(boxIds_)};
+        }
 
         // ── 读：Instance 侧 ──
-        ShapeId instanceShape(InstanceId instance) const;
-        int instanceBoxCount(InstanceId instance) const;
-        int instanceBoxCellCount(InstanceId instance, BoxId box) const;
-        ObservedBoard::CellId instanceBoxCell(InstanceId instance, BoxId box, int index) const;
-        const ObservedBoard::CellId *instanceCellsData(InstanceId instance) const;         // 循环外提升 base 用
-        std::span<const ObservedBoard::CellId> instanceCells(InstanceId instance) const;   // 表达式内短暂使用
-        std::size_t instanceConstraintCellCount(InstanceId instance) const;
-        ObservedBoard::CellId instanceConstraintCell(InstanceId instance, std::size_t index) const;
+        ShapeId instanceShape(InstanceId instance) const {
+            return instances_[instance].shape_;
+        }
+        int instanceBoxCount(InstanceId instance) const {
+            return static_cast<int>(instances_[instance].boxOf_.size) - 1;
+        }
+        int instanceBoxCellCount(InstanceId instance, BoxId box) const {
+            const std::span<const int> offsets = instances_[instance].boxOf_.span(boxOf_);
+            return offsets[box + 1] - offsets[box];
+        }
+        ObservedBoard::CellId instanceBoxCell(InstanceId instance, BoxId box, int index) const {
+            const std::span<const int> offsets = instances_[instance].boxOf_.span(boxOf_);
+            return instances_[instance].cells_.span(cells_)[offsets[box] + index];
+        }
+        // 循环外提升 base 用；有效期见【Pool：读写边界与 span 生命周期】
+        const ObservedBoard::CellId *instanceCellsData(InstanceId instance) const {
+            return instances_[instance].cells_.span(cells_).data();
+        }
+        std::span<const ObservedBoard::CellId> instanceCells(InstanceId instance) const {
+            return instances_[instance].cells_.span(cells_);
+        }
+        std::size_t instanceConstraintCellCount(InstanceId instance) const {
+            return instances_[instance].constraintCells_.size;
+        }
+        ObservedBoard::CellId instanceConstraintCell(InstanceId instance, std::size_t index) const {
+            return instances_[instance].constraintCells_.span(constraintCells_)[index];
+        }
 
         // 保留全部底层容量，使所有句柄与 span 失效（重置游戏用）。
         void clear();
@@ -251,6 +284,18 @@ struct Structure {
     // 回放：只搬组件与重映射 cellLoc，不重新推理。
     static void applyDelta(Result &result, const Pool &pool, const Delta &delta);
     static void reverseDelta(Result &result, const Pool &pool, const Delta &delta);
+
+  private:
+    // 实现细节。必须挂在 Structure 下：需要访问 Shape / Instance / Pool 的私有成员。
+    static std::uint64_t positionSeed(int x, int y, int rows, int cols);
+    static U128 cellSignature(int x, int y, const ObservedBoard::Result &board);
+    static void collectComponent(ObservedBoard::CellId start, const ObservedBoard::Result &board, const Basic::Result &basic,
+                                 Grid<char> &visited, std::vector<ObservedBoard::CellId> &cells);
+    static InstanceId buildComponent(const std::vector<ObservedBoard::CellId> &cells, const ObservedBoard::Result &board,
+                                     const Basic::Result &basic, Grid<U128> &cellHash, Pool &pool, Scratch &scratch);
+    static U128 computeHash(const Shape &shape, const Pool &pool);
+    static void remapInstance(InstanceId instance, ComponentId component, const Pool &pool, std::vector<CellLocation> &cellLoc);
+    static void clearInstance(InstanceId instance, const Pool &pool, std::vector<CellLocation> &cellLoc);
 };
 
 } // namespace mss

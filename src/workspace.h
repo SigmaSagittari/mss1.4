@@ -1,6 +1,7 @@
 #pragma once
 
 #include "basic/basic.h"
+#include "structure/structure.h"
 
 namespace mss {
 
@@ -11,6 +12,7 @@ namespace mss {
 // 新增模块时在这里加一行：Foo::Scratch foo;
 struct Workspace {
     Basic::Scratch basic;
+    Structure::Scratch structure;
 };
 
 } // namespace mss

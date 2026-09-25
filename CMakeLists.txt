@@ -16,6 +16,7 @@ set(MSS_SOURCES
     src/basic/basic.h
     src/basic/basic.cpp
     src/board/observed_board.h
+    src/structure/structure.cpp
     src/structure/structure.h
     src/board/observed_board.cpp
     src/core/assert.h
@@ -30,7 +31,9 @@ set(MSS_TEST_SOURCES
     tests/harness.h
     tests/main.cpp
     tests/basic.cpp
+    tests/build_board.h
     tests/board_transitions.cpp
+    tests/structure.cpp
 )
 
 add_library(mss STATIC ${MSS_SOURCES})

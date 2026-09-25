@@ -9,6 +9,7 @@ namespace test {
 // 用例声明（每个测试文件一个函数）。
 void basic();
 void boardTransitions();
+void structure();
 } // namespace test
 
 namespace {
@@ -16,6 +17,7 @@ namespace {
 constexpr test::Case kCases[] = {
     {"basic", test::basic},
     {"board_transitions", test::boardTransitions},
+    {"structure", test::structure},
 };
 
 } // namespace
