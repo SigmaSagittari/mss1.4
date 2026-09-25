@@ -70,7 +70,6 @@ struct ObservedBoard {
         ForcedSafe,
     };
 
-
     struct Result {
         int rows = 0;
         int cols = 0;
