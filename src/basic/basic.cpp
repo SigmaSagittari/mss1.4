@@ -148,6 +148,8 @@ Basic::Result Basic::analyze(const ObservedBoard::Result &board, Scratch &scratc
 
 void Basic::update(Result &result, Delta &delta, const ObservedBoard::Result &board,
                    const ObservedBoard::Delta &updates, Scratch &scratch) {
+    // 契约：result 必须是同一个盘面的 Basic 结果（否则索引会越界）。
+    assert_(result.rows == board.rows && result.cols == board.cols, "Basic::update: result 与 board 尺寸不一致");
     delta.changes.clear();
     delta.before = {result.unknownSum, result.mineSum, result.safeHideCount, result.valid};
 

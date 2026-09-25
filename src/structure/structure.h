@@ -106,6 +106,7 @@ namespace mss {
 // 【analyze / update 的前置条件】
 //   · update 之前，updates 必须已由 ObservedBoard::update 应用到 board、且 Basic 已同步更新。
 //   · update 只重建受 updates 影响的组件；未受影响的组件与其 cellLoc 映射保持原样（原地不动）。
+//   · result 与 board 必须是同一盘面（尺寸一致），否则索引越界 —— update 入口有断言。
 //
 // 【实现要点】（声明看不出内部在干什么，这里说清楚；代码在 structure.cpp）
 //   组件发现  从任一 H 格出发，在"数字 ↔ H 候选"二部图上 BFS（数字找 H 邻居、H 找数字邻居），
@@ -126,6 +127,13 @@ namespace mss {
 //              Delta 按**下标降序**记录被搬走的顺序，反向回放倒着走即可还原。
 //   Scratch   复用而非重建：analyze 与 update 不会并发，共用 visited / cellHash / cells；
 //              脏标记在 update 结束按脏格清单逐格清掉，不整表 fill。
+//
+// 【已知边界】
+//   · update 的开销 ∝ **受影响组件的总大小**，不 ∝ 改动格数。碰上巨型组件（病态盘面：
+//     一个组件横跨整盘）就等价于全量重建；真实盘面前沿是小组件，无所谓。
+//   · Pool 只增不删：跨盘面复用同一个池会持续累积 Shape/Instance，重置游戏时必须 clear()。
+//   · Workspace 与 Pool 的容量只增不减（复用换性能）：跑过一次大棋盘后水位不会回落。
+//   · 内存耗尽由上层入口接住 bad_alloc（本模块不做异常处理）。
 // ═══════════════════════════════════════════════════════════════════════
 
 struct Structure {
