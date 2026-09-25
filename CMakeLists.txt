@@ -16,10 +16,15 @@ set(MSS_SOURCES
     src/basic/basic.h
     src/basic/basic.cpp
     src/board/observed_board.h
+    src/structure/structure.h
     src/board/observed_board.cpp
     src/core/assert.h
+    src/core/utility/flat_hashtable.h
     src/core/utility/grid.h
+    src/core/utility/hash.h
     src/core/utility/neighborhood.h
+    src/core/utility/rng.h
+    src/core/utility/vector_pool.h
 )
 set(MSS_TEST_SOURCES
     tests/harness.h
