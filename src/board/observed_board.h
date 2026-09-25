@@ -20,9 +20,11 @@ namespace mss {
 //   枚举取值是跨模块契约（Basic/Structure 依赖 (int) 比较），顺序不得重排。
 //
 // 【坐标与存储】
-//   坐标 1-based；Grid<CellState> 内部垫一行一列，下标 = x*(cols+1)+y。
-//   ObservedBoard::CellId 就是这个下标，可直接作为 Grid/RawGrid 的索引（Structure::cellLoc 依赖这一点）。
-//   padding（x==0 或 y==0）不是真实格子，分析层不得访问。
+//   坐标 0-based：x ∈ [0,rows)、y ∈ [0,cols)。
+//   ObservedBoard::CellId = x*cols + y，与 Grid<CellState> 的线性存储下标一致，
+//   可直接当 Grid 的一维下标（Structure::cellLoc 依赖这一点）。
+//   没有 padding：越界即 UB，调用方负责坐标合法。
+//   Result::pos() 的前置条件：cols > 0（默认构造的 Result 为 0x0，不得调用）。
 //
 // 【唯一合法迁移】
 //   Hidden → 任意非 Hidden。没有第二条。
@@ -46,8 +48,8 @@ namespace mss {
 // ═══════════════════════════════════════════════════════════════════════
 
 struct ObservedBoard {
-    // 棋盘格句柄：Grid<CellState> 的存储下标，即 x*(cols+1)+y。
-    // 合法范围 1..rows × 1..cols；-1 表示"无此格"。
+    // 棋盘格句柄：Grid<CellState> 的线性存储下标，即 x*cols+y。
+    // 合法范围 [0, rows*cols)；-1 表示"无此格"。
     // 注意：它是 int 别名 —— 嵌套只表达归属，不提供类型安全（编译器把它和任何 int 视为同一种类型）。
     using CellId = int;
 
@@ -103,29 +105,19 @@ struct ObservedBoard {
 };
 
 // ═══════════════════════════════════════════════════════════════════════
-// 【待审决定】本轮 review 的唯一目的：这四条你拍板
+// 【已定决策】（D1–D4 已拍板，以下即契约；改动需显式记录）
 //
-//   D1  Change::previous 是否保留？
-//       现状恒为 Hidden（唯一合法迁移的直接后果），是冗余字段。
-//       保留 = 为将来的"允许改判"留位置；删除 = 更诚实的类型（同时解锁 D4）。
+//   D1  Change::previous 保留。当前恒为 Hidden，为将来可能的"允许改判"留位置。
+//   D2  只允许 Hidden → 非 Hidden。幂等重复断言（ForcedMine → ForcedMine）
+//       与改判（ForcedMine → ForcedSafe）一律 assert —— 即 1.4 的行为。
+//       注：1.4 的 6 次 target must be Hidden 崩溃与这条同源，属"调用方违约"，
+//       不是本模块的 bug；重现与修复在调用方（见后续 policy 层审计）。
+//   D3  applyDelta 不加校验：在错误状态上回滚仍会静默污染。契约要求调用方
+//       "在该 Delta 对应的子状态上、从后往前撤销"。加校验留待诊断模块统一做。
+//   D4  update 的 Delta 参数保持 Delta&（要回写 previous）。
 //
-//   D2  是否允许"幂等重复断言"（ForcedMine → ForcedMine）与"改判"
-//       （ForcedMine → ForcedSafe）？
-//       现状：一律 assert。1.4 那 6 次 target must be Hidden 很可能就来自
-//       "同一格被断言两次" —— 如果确认，这里选"允许"就是修 bug，而不是改行为。
-//       （改这一条会让旧实现不再是 oracle，属左栏变更，必须显式记录。）
-//
-//   D3  applyDelta 是否加断言？
-//       现状：逆序撤销时不做任何检查，在错误的状态上回滚会静默污染。
-//       建议加：正确程序不受影响（合法程序在撤销时该格必然等于 change.next），
-//       错误程序立刻死。
-//
-//   D4  update 的 Delta 参数现在是 Delta&（因为要回写 previous）。
-//       若 D1 选删除，可改成 const Delta&（调用方意图更清楚）。
-//
-//   另有两点仅为记录：错误信息与 1.4 不同（合并为一条更明确的），
-//   触发条件完全相同；测试里无法在进程内验证"必须 abort"的用例，
-//   因为 assert 会 exit —— 计划用子进程测试覆盖（后续阶段）。
+//   错误信息与 1.4 不同（合并为一条更明确的），触发条件完全相同。
+//   进程内无法验证"必须 abort"的用例（assert 会 exit）——留待子进程测试。
 // ═══════════════════════════════════════════════════════════════════════
 
 } // namespace mss

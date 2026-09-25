@@ -9,11 +9,11 @@ ObservedBoard::Result::Result(int rows, int cols, int mines)
 }
 
 ObservedBoard::CellId ObservedBoard::Result::id(int x, int y) const {
-    return x * (cols + 1) + y;
+    return x * cols + y;
 }
 
 std::pair<int, int> ObservedBoard::Result::pos(CellId cell) const {
-    return {cell / (cols + 1), cell % (cols + 1)};
+    return {cell / cols, cell % cols};
 }
 
 void ObservedBoard::Delta::clear() {

@@ -58,10 +58,13 @@ void testTransitionTable() {
 
 void testGeometry() {
     const mss::ObservedBoard::Result board = mss::ObservedBoard::analyze(3, 3, 1);
-    for (int x = 1; x <= board.rows; ++x)
-        for (int y = 1; y <= board.cols; ++y) {
+    check(board.id(0, 0) == 0, "CellId 编码：左上角必须是 0");
+    check(board.id(board.rows - 1, board.cols - 1) == board.rows * board.cols - 1, "CellId 编码：右下角必须是 rows*cols-1");
+    for (int x = 0; x < board.rows; ++x)
+        for (int y = 0; y < board.cols; ++y) {
             const mss::ObservedBoard::CellId cell = board.id(x, y);
-            check(cell == x * (board.cols + 1) + y, "CellId 公式");
+            check(cell == x * board.cols + y, "CellId 公式（0-based，无 padding）");
+            check(cell >= 0 && cell < board.rows * board.cols, "CellId 必须落在 [0, rows*cols)");
             const auto [px, py] = board.pos(cell);
             check(px == x && py == y, "id/pos 往返");
             check(board.board[x][y] == State::Hidden, "analyze 必须产出全 Hidden");
@@ -71,27 +74,27 @@ void testGeometry() {
 void testDeltaRoundTrip() {
     mss::ObservedBoard::Result board = mss::ObservedBoard::analyze(3, 3, 1);
     mss::ObservedBoard::Delta delta;
-    delta.changes.push_back({board.id(1, 1), State::Num1, State::Hidden});
-    delta.changes.push_back({board.id(1, 2), State::ForcedMine, State::Hidden});
+    delta.changes.push_back({board.id(0, 0), State::Num1, State::Hidden});
+    delta.changes.push_back({board.id(0, 1), State::ForcedMine, State::Hidden});
     const std::size_t capacity = delta.changes.capacity();
 
     mss::ObservedBoard::update(board, delta);
-    check(board.board[1][1] == State::Num1, "正向应用：数字");
-    check(board.board[1][2] == State::ForcedMine, "正向应用：断言");
+    check(board.board[0][0] == State::Num1, "正向应用：数字");
+    check(board.board[0][1] == State::ForcedMine, "正向应用：断言");
     for (const mss::ObservedBoard::Change &change : delta.changes)
         check(change.previous == State::Hidden, "previous 必须被 update 回写（当前契约下恒为 Hidden）");
 
     mss::ObservedBoard::applyDelta(board, delta);  // reverse=true
-    check(board.board[1][1] == State::Hidden && board.board[1][2] == State::Hidden, "逆序撤销必须回到 Hidden");
+    check(board.board[0][0] == State::Hidden && board.board[0][1] == State::Hidden, "逆序撤销必须回到 Hidden");
 
     mss::ObservedBoard::applyDelta(board, delta, false);
-    check(board.board[1][1] == State::Num1 && board.board[1][2] == State::ForcedMine, "正序重放");
+    check(board.board[0][0] == State::Num1 && board.board[0][1] == State::ForcedMine, "正序重放");
 
     delta.clear();
     check(delta.changes.empty() && delta.changes.capacity() == capacity, "clear 必须保留 capacity");
-    delta.changes.push_back({board.id(2, 2), State::Num0, State::Hidden});
+    delta.changes.push_back({board.id(1, 1), State::Num0, State::Hidden});
     mss::ObservedBoard::update(board, delta);
-    check(board.board[2][2] == State::Num0, "Delta 复用");
+    check(board.board[1][1] == State::Num0, "Delta 复用");
 }
 
 } // namespace
