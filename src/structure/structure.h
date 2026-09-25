@@ -18,6 +18,21 @@ namespace mss {
 // ═══════════════════════════════════════════════════════════════════════
 // Structure 契约
 //
+// ── 30 秒导读（细节见下方完整契约）─────────────────────────────────
+//   干什么  把"数字 ↔ H 候选"的约束图切成组件；组件内把邻接数字集合相同的
+//           H 格压成一个 Box。下游只枚举 Box 雷数，不枚举每格雷位。
+//   怎么读  消费者只用 Pool 的访问器（不再自己解句柄）：
+//             Shape 侧：shapeBoxCount / shapeBoxSize / shapeConstraintSum /
+//                       shapeConstraintBoxCount / shapeConstraintBox
+//             Instance 侧：instanceBoxCount / instanceBoxCellCount / instanceBoxCell /
+//                       instanceCells（span）/ instanceCellsData（裸指针）/ instanceShape
+//           遍历组件：result.components（InstanceId 列表）+ result.cellLoc[cell]
+//   记四句  · ComponentId 会变；BoxId 是 Shape 内局部；ShapeId/InstanceId 稳定。
+//           · 存的是句柄（Shape::Constraint），取的是投影（Shape::ConstraintView）。
+//           · span 有效期 = 到下一次 analyze / update / clear；分析阶段可随便存。
+//           · 顺序契约：removed 按下标降序记录；正向按记录走，反向倒着走。
+// ─────────────────────────────────────────────────────────────────────
+//
 // 【职责】
 //   把 Basic 的"数字 ↔ H 候选"二部图切成互不相连的组件；组件内部再把"邻接数字
 //   集合完全相同"的 H 格压成一个 Box。下游只枚举 Box 的雷数分配，而不是每个格子
@@ -38,7 +53,9 @@ namespace mss {
 //   Instance 是 Shape 在具体盘面上的落位：哪个 Box 有哪些真实格子、哪条约束对应哪个数字格。
 //   对应关系：两者 Box 数相同；Shape 的第 i 条约束 ↔ Instance 的第 i 个 constraintCell（同序）。
 //
-// 【Box 与约束】
+// 【Box 与约束】两者都挂在 Shape 下：Shape::Box / Shape::Constraint（存储态）+
+//   Shape::ConstraintView（投影态）。四个**句柄**留在 Structure 层，因为它们是
+//   跨 Shape / Instance / Pool / Result 的共享词汇。
 //   Box    邻接数字集合完全相同的 H 格集合。
 //   约束   sum    = 数字值 − 该数字邻域内已被确定的雷数（Basic 的 F 标记）
 //          boxIds = 该数字邻接到的 Box 集合（按邻域遍历顺序去重；区间长度可为 0，
@@ -101,20 +118,6 @@ struct Structure {
     using ShapeId = int;
     using InstanceId = int;
 
-    struct Box {
-        int size = 0;
-    };
-
-    struct Constraint {
-        int sum = 0;
-        vectorPool<BoxId>::vector boxIds; // 本约束引用到的 Box 集合（池里一段区间）
-    };
-
-    struct ConstraintView {
-        int sum = 0;
-        std::span<const BoxId> boxIds;
-    };
-
     struct CellLocation {
         ComponentId component = -1;
         BoxId box = -1;
@@ -124,6 +127,23 @@ struct Structure {
 
     // 与坐标无关的约束形状（按内容 interning 去重）。
     struct Shape {
+        // 一个 Box：邻接数字集合完全相同的 H 格集合。
+        struct Box {
+            int size = 0;
+        };
+
+        // 存储态：sum + 池里一段 BoxId 区间的句柄。
+        struct Constraint {
+            int sum = 0;
+            vectorPool<BoxId>::vector boxIds; // 本约束引用到的 Box 集合（池里一段区间）
+        };
+
+        // 投影态：同一个 Constraint 解析后的样子。消费者用这个遍历，别自己解句柄。
+        struct ConstraintView {
+            int sum = 0;
+            std::span<const BoxId> boxIds;
+        };
+
       private:
         vectorPool<Box>::vector boxes_;
         vectorPool<Constraint>::vector constraints_;
@@ -167,7 +187,7 @@ struct Structure {
         int shapeBoxCount(ShapeId shape) const;
         int shapeBoxSize(ShapeId shape, BoxId box) const;
         std::size_t shapeConstraintCount(ShapeId shape) const;
-        ConstraintView shapeConstraint(ShapeId shape, std::size_t index) const;
+        Shape::ConstraintView shapeConstraint(ShapeId shape, std::size_t index) const;
 
         // ── 读：Instance 侧 ──
         ShapeId instanceShape(InstanceId instance) const;
@@ -192,8 +212,8 @@ struct Structure {
         std::vector<Instance> instances_;
         FlatHashTable<U128, InstanceId, U128Hash> instanceIndex_;
 
-        vectorPool<Box> boxes_;
-        vectorPool<Constraint> constraints_;
+        vectorPool<Shape::Box> boxes_;
+        vectorPool<Shape::Constraint> constraints_;
         vectorPool<BoxId> boxIds_;
         vectorPool<ObservedBoard::CellId> cells_;
         vectorPool<int> boxOf_;
