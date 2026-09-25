@@ -63,9 +63,9 @@ namespace mss {
 //
 //   约束的 boxIds 是池里一段连续区间，用项目统一的 vectorPool<BoxId>::vector 句柄表示
 //   —— 和 boxes_ / cells_ / boxOf_ 同一套词汇，不手搓 offset/count。
-//   两条不变量来自同一个事实 —— **一个格子的邻居上限是 8**：
-//     · Box::size <= kMaxBoxSize(8)：同签名格子都是同一数字的邻居，交集不超过 8；
-//     · 一条约束引用的 Box 数 <= kMaxConstraintBoxes(8)：邻居格至多 8 个，各自落在一个 Box 里。
+//   两条上限来自同一个事实 —— **一个格子的邻居上限是 8**（kMaxNeighbors）：
+//     · Box::size <= kMaxNeighbors：同签名的格子都是同一个数字的邻居，交集不超过它的邻居数；
+//     · 一条约束引用的 Box 数 <= kMaxNeighbors：邻居至多 8 个，每个邻居落在一个 Box 里。
 //   它们是**构建期校验**（assert），不是存储形态：区间长度由句柄的 size 自带，
 //   按实际引用数分配 → 没有定长浪费。
 //
@@ -130,8 +130,10 @@ namespace mss {
 
 struct Structure {
     // 一个格子的邻居上限是 8：Box 尺寸与每条约束引用的 Box 数都受它约束。
-    static constexpr int kMaxBoxSize = 8;         // Box 尺寸上限
-    static constexpr int kMaxConstraintBoxes = 8; // 一条约束引用的 Box 数上限
+    // 一个格子的邻居上限。两条推论都从这里来：
+    //   · 一个 Box 至多装 kMaxNeighbors 个格子（同签名 = 同一个数字的邻居）；
+    //   · 一条约束至多引用 kMaxNeighbors 个 Box（每个邻居落在一个 Box 里）。
+    static constexpr int kMaxNeighbors = 8;
 
     using ComponentId = int;
     using BoxId = int;
@@ -292,8 +294,8 @@ struct Structure {
         // ── buildComponent 的临时表（每个组件开工前清空）──
         FlatHashTable<U128, BoxId, U128Hash> hashBox; // 签名 → BoxId
         std::vector<int> boxOfCells;                  // 每个格子 → 它的 BoxId（-1 = 数字格）
-        std::vector<std::array<ObservedBoard::CellId, kMaxBoxSize>> buckets; // 按 Box 分桶
-        std::vector<std::uint8_t> bucketSize;         // 每桶实际格数（<= kMaxBoxSize）
+        std::vector<std::array<ObservedBoard::CellId, kMaxNeighbors>> buckets; // 按 Box 分桶
+        std::vector<std::uint8_t> bucketSize;         // 每桶实际格数（<= kMaxNeighbors）
         std::vector<char> boxUsed;                    // 按 BoxId：当前约束是否已记过它
     };
 

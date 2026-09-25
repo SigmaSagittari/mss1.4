@@ -162,14 +162,14 @@ Structure::InstanceId Structure::buildComponent(const std::vector<ObservedBoard:
             scratch.hashBox.emplace(hash, box);
         }
         ++shape.boxes_.span(pool.boxes_)[static_cast<std::size_t>(box)].size;
-        assert_(shape.boxes_.span(pool.boxes_)[static_cast<std::size_t>(box)].size <= kMaxBoxSize,
+        assert_(shape.boxes_.span(pool.boxes_)[static_cast<std::size_t>(box)].size <= kMaxNeighbors,
                 "Structure::buildComponent: Box 尺寸超过 8（同签名格子不可能超过一个数字的邻居数）");
         scratch.boxOfCells[i] = box;
         // 这一格的签名槽改存它的 BoxId（lo 位），供约束构造回查。
         cellHash[x][y] = U128{static_cast<std::uint64_t>(box), 0};
     }
 
-    // 2) 按 Box 把格子分桶（每桶 <= kMaxBoxSize）。
+    // 2) 按 Box 把格子分桶（每桶 <= kMaxNeighbors）。
     scratch.bucketSize.assign(shape.boxes_.size, 0);
     if (scratch.buckets.size() < static_cast<std::size_t>(shape.boxes_.size))
         scratch.buckets.resize(shape.boxes_.size);
@@ -216,7 +216,7 @@ Structure::InstanceId Structure::buildComponent(const std::vector<ObservedBoard:
         });
         for (BoxId box : boxIds.span(pool.boxIds_))
             scratch.boxUsed[static_cast<std::size_t>(box)] = 0;
-        assert_(boxIds.size <= kMaxConstraintBoxes,
+        assert_(boxIds.size <= kMaxNeighbors,
                 "Structure::buildComponent: 约束引用的 Box 数超过 8（一个数字最多 8 个邻居）");
         shape.constraints_.push_back(pool.constraints_, Shape::Constraint{sum, boxIds});
         instance.constraintCells_.push_back(pool.constraintCells_, cell);
