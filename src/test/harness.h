@@ -16,7 +16,7 @@ inline void harness() {
     // Basic：局部确定性推理、标记传播和增量更新的功能回归。
     // basic();
     // Bruteforce：极端残局下的性能测试。
-    //bruteforce();
+    bruteforce();
     // FlatHashTable：平坦哈希表的增长、查找和 clear 后复用回归。
     // flatHashtable();
     // ObservedBoard：棋盘观测、翻开更新和边界状态的功能回归。
@@ -24,7 +24,7 @@ inline void harness() {
     // ProbabilityCase：人工构造的极端概率盘面压力测试，不代表通用性能。
     //probabilityCase();
     // Performance：固定种子随机实战盘面，完整概率分析链路的 40 秒吞吐基线。
-     performance();
+     //performance();
     // RadixSort：基数排序的功能与固定数据性能回归。
     // radixSort();
     // Structure：组件拆分、Box 压缩、池化和增量 Delta 回放的功能回归。

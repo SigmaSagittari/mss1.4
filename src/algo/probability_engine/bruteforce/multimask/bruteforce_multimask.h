@@ -675,17 +675,23 @@ inline int BruteForce::MultiMaskSolver<Mask>::solve(const BruteForce::CommonSess
                 upper = (std::max)(upper, n - deaths[candidate]);
                 break;
             }
+            // 不分裂的候选无需写九个桶；安全揭示数字出现两种即可停止预查。
+            int reveals = 0;
+            for (ConfigId config : configs) {
+                const int reveal = s.revealByConfig[config][candidate];
+                if (reveal != 9)
+                    reveals |= 1 << reveal;
+                if (reveals & (reveals - 1))
+                    break;
+            }
+            if ((reveals & (reveals - 1)) == 0)
+                continue;
             // 按揭示数字分桶：认为候选是雷的方案直接出局，不进任何桶，
             // 故所有桶的规模之和 = n - deaths[candidate]。
             std::array<std::vector<ConfigId>, 9> &groups = buf.groups;
             for (std::vector<ConfigId> &group : groups)
                 group.clear();
-            const int groupCount = groupByReveal(s, configs, candidate, groups);
-            if (groupCount <= 1) {
-                // 不分裂候选不会产生新的信息分支；不更新 upper，供末尾识别所有
-                // 候选都不分裂的精确终局。
-                continue;
-            }
+            groupByReveal(s, configs, candidate, groups);
             std::vector<std::pair<int, int>> &groupList = buf.groupList;
             groupList.clear();
             for (int reveal = 0; reveal < 9; ++reveal)
