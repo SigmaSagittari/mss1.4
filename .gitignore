@@ -365,3 +365,12 @@ FodyWeavers.xsd
 
 # mss1.5 本地构建目录（CMake/手工编译输出）
 /build/
+
+# CMake / VS 用户级与本地产物（mss1.5）
+CMakeUserPresets.json
+CMakeSettings.json
+CMakeFiles/
+CMakeCache.txt
+compile_commands.json
+vcpkg_installed/
+*.sln.docstates

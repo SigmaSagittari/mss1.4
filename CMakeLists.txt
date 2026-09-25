@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.25)
 project(mss LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -21,3 +21,6 @@ else()
     target_compile_options(mss PRIVATE -Wall -Wextra -Wold-style-cast)
     target_compile_options(mss_tests PRIVATE -Wall -Wextra -Wold-style-cast)
 endif()
+
+enable_testing()
+add_test(NAME board_transitions COMMAND mss_tests)
