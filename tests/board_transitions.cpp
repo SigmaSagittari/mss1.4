@@ -37,7 +37,7 @@ constexpr std::array<TransitionCase, 13> kTransitions{{
     {State::ForcedMine, State::ForcedSafe, false, "改判（1.4 不允许，见 D2）"},
     {State::Num0, State::Num1, false, "已翻开的数字不能再被 update 改写"},
     {State::Hidden, State::Hidden, false, "update 永远不能把格子置回 Hidden"},
-    {State::Num3, State::Hidden, false, "撤销只能走 applyDelta(reverse=true)"},
+    {State::Num3, State::Hidden, false, "撤销只能走 reverseDelta"},
     {State::ForcedSafe, State::Hidden, false, "同上"},
     {State::ForcedMine, State::Num1, false, "断言过的格子不能再翻开"},
 }};

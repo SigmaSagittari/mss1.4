@@ -28,7 +28,7 @@ namespace mss {
 //
 // 【唯一合法迁移】
 //   Hidden → 任意非 Hidden。没有第二条。
-//   撤销只能走 applyDelta(reverse=true)。
+//   撤销只能走 reverseDelta。
 //   重复 update 同一格（Num3 → Num3）、改判（ForcedMine → ForcedSafe）、
 //   把格子置回 Hidden —— 全部是调用方 bug，assert 杀死进程，绝不静默回退。
 //   规则的唯一真相是 isLegalTransition()；测试穷举 12×12 全表。
