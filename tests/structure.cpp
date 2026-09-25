@@ -19,7 +19,7 @@ using State = mss::ObservedBoard::CellState;
 using Structure = mss::Structure;
 
 Structure::ShapeId shapeOf(const Structure::Pool &pool, const Structure::Result &result, int component) {
-    return pool.instanceShape(result.components[static_cast<std::size_t>(component)]);
+    return pool.instance(result.components[static_cast<std::size_t>(component)]).shapeId();
 }
 
 // ───────────────────────── 基础正确性 ─────────────────────────
@@ -46,23 +46,23 @@ void testSingleBox() {
 
     check(result.components.size() == 1, "应该恰好一个组件");
     const Structure::ShapeId shape = shapeOf(pool, result, 0);
-    check(pool.shapeBoxCount(shape) == 1, "三个同签名格应该压成一个 Box");
-    check(pool.shapeBoxSize(shape, 0) == 3, "Box 尺寸 = 3");
-    check(pool.shapeConstraintCount(shape) == 1, "一个数字一条约束");
-    const Structure::Shape::ConstraintView constraint = pool.shapeConstraint(shape, 0);
+    check(pool.shape(shape).boxCount() == 1, "三个同签名格应该压成一个 Box");
+    check(pool.shape(shape).boxSize(pool, 0) == 3, "Box 尺寸 = 3");
+    check(pool.shape(shape).constraintCount() == 1, "一个数字一条约束");
+    const Structure::Shape::ConstraintView constraint = pool.shape(shape).constraint(pool, 0);
     check(constraint.sum == 1, "sum = 数字值 - 邻域已知雷数");
     check(constraint.boxIds.size() == 1, "约束引用 1 个 Box");
     check(constraint.boxIds[0] == 0, "引用的就是那个 Box");
 
     const Structure::InstanceId instance = result.components[0];
-    check(pool.instanceBoxCount(instance) == 1, "实例 1 个 Box");
-    check(pool.instanceBoxCellCount(instance, 0) == 3, "实例 Box 里 3 个格子");
-    check(pool.instanceConstraintCell(instance, 0) == board.id(0, 0), "约束对应数字格 (0,0)");
+    check(pool.instance(instance).boxCount() == 1, "实例 1 个 Box");
+    check(pool.instance(instance).boxCellCount(pool, 0) == 3, "实例 Box 里 3 个格子");
+    check(pool.instance(instance).constraintCell(pool, 0) == board.id(0, 0), "约束对应数字格 (0,0)");
 
     // Box 内格子集合（与顺序无关地比较）
     std::vector<Cell> cells;
-    for (int i = 0; i < pool.instanceBoxCellCount(instance, 0); ++i)
-        cells.push_back(pool.instanceBoxCell(instance, 0, i));
+    for (int i = 0; i < pool.instance(instance).boxCellCount(pool, 0); ++i)
+        cells.push_back(pool.instance(instance).boxCell(pool, 0, i));
     std::sort(cells.begin(), cells.end());
     const std::vector<Cell> expected{board.id(0, 1), board.id(1, 0), board.id(1, 1)};
     check(cells == expected, "Box 内就是那三个候选格");
@@ -83,8 +83,8 @@ void testBoxSizeEight() {
 
     check(result.components.size() == 1, "一个组件");
     const Structure::ShapeId shape = shapeOf(pool, result, 0);
-    check(pool.shapeBoxCount(shape) == 1 && pool.shapeBoxSize(shape, 0) == 8, "八个同签名格压成一个尺寸 8 的 Box");
-    const Structure::Shape::ConstraintView center = pool.shapeConstraint(shape, 0);
+    check(pool.shape(shape).boxCount() == 1 && pool.shape(shape).boxSize(pool, 0) == 8, "八个同签名格压成一个尺寸 8 的 Box");
+    const Structure::Shape::ConstraintView center = pool.shape(shape).constraint(pool, 0);
     check(center.sum == 2 && center.boxIds.size() == 1, "约束 sum=2、引用 1 个 Box");
 }
 
@@ -99,30 +99,30 @@ void testTwoNumbersThreeBoxes() {
 
     check(result.components.size() == 1, "两个数字通过共同的候选格连成一个组件");
     const Structure::ShapeId shape = shapeOf(pool, result, 0);
-    check(pool.shapeBoxCount(shape) == 3, "三种签名 → 三个 Box");
+    check(pool.shape(shape).boxCount() == 3, "三种签名 → 三个 Box");
 
     std::vector<int> sizes;
-    for (Structure::BoxId box = 0; box < pool.shapeBoxCount(shape); ++box)
-        sizes.push_back(pool.shapeBoxSize(shape, box));
+    for (Structure::BoxId box = 0; box < pool.shape(shape).boxCount(); ++box)
+        sizes.push_back(pool.shape(shape).boxSize(pool, box));
     std::sort(sizes.begin(), sizes.end());
     check(sizes == std::vector<int>({1, 2, 2}), "Box 尺寸多重集 = {1,2,2}");
-    check(pool.shapeConstraintCount(shape) == 2, "两个数字两条约束");
+    check(pool.shape(shape).constraintCount() == 2, "两个数字两条约束");
 
-    for (std::size_t i = 0; i < pool.shapeConstraintCount(shape); ++i) {
-        const Structure::Shape::ConstraintView constraint = pool.shapeConstraint(shape, i);
+    for (std::size_t i = 0; i < pool.shape(shape).constraintCount(); ++i) {
+        const Structure::Shape::ConstraintView constraint = pool.shape(shape).constraint(pool, i);
         check(constraint.sum == 1, "两条约束 sum 都是 1");
         check(constraint.boxIds.size() == 2, "每个数字都邻接两个 Box");
         int total = 0;
         for (Structure::BoxId box : constraint.boxIds)
-            total += pool.shapeBoxSize(shape, box);
+            total += pool.shape(shape).boxSize(pool, box);
         check(total == 3, "约束引用的 Box 一共覆盖 3 个候选格");
     }
 
     const Structure::BoxId middle = result.cellLoc[static_cast<std::size_t>(board.id(1, 1))].box;
     check(middle >= 0, "(1,1) 属于某个 Box");
-    for (std::size_t i = 0; i < pool.shapeConstraintCount(shape); ++i) {
+    for (std::size_t i = 0; i < pool.shape(shape).constraintCount(); ++i) {
         bool referenced = false;
-        for (Structure::BoxId box : pool.shapeConstraint(shape, i).boxIds)
+        for (Structure::BoxId box : pool.shape(shape).constraint(pool, i).boxIds)
             if (box == middle)
                 referenced = true;
         check(referenced, "(1,1) 所在的 Box 必须被两条约束同时引用");
@@ -164,18 +164,18 @@ Structure::Result canonicalize(const Structure::Result &result, const Structure:
     for (std::size_t i = 0; i < count; ++i) {
         const Structure::InstanceId instance = result.components[i];
         Cell best = -1;
-        const int boxCount = pool.instanceBoxCount(instance);
+        const int boxCount = pool.instance(instance).boxCount();
         for (Structure::BoxId box = 0; box < boxCount; ++box) {
-            const int cellCount = pool.instanceBoxCellCount(instance, box);
+            const int cellCount = pool.instance(instance).boxCellCount(pool, box);
             for (int k = 0; k < cellCount; ++k) {
-                const Cell cell = pool.instanceBoxCell(instance, box, k);
+                const Cell cell = pool.instance(instance).boxCell(pool, box, k);
                 if (best == -1 || cell < best)
                     best = cell;
             }
         }
-        const std::size_t constraintCount = pool.instanceConstraintCellCount(instance);
+        const std::size_t constraintCount = pool.instance(instance).constraintCellCount();
         for (std::size_t k = 0; k < constraintCount; ++k) {
-            const Cell cell = pool.instanceConstraintCell(instance, k);
+            const Cell cell = pool.instance(instance).constraintCell(pool, k);
             if (best == -1 || cell < best)
                 best = cell;
         }

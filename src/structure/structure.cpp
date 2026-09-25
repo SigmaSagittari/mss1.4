@@ -97,17 +97,17 @@ U128 Structure::cellSignature(int x, int y, const ObservedBoard::Result &board) 
 
 U128 Structure::computeHash(const Shape &shape, const Pool &pool) {
     U128Hasher hasher;
-    const std::span<const Shape::Box> boxes = shape.boxes_.span(pool.boxes_);
-    hasher.mix(static_cast<std::uint64_t>(boxes.size()));
-    for (const Shape::Box &box : boxes)
-        hasher.mix(static_cast<std::uint64_t>(box.size));
-    const std::span<const Shape::Constraint> constraints = shape.constraints_.span(pool.constraints_);
-    hasher.mix(static_cast<std::uint64_t>(constraints.size()));
-    for (const Shape::Constraint &constraint : constraints) {
+    const int boxCount = shape.boxCount();
+    hasher.mix(static_cast<std::uint64_t>(boxCount));
+    for (BoxId box = 0; box < boxCount; ++box)
+        hasher.mix(static_cast<std::uint64_t>(shape.boxSize(pool, box)));
+    const std::size_t constraintCount = shape.constraintCount();
+    hasher.mix(static_cast<std::uint64_t>(constraintCount));
+    for (std::size_t i = 0; i < constraintCount; ++i) {
+        const Shape::ConstraintView constraint = shape.constraint(pool, i);
         hasher.mix(static_cast<std::uint64_t>(constraint.sum));
-        const std::span<const BoxId> boxIds = constraint.boxIds.span(pool.boxIds_);
-        hasher.mix(static_cast<std::uint64_t>(boxIds.size()));
-        for (BoxId box : boxIds)
+        hasher.mix(static_cast<std::uint64_t>(constraint.boxIds.size()));
+        for (BoxId box : constraint.boxIds)
             hasher.mix(static_cast<std::uint64_t>(box) + kMixStride);
     }
     return hasher.finalize();
@@ -227,23 +227,25 @@ Structure::InstanceId Structure::buildComponent(const std::vector<ObservedBoard:
 }
 
 void Structure::remapInstance(InstanceId instance, ComponentId component, const Pool &pool, std::vector<CellLocation> &cellLoc) {
-    const int boxCount = pool.instanceBoxCount(instance);
+    const Instance &data = pool.instance(instance);
+    const int boxCount = data.boxCount();
     for (BoxId box = 0; box < boxCount; ++box) {
-        const int count = pool.instanceBoxCellCount(instance, box);
+        const int count = data.boxCellCount(pool, box);
         for (int i = 0; i < count; ++i)
-            cellLoc[pool.instanceBoxCell(instance, box, i)] = CellLocation{component, box};
+            cellLoc[data.boxCell(pool, box, i)] = CellLocation{component, box};
     }
-    const std::size_t constraintCount = pool.instanceConstraintCellCount(instance);
+    const std::size_t constraintCount = data.constraintCellCount();
     for (std::size_t i = 0; i < constraintCount; ++i)
-        cellLoc[pool.instanceConstraintCell(instance, i)] = CellLocation{component, -1};
+        cellLoc[data.constraintCell(pool, i)] = CellLocation{component, -1};
 }
 
 void Structure::clearInstance(InstanceId instance, const Pool &pool, std::vector<CellLocation> &cellLoc) {
-    for (ObservedBoard::CellId cell : pool.instanceCells(instance))
+    const Instance &data = pool.instance(instance);
+    for (ObservedBoard::CellId cell : data.cells(pool))
         cellLoc[cell] = CellLocation{};
-    const std::size_t constraintCount = pool.instanceConstraintCellCount(instance);
+    const std::size_t constraintCount = data.constraintCellCount();
     for (std::size_t i = 0; i < constraintCount; ++i)
-        cellLoc[pool.instanceConstraintCell(instance, i)] = CellLocation{};
+        cellLoc[data.constraintCell(pool, i)] = CellLocation{};
 }
 
 // ── 公开接口 ──
@@ -309,20 +311,20 @@ void Structure::update(Result &result, Delta &delta, const ObservedBoard::Result
     // 让一个组件整体失效：抹掉它的 cellLoc 映射，并把它所有格子标脏。
     auto invalidate = [&](ComponentId component) {
         scratch.removed[static_cast<std::size_t>(component)] = 1;
-        const InstanceId instance = result.components[static_cast<std::size_t>(component)];
-        const int boxCount = pool.instanceBoxCount(instance);
+        const Instance &data = pool.instance(result.components[static_cast<std::size_t>(component)]);
+        const int boxCount = data.boxCount();
         for (BoxId box = 0; box < boxCount; ++box) {
-            const int count = pool.instanceBoxCellCount(instance, box);
+            const int count = data.boxCellCount(pool, box);
             for (int i = 0; i < count; ++i) {
-                const ObservedBoard::CellId cell = pool.instanceBoxCell(instance, box, i);
+                const ObservedBoard::CellId cell = data.boxCell(pool, box, i);
                 const auto [x, y] = board.pos(cell);
                 markDirty(x, y);
                 result.cellLoc[cell] = CellLocation{};
             }
         }
-        const std::size_t constraintCount = pool.instanceConstraintCellCount(instance);
+        const std::size_t constraintCount = data.constraintCellCount();
         for (std::size_t i = 0; i < constraintCount; ++i) {
-            const ObservedBoard::CellId cell = pool.instanceConstraintCell(instance, i);
+            const ObservedBoard::CellId cell = data.constraintCell(pool, i);
             const auto [x, y] = board.pos(cell);
             markDirty(x, y);
             result.cellLoc[cell] = CellLocation{};

@@ -21,11 +21,11 @@ namespace mss {
 // ── 30 秒导读（细节见下方完整契约）─────────────────────────────────
 //   干什么  把"数字 ↔ H 候选"的约束图切成组件；组件内把邻接数字集合相同的
 //           H 格压成一个 Box。下游只枚举 Box 雷数，不枚举每格雷位。
-//   怎么读  消费者只用 Pool 的访问器（不再自己解句柄）：
-//             Shape 侧：shapeCount / shapeBoxCount / shapeBoxSize /
-//                       shapeConstraintCount / shapeConstraint（返回 {sum, span<BoxId>}）
-//             Instance 侧：instanceBoxCount / instanceBoxCellCount / instanceBoxCell /
-//                       instanceCells（span）/ instanceCellsData（裸指针）/ instanceShape
+//   怎么读  读属性挂在 Shape / Instance 自己身上，需要的池当参数传进去（对象不存池指针）：
+//             pool.shape(ShapeId)       -> boxCount() / boxSize(pool,b) /
+//                                          constraintCount() / constraint(pool,i)
+//             pool.instance(InstanceId) -> boxCount() / boxCellCount(pool,b) / boxCell(pool,b,i) /
+//                                          cells(pool)（span）/ cellsData(pool) / shapeId()
 //           遍历组件：result.components（InstanceId 列表）+ result.cellLoc[cell]
 //   记四句  · ComponentId 会变；BoxId 是 Shape 内局部；ShapeId/InstanceId 稳定。
 //           · 存的是句柄（Shape::Constraint），取的是投影（Shape::ConstraintView）。
@@ -53,9 +53,9 @@ namespace mss {
 //   Instance 是 Shape 在具体盘面上的落位：哪个 Box 有哪些真实格子、哪条约束对应哪个数字格。
 //   对应关系：两者 Box 数相同；Shape 的第 i 条约束 ↔ Instance 的第 i 个 constraintCell（同序）。
 //
-// 【Box 与约束】两者都挂在 Shape 下：Shape::Box / Shape::Constraint（存储态）+
-//   Shape::ConstraintView（投影态）。四个**句柄**留在 Structure 层，因为它们是
-//   跨 Shape / Instance / Pool / Result 的共享词汇。
+// 【Box 与约束】都挂在 Shape 下。对外只有 Shape::ConstraintView（sum + 一段 BoxId）；
+//   存储态（Shape::Box / Shape::Constraint）是 Shape 的私有实现，只有 Pool / Structure 碰得到。
+//   四个**句柄**留在 Structure 层，因为它们是跨 Shape / Instance / Pool / Result 的共享词汇。
 //   Box    邻接数字集合完全相同的 H 格集合。
 //   约束   sum    = 数字值 − 该数字邻域内已被确定的雷数（Basic 的 F 标记）
 //          boxIds = 该数字邻接到的 Box 集合（按邻域遍历顺序去重；区间长度可为 0，
@@ -102,6 +102,7 @@ namespace mss {
 //   · 只增不删：intern* 只追加；只有 clear() 会重置（此时全部句柄作废）。
 //   · clear() 保留全部底层容量（重置游戏时不重新分配）。
 //   · analyze 不清空 Pool：跨盘面复用同一个池是允许的（按内容去重）。
+
 //
 // 【analyze / update 的前置条件】
 //   · update 之前，updates 必须已由 ObservedBoard::update 应用到 board、且 Basic 已同步更新。
@@ -152,24 +153,40 @@ struct Structure {
 
     // 与坐标无关的约束形状（按内容 interning 去重）。
     struct Shape {
-        // 一个 Box：邻接数字集合完全相同的 H 格集合。
-        struct Box {
-            int size = 0;
-        };
-
-        // 存储态：sum + 池里一段 BoxId 区间的句柄。
-        struct Constraint {
-            int sum = 0;
-            vectorPool<BoxId>::vector boxIds; // 本约束引用到的 Box 集合（池里一段区间）
-        };
-
-        // 投影态：同一个 Constraint 解析后的样子。消费者用这个遍历，别自己解句柄。
+        // 消费者看到的约束：sum + 引用到的 Box 集合。
+        // 存储态（下面的私有 Constraint）是句柄，因为要跨池扩容；对外只有这一个形态。
         struct ConstraintView {
             int sum = 0;
             std::span<const BoxId> boxIds;
         };
 
+        // 读自己。句柄要经池解成 span，所以需要的池当参数传进来（对象不存池指针）。
+        int boxCount() const {
+            return static_cast<int>(boxes_.size);
+        }
+        int boxSize(const Pool &pool, BoxId box) const {
+            return boxes_.span(pool.boxes_)[box].size;
+        }
+        std::size_t constraintCount() const {
+            return constraints_.size;
+        }
+        ConstraintView constraint(const Pool &pool, std::size_t index) const {
+            const Constraint &constraint = constraints_.span(pool.constraints_)[index];
+            return {constraint.sum, constraint.boxIds.span(pool.boxIds_)};
+        }
+
       private:
+        // 一个 Box：邻接数字集合完全相同的 H 格集合。
+        struct Box {
+            int size = 0;
+        };
+
+        // 约束的存储态：sum + 池里一段 BoxId 区间的句柄。
+        struct Constraint {
+            int sum = 0;
+            vectorPool<BoxId>::vector boxIds;
+        };
+
         vectorPool<Box>::vector boxes_;
         vectorPool<Constraint>::vector constraints_;
         vectorPool<BoxId>::vector boxIds_; // 本 Shape 全部约束的 Box 引用，首尾相接
@@ -181,6 +198,36 @@ struct Structure {
 
     // Shape 在具体盘面上的落位。
     struct Instance {
+        // 读自己（同上：需要的池当参数传进来）。
+        ShapeId shapeId() const {
+            return shape_;
+        }
+        int boxCount() const {
+            return static_cast<int>(boxOf_.size) - 1;
+        }
+        int boxCellCount(const Pool &pool, BoxId box) const {
+            const std::span<const int> offsets = boxOf_.span(pool.boxOf_);
+            return offsets[box + 1] - offsets[box];
+        }
+        ObservedBoard::CellId boxCell(const Pool &pool, BoxId box, int index) const {
+            const std::span<const int> offsets = boxOf_.span(pool.boxOf_);
+            return cells_.span(pool.cells_)[offsets[box] + index];
+        }
+        // 整段格子（按 Box 连续）；有效期见【Pool：读写边界与 span 生命周期】
+        std::span<const ObservedBoard::CellId> cells(const Pool &pool) const {
+            return cells_.span(pool.cells_);
+        }
+        // 循环外提升 base 用；同上有效期
+        const ObservedBoard::CellId *cellsData(const Pool &pool) const {
+            return cells_.span(pool.cells_).data();
+        }
+        std::size_t constraintCellCount() const {
+            return constraintCells_.size;
+        }
+        ObservedBoard::CellId constraintCell(const Pool &pool, std::size_t index) const {
+            return constraintCells_.span(pool.constraintCells_)[index];
+        }
+
       private:
         ShapeId shape_ = -1;
         vectorPool<ObservedBoard::CellId>::vector cells_;
@@ -207,53 +254,18 @@ struct Structure {
     };
 
     struct Pool {
-        // ── 读：Shape 侧 ──
-        // 全部 inline 在头文件里：消费者的内层循环要能真正内联掉它们。
+        // 拿对象；读它的数据走 Shape / Instance 自己的方法（池当参数传进去）。
+        const Shape &shape(ShapeId id) const {
+            return shapes_[id];
+        }
+        const Instance &instance(InstanceId id) const {
+            return instances_[id];
+        }
+        // 池里的 Shape 数量（interning 去重的回归检查用它）。
         std::size_t shapeCount() const {
             return shapes_.size();
         }
-        int shapeBoxCount(ShapeId shape) const {
-            return static_cast<int>(shapes_[shape].boxes_.size);
-        }
-        int shapeBoxSize(ShapeId shape, BoxId box) const {
-            return shapes_[shape].boxes_.span(boxes_)[box].size;
-        }
-        std::size_t shapeConstraintCount(ShapeId shape) const {
-            return shapes_[shape].constraints_.size;
-        }
-        Shape::ConstraintView shapeConstraint(ShapeId shape, std::size_t index) const {
-            const Shape::Constraint &constraint = shapes_[shape].constraints_.span(constraints_)[index];
-            return {constraint.sum, constraint.boxIds.span(boxIds_)};
-        }
 
-        // ── 读：Instance 侧 ──
-        ShapeId instanceShape(InstanceId instance) const {
-            return instances_[instance].shape_;
-        }
-        int instanceBoxCount(InstanceId instance) const {
-            return static_cast<int>(instances_[instance].boxOf_.size) - 1;
-        }
-        int instanceBoxCellCount(InstanceId instance, BoxId box) const {
-            const std::span<const int> offsets = instances_[instance].boxOf_.span(boxOf_);
-            return offsets[box + 1] - offsets[box];
-        }
-        ObservedBoard::CellId instanceBoxCell(InstanceId instance, BoxId box, int index) const {
-            const std::span<const int> offsets = instances_[instance].boxOf_.span(boxOf_);
-            return instances_[instance].cells_.span(cells_)[offsets[box] + index];
-        }
-        // 循环外提升 base 用；有效期见【Pool：读写边界与 span 生命周期】
-        const ObservedBoard::CellId *instanceCellsData(InstanceId instance) const {
-            return instances_[instance].cells_.span(cells_).data();
-        }
-        std::span<const ObservedBoard::CellId> instanceCells(InstanceId instance) const {
-            return instances_[instance].cells_.span(cells_);
-        }
-        std::size_t instanceConstraintCellCount(InstanceId instance) const {
-            return instances_[instance].constraintCells_.size;
-        }
-        ObservedBoard::CellId instanceConstraintCell(InstanceId instance, std::size_t index) const {
-            return instances_[instance].constraintCells_.span(constraintCells_)[index];
-        }
 
         // 保留全部底层容量，使所有句柄与 span 失效（重置游戏用）。
         void clear();
@@ -276,6 +288,8 @@ struct Structure {
         vectorPool<ObservedBoard::CellId> constraintCells_;
 
         friend struct Structure;
+        friend struct Shape;
+        friend struct Instance;
     };
 
     // analyze / update 的复用缓冲（聚合在 mss::Workspace 的 structure 成员）。
