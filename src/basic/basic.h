@@ -27,7 +27,7 @@ namespace mss {
 //   safeHideCount = #(S ∧ 未翻开)。即"现在就能安全点开的格数"。
 //                   已翻开的数字格虽然也标 S，但不计入。
 //
-// 【两张加速表】Result::mineAround / hideAround —— 内部状态，外部不得读，
+// 【两张加速表】Result 的 private 成员 mineAround / hideAround —— 只有 Basic 能读写，
 //   由 analyze 建立、由 update / applyDelta / reverseDelta 增量维护。
 //   mineAround[x][y] = (x,y) 的 8 邻域中 F 的个数
 //   hideAround[x][y] = (x,y) 的 8 邻域中候选（H|T）的个数
@@ -80,9 +80,16 @@ struct Basic {
         int safeHideCount = 0; // #(S ∧ 未翻开)
         bool valid = true;
 
-        // 内部加速状态（见契约）。外部不得读。
+        // 全字段比较（含内部加速表）：增量维护的回归检查用它，
+        // 这样内部状态不必暴露给外部。
+        bool sameAs(const Result &other) const;
+
+      private:
+        // 内部加速状态（见契约）。只有 Basic 自己能读写。
         Grid<std::int8_t> mineAround;
         Grid<std::int8_t> hideAround;
+
+        friend struct Basic;
     };
 
     struct Delta {
@@ -105,7 +112,7 @@ struct Basic {
     };
 
     // 全量构建：初始标记 → 传播到不动点 → 建加速表 → 数字约束与总雷数终检。
-    static Result analyze(const ObservedBoard::Result &board);
+    static Result analyze(const ObservedBoard::Result &board, Workspace &workspace);
 
     // 增量传播一批新观测，并写出可回放的 Delta。
     static void update(Result &result, Delta &delta, const ObservedBoard::Result &board,

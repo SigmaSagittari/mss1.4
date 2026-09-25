@@ -28,22 +28,11 @@ mss::ObservedBoard::Result makeBoard(int rows, int cols, int mines,
     return board;
 }
 
-// 逐字段比较，包含两张内部加速表 —— 增量维护出错就是在这里暴露。
-bool sameResult(const mss::Basic::Result &a, const mss::Basic::Result &b) {
-    if (a.rows != b.rows || a.cols != b.cols || a.unknownSum != b.unknownSum || a.mineSum != b.mineSum ||
-        a.safeHideCount != b.safeHideCount || a.valid != b.valid)
-        return false;
-    for (int x = 0; x < a.rows; ++x)
-        for (int y = 0; y < a.cols; ++y)
-            if (a.marks[x][y] != b.marks[x][y] || a.mineAround[x][y] != b.mineAround[x][y] ||
-                a.hideAround[x][y] != b.hideAround[x][y])
-                return false;
-    return true;
-}
 
 void testInitialMarks() {
+    mss::Basic::Workspace workspace;
     const mss::ObservedBoard::Result board = makeBoard(3, 3, 1, {{0, 0, State::Num1}});
-    const mss::Basic::Result basic = mss::Basic::analyze(board);
+    const mss::Basic::Result basic = mss::Basic::analyze(board, workspace);
     check(basic.valid, "单个数字的盘面必须有效");
     check(basic.marks[0][0] == Mark::S, "已翻开的数字格标记为 S（非候选填充值）");
     check(basic.marks[0][1] == Mark::H && basic.marks[1][0] == Mark::H && basic.marks[1][1] == Mark::H,
@@ -55,10 +44,11 @@ void testInitialMarks() {
 }
 
 void testPropagation() {
+    mss::Basic::Workspace workspace;
     // 2x3、1 雷（在 (1,2)）：第一行全部翻开 → 0 推出两个安全格，1 再推出雷。
     const mss::ObservedBoard::Result board =
         makeBoard(2, 3, 1, {{0, 0, State::Num0}, {0, 1, State::Num1}, {0, 2, State::Num1}});
-    const mss::Basic::Result basic = mss::Basic::analyze(board);
+    const mss::Basic::Result basic = mss::Basic::analyze(board, workspace);
     check(basic.valid, "链式传播后必须有效");
     check(basic.marks[1][0] == Mark::S, "(0,0)=0 推出 (1,0) 安全");
     check(basic.marks[1][1] == Mark::S, "(0,0)=0 推出 (1,1) 安全");
@@ -67,15 +57,16 @@ void testPropagation() {
 }
 
 void testInvalidSources() {
+    mss::Basic::Workspace workspace;
     {
         // ① 传播中越界：0 的邻居被断言为雷。
         const mss::ObservedBoard::Result board = makeBoard(2, 2, 1, {{0, 0, State::Num0}, {0, 1, State::ForcedMine}});
-        check(!mss::Basic::analyze(board).valid, "数字 0 旁边出现确定雷 → invalid");
+        check(!mss::Basic::analyze(board, workspace).valid, "数字 0 旁边出现确定雷 → invalid");
     }
     {
         // ③ 总雷数终检：2x2 要放 3 颗雷，但 0 把三个邻居全推成安全。
         const mss::ObservedBoard::Result board = makeBoard(2, 2, 3, {{0, 0, State::Num0}});
-        check(!mss::Basic::analyze(board).valid, "推完后剩余候选放不下总雷数 → invalid");
+        check(!mss::Basic::analyze(board, workspace).valid, "推完后剩余候选放不下总雷数 → invalid");
     }
 }
 
@@ -106,9 +97,9 @@ int digitAt(int x, int y) {
 }
 
 void testIncrementalMatchesRebuild() {
-    mss::ObservedBoard::Result board = mss::ObservedBoard::analyze(kRows, kCols, 2);
-    mss::Basic::Result incremental = mss::Basic::analyze(board);
     mss::Basic::Workspace workspace;
+    mss::ObservedBoard::Result board = mss::ObservedBoard::analyze(kRows, kCols, 2);
+    mss::Basic::Result incremental = mss::Basic::analyze(board, workspace);
     int revealed = 0;
     for (int x = 0; x < kRows; ++x)
         for (int y = 0; y < kCols; ++y) {
@@ -120,19 +111,19 @@ void testIncrementalMatchesRebuild() {
             mss::Basic::Delta basicDelta;
             mss::Basic::update(incremental, basicDelta, board, boardDelta, workspace);
             ++revealed;
-            const mss::Basic::Result rebuilt = mss::Basic::analyze(board);
+            const mss::Basic::Result rebuilt = mss::Basic::analyze(board, workspace);
             check(rebuilt.valid, "真实雷局的每一步都必须有效");
-            check(sameResult(incremental, rebuilt), "增量结果必须与全量重建逐字段一致");
+            check(incremental.sameAs(rebuilt), "增量结果必须与全量重建逐字段一致（含内部加速表）");
         }
     check(revealed == kRows * kCols - 2, "翻开的非雷格数量");
 }
 
 void testDeltaRoundTrip() {
     // 3x3、1 雷（在 (0,2)）：逐步翻开 (0,0)=0、(0,1)=1、(1,1)=1。
-    mss::ObservedBoard::Result board = mss::ObservedBoard::analyze(3, 3, 1);
-    mss::Basic::Result live = mss::Basic::analyze(board);
-    const mss::Basic::Result initial = live;
     mss::Basic::Workspace workspace;
+    mss::ObservedBoard::Result board = mss::ObservedBoard::analyze(3, 3, 1);
+    mss::Basic::Result live = mss::Basic::analyze(board, workspace);
+    const mss::Basic::Result initial = live;
     std::vector<mss::Basic::Delta> deltas;
 
     constexpr int kReveal[3][2] = {{0, 0}, {0, 1}, {1, 1}};
@@ -150,24 +141,24 @@ void testDeltaRoundTrip() {
 
     for (int i = static_cast<int>(deltas.size()); i-- > 0;)
         mss::Basic::reverseDelta(live, deltas[static_cast<std::size_t>(i)]);
-    check(sameResult(live, initial), "全部反向回放后必须回到初始状态");
+    check(live.sameAs(initial), "全部反向回放后必须回到初始状态");
 
     for (const mss::Basic::Delta &delta : deltas)
         mss::Basic::applyDelta(live, delta);
-    check(sameResult(live, finalState), "正向重放后必须回到最终状态");
+    check(live.sameAs(finalState), "正向重放后必须回到最终状态");
 }
 
 void testForcedConflict() {
     // 0 颗雷：0 把三个邻居推成安全，此时盘面自洽；随后把其中一格断言为雷才产生冲突。
+    mss::Basic::Workspace workspace;
     mss::ObservedBoard::Result board = makeBoard(2, 2, 0, {{0, 0, State::Num0}});
-    mss::Basic::Result basic = mss::Basic::analyze(board);
+    mss::Basic::Result basic = mss::Basic::analyze(board, workspace);
     check(basic.valid && basic.marks[0][1] == Mark::S, "先决条件：(0,1) 已被推为安全");
 
     mss::ObservedBoard::Delta boardDelta;
     boardDelta.changes.push_back({board.id(0, 1), State::ForcedMine});
     mss::ObservedBoard::update(board, boardDelta);
     mss::Basic::Delta basicDelta;
-    mss::Basic::Workspace workspace;
     mss::Basic::update(basic, basicDelta, board, boardDelta, workspace);
     check(!basic.valid, "把已知安全的格断言为雷 → invalid（④）");
 }

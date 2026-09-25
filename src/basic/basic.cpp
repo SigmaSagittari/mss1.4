@@ -18,25 +18,26 @@ static bool isCandidate(Basic::Mark mark) {
 }
 
 // 增量修补邻域加速表（applyDelta / reverseDelta 用）：old -> now 对邻居计数的影响。
-static void accountNeighbors(Basic::Result &result, ObservedBoard::CellId cell, Basic::Mark old, Basic::Mark now) {
+// 只操作两张表本身，不需要访问 Result 的私有成员。
+static void accountNeighbors(Grid<std::int8_t> &mineAround, Grid<std::int8_t> &hideAround, int rows, int cols,
+                             ObservedBoard::CellId cell, Basic::Mark old, Basic::Mark now) {
     if ((old == Basic::Mark::F) == (now == Basic::Mark::F) && isCandidate(old) == isCandidate(now))
         return;
-    const int cols = result.cols;
     const int x = cell / cols;
     const int y = cell % cols;
-    forEachAdjacent(x, y, result.rows, cols, [&](int nx, int ny) {
+    forEachAdjacent(x, y, rows, cols, [&](int nx, int ny) {
         if (old == Basic::Mark::F)
-            --result.mineAround[nx][ny];
+            --mineAround[nx][ny];
         if (now == Basic::Mark::F)
-            ++result.mineAround[nx][ny];
+            ++mineAround[nx][ny];
         if (isCandidate(old))
-            --result.hideAround[nx][ny];
+            --hideAround[nx][ny];
         if (isCandidate(now))
-            ++result.hideAround[nx][ny];
+            ++hideAround[nx][ny];
     });
 }
 
-Basic::Result Basic::analyze(const ObservedBoard::Result &board) {
+Basic::Result Basic::analyze(const ObservedBoard::Result &board, Workspace &workspace) {
     Result result;
     result.rows = board.rows;
     result.cols = board.cols;
@@ -66,8 +67,9 @@ Basic::Result Basic::analyze(const ObservedBoard::Result &board) {
                         result.marks[nx][ny] = Mark::H;
                 });
 
-    // 传播到不动点。
-    std::vector<ObservedBoard::CellId> pending;
+    // 传播到不动点。pending 复用 workspace，跨调用不再分配。
+    std::vector<ObservedBoard::CellId> &pending = workspace.pending;
+    pending.clear();
     for (int x = 0; x < board.rows; ++x)
         for (int y = 0; y < board.cols; ++y)
             if (isNumber(board.board[x][y]))
@@ -271,10 +273,22 @@ void Basic::update(Result &result, Delta &delta, const ObservedBoard::Result &bo
     delta.after = {result.unknownSum, result.mineSum, result.safeHideCount, result.valid};
 }
 
+bool Basic::Result::sameAs(const Result &other) const {
+    if (rows != other.rows || cols != other.cols || unknownSum != other.unknownSum || mineSum != other.mineSum ||
+        safeHideCount != other.safeHideCount || valid != other.valid)
+        return false;
+    for (int x = 0; x < rows; ++x)
+        for (int y = 0; y < cols; ++y)
+            if (marks[x][y] != other.marks[x][y] || mineAround[x][y] != other.mineAround[x][y] ||
+                hideAround[x][y] != other.hideAround[x][y])
+                return false;
+    return true;
+}
+
 void Basic::applyDelta(Result &result, const Delta &delta) {
     for (const Delta::Change &change : delta.changes) {
         result.marks.data()[change.cell] = change.now;
-        accountNeighbors(result, change.cell, change.old, change.now);
+        accountNeighbors(result.mineAround, result.hideAround, result.rows, result.cols, change.cell, change.old,change.now);
     }
     result.unknownSum = delta.after.unknownSum;
     result.mineSum = delta.after.mineSum;
@@ -286,7 +300,7 @@ void Basic::reverseDelta(Result &result, const Delta &delta) {
     for (int i = static_cast<int>(delta.changes.size()); i-- > 0;) {
         const Delta::Change &change = delta.changes[i];
         result.marks.data()[change.cell] = change.old;
-        accountNeighbors(result, change.cell, change.now, change.old);
+        accountNeighbors(result.mineAround, result.hideAround, result.rows, result.cols, change.cell, change.now,change.old);
     }
     result.unknownSum = delta.before.unknownSum;
     result.mineSum = delta.before.mineSum;
