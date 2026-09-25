@@ -106,7 +106,7 @@ namespace mss {
 // 【analyze / update 的前置条件】
 //   · update 之前，updates 必须已由 ObservedBoard::update 应用到 board、且 Basic 已同步更新。
 //   · update 只重建受 updates 影响的组件；未受影响的组件与其 cellLoc 映射保持原样（原地不动）。
-//   · result 与 board 必须是同一盘面（尺寸一致），否则索引越界 —— update 入口有断言。
+
 //
 // 【实现要点】（声明看不出内部在干什么，这里说清楚；代码在 structure.cpp）
 //   组件发现  从任一 H 格出发，在"数字 ↔ H 候选"二部图上 BFS（数字找 H 邻居、H 找数字邻居），

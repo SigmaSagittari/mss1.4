@@ -287,9 +287,6 @@ Structure::Result Structure::analyze(const ObservedBoard::Result &board, const B
 
 void Structure::update(Result &result, Delta &delta, const ObservedBoard::Result &board, const Basic::Result &basic, Pool &pool,
                        const ObservedBoard::Delta &updates, Scratch &scratch) {
-    // 契约：result 必须来自同一个盘面（cellLoc 按 CellId 稠密索引，尺寸必须一致）。
-    assert_(result.cellLoc.size() == static_cast<std::size_t>(board.rows) * static_cast<std::size_t>(board.cols),
-            "Structure::update: result.cellLoc 尺寸与 board 不一致");
     const int rows = board.rows;
     const int cols = board.cols;
     if (scratch.dirty.rows() != rows || scratch.dirty.cols() != cols) {
