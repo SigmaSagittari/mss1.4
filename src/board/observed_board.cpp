@@ -28,9 +28,9 @@ void ObservedBoard::update(Result &board, const Delta &delta) {
     for (const Change &change : delta.changes) {
         // CellId 就是 Grid 的线性下标（契约），这里直接线性访问，不需要 pos()。
         CellState &target = board.board.data()[change.cell];
-        // 触发条件与 1.4 完全一致（next != Hidden 且 target == Hidden 的否定），
-        // 只是把两条断言合成一条、并给出更明确的补救提示。
-        assert_(isLegalTransition(target, change.next),
+        // 【唯一合法迁移】Hidden -> 非 Hidden。触发条件与 1.4 完全一致
+        // （next != Hidden 且 target == Hidden 的否定），只是信息更明确。
+        assert_(target == CellState::Hidden && change.next != CellState::Hidden,
                 "ObservedBoard::update: 非法迁移；只允许 Hidden -> 非 Hidden，撤销请用 reverseDelta");
         target = change.next;
     }

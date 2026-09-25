@@ -31,7 +31,8 @@ namespace mss {
 //   撤销只能走 reverseDelta。
 //   重复 update 同一格（Num3 → Num3）、改判（ForcedMine → ForcedSafe）、
 //   把格子置回 Hidden —— 全部是调用方 bug，assert 杀死进程，绝不静默回退。
-//   规则的唯一真相是 isLegalTransition()；测试穷举 12×12 全表。
+//   规则只写在 update 内部，不对外暴露查询接口：本项目不给"先问能不能做、
+//   再决定要不要做"的防御性预检查留口子。
 //
 // 【Delta 生命周期】
 //   changes 由调用方填充 {cell, next}。Delta 交给 update 之后即视为只读
@@ -69,10 +70,6 @@ struct ObservedBoard {
         ForcedSafe,
     };
 
-    // 唯一的迁移合法性规则。update 的断言与测试的穷举都读这一个函数。
-    static constexpr bool isLegalTransition(CellState from, CellState to) {
-        return from == CellState::Hidden && to != CellState::Hidden;
-    }
 
     struct Result {
         int rows = 0;
