@@ -65,8 +65,9 @@ struct Basic {
         F = 3,
     };
 
-    // 增量传播的工作区：跨调用复用容量，显式传入（不用 thread_local 全局）。
-    struct Workspace {
+    // 增量传播用的工作区片段：跨调用复用容量，显式传入（不用 thread_local 全局）。
+    // 聚合在 mss::Workspace（src/workspace.h）；调用点写作 workspace.basic。
+    struct Scratch {
         std::vector<ObservedBoard::CellId> pending;
         std::vector<unsigned char> queued; // 尺寸 rows*cols，按 CellId 直接索引
     };
@@ -112,11 +113,11 @@ struct Basic {
     };
 
     // 全量构建：初始标记 → 传播到不动点 → 建加速表 → 数字约束与总雷数终检。
-    static Result analyze(const ObservedBoard::Result &board, Workspace &workspace);
+    static Result analyze(const ObservedBoard::Result &board, Scratch &scratch);
 
     // 增量传播一批新观测，并写出可回放的 Delta。
     static void update(Result &result, Delta &delta, const ObservedBoard::Result &board,
-                       const ObservedBoard::Delta &updates, Workspace &workspace);
+                       const ObservedBoard::Delta &updates, Scratch &scratch);
 
     // 正向重放 / 反序回放：只回放标记与计数，不重新推理。
     static void applyDelta(Result &result, const Delta &delta);

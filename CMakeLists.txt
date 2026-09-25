@@ -12,6 +12,7 @@ set(CMAKE_SUPPRESS_REGENERATION ON)
 # 文件清单显式列出（头文件也要列，否则 VS 工程里看不到它们）
 set(MSS_SOURCES
     src/version.h
+    src/workspace.h
     src/basic/basic.h
     src/basic/basic.cpp
     src/board/observed_board.h

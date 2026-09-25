@@ -37,7 +37,7 @@ static void accountNeighbors(Grid<std::int8_t> &mineAround, Grid<std::int8_t> &h
     });
 }
 
-Basic::Result Basic::analyze(const ObservedBoard::Result &board, Workspace &workspace) {
+Basic::Result Basic::analyze(const ObservedBoard::Result &board, Scratch &scratch) {
     Result result;
     result.rows = board.rows;
     result.cols = board.cols;
@@ -68,7 +68,7 @@ Basic::Result Basic::analyze(const ObservedBoard::Result &board, Workspace &work
                 });
 
     // 传播到不动点。pending 复用 workspace，跨调用不再分配。
-    std::vector<ObservedBoard::CellId> &pending = workspace.pending;
+    std::vector<ObservedBoard::CellId> &pending = scratch.pending;
     pending.clear();
     for (int x = 0; x < board.rows; ++x)
         for (int y = 0; y < board.cols; ++y)
@@ -147,14 +147,14 @@ Basic::Result Basic::analyze(const ObservedBoard::Result &board, Workspace &work
 }
 
 void Basic::update(Result &result, Delta &delta, const ObservedBoard::Result &board,
-                   const ObservedBoard::Delta &updates, Workspace &workspace) {
+                   const ObservedBoard::Delta &updates, Scratch &scratch) {
     delta.changes.clear();
     delta.before = {result.unknownSum, result.mineSum, result.safeHideCount, result.valid};
 
     const int rows = board.rows;
     const int cols = board.cols;
-    std::vector<ObservedBoard::CellId> &pending = workspace.pending;
-    std::vector<unsigned char> &queued = workspace.queued;
+    std::vector<ObservedBoard::CellId> &pending = scratch.pending;
+    std::vector<unsigned char> &queued = scratch.queued;
     pending.clear();
     const std::size_t cellCount = static_cast<std::size_t>(rows) * static_cast<std::size_t>(cols);
     if (queued.size() != cellCount)
