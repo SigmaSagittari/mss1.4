@@ -29,6 +29,7 @@
     }
   ],
   "buildPresets": [
+    { "name": "vs", "configurePreset": "vs", "configuration": "Release" },
     { "name": "vs-debug", "configurePreset": "vs", "configuration": "Debug" },
     { "name": "vs-release", "configurePreset": "vs", "configuration": "Release" },
     { "name": "mingw", "configurePreset": "mingw" }
