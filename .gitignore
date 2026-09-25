@@ -362,3 +362,6 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 /build-mingw
+
+# mss1.5 本地构建目录（CMake/手工编译输出）
+/build/
