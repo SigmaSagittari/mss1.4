@@ -19,21 +19,31 @@ constexpr test::Case kCases[] = {
 } // namespace
 
 int main(int argc, char **argv) {
+    if (argc > 1 && std::strcmp(argv[1], "--list") == 0) {
+        for (const test::Case &c : kCases)
+            std::printf("%s\n", c.name);
+        return 0;
+    }
+
     std::printf("=== mss %s | %d case(s) ===\n", mss::kVersion, static_cast<int>(std::size(kCases)));
+    std::fflush(stdout);
+
     int ran = 0;
     for (const test::Case &c : kCases) {
         if (argc > 1 && std::strcmp(argv[1], c.name) != 0)
             continue;
-        const int failuresBefore = test::g_failures;
         std::printf("--- %s\n", c.name);
-        c.run();
+        std::fflush(stdout);
+        c.run(); // 失败会直接 exit(1)，不会继续跑后面的用例
         ++ran;
-        std::printf("    %s\n", test::g_failures == failuresBefore ? "ok" : "FAILED");
+        std::printf("    ok\n");
+        std::fflush(stdout);
     }
+
     if (argc > 1 && ran == 0) {
-        std::printf("no such case: %s\n", argv[1]);
+        std::printf("no such case: %s (use --list)\n", argv[1]);
         return 2;
     }
-    std::printf("%d check(s), %d failure(s), %d case(s) ran\n", test::g_checks, test::g_failures, ran);
-    return test::g_failures == 0 ? 0 : 1;
+    std::printf("%d check(s), all passed\n", test::g_checks);
+    return 0;
 }

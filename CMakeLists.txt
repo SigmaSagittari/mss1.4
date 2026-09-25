@@ -29,3 +29,6 @@ else()
     target_compile_options(mss PRIVATE -Wall -Wextra -Wold-style-cast)
     target_compile_options(mss_tests PRIVATE -Wall -Wextra -Wold-style-cast)
 endif()
+
+# VS 里 F5 默认启动 mss_tests（否则启动项目是 ALL_BUILD，它没有可执行输出）
+set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT mss_tests)

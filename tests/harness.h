@@ -1,23 +1,25 @@
 #pragma once
 
 #include <cstdio>
+#include <cstdlib>
 #include <source_location>
 #include <string_view>
 
 namespace test {
 
 inline int g_checks = 0;
-inline int g_failures = 0;
 
-// 失败只记录，不终止：一次跑完所有用例，最后看总数。
-// 与 mss::assert_ 不同 —— 后者是"调用契约被破坏，必须立刻死"，测试里不该用它。
+// 失败立刻终止：一旦某个不变量被破坏，后续检查都建立在错误状态上，
+// 继续跑只会刷屏并被误导。与 mss::assert_ 同一哲学 —— 违约即死，不静默。
+// 终止码 1 表示测试断言失败。
 inline void check(bool ok, std::string_view what, std::source_location location = std::source_location::current()) {
     ++g_checks;
     if (ok)
         return;
-    ++g_failures;
     std::printf("[FAIL] %.*s\n        at %s:%u\n", static_cast<int>(what.size()), what.data(), location.file_name(),
                 static_cast<unsigned>(location.line()));
+    std::fflush(stdout);
+    std::exit(1);
 }
 
 struct Case {
