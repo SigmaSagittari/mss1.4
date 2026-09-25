@@ -84,17 +84,17 @@ void testDeltaRoundTrip() {
 
     // 编译期契约：update 只读 Delta —— 传 const Delta 必须能编译并通过。
     const mss::ObservedBoard::Delta constDelta = delta;
-    mss::ObservedBoard::applyDelta(board, constDelta);
-    check(board.board[0][0] == State::Hidden && board.board[0][1] == State::Hidden, "撤销 = 恢复为 Hidden");
+    mss::ObservedBoard::reverseDelta(board, constDelta);
+    check(board.board[0][0] == State::Hidden && board.board[0][1] == State::Hidden, "reverseDelta = 恢复为 Hidden");
     mss::ObservedBoard::update(board, constDelta);
     check(board.board[0][0] == State::Num1 && board.board[0][1] == State::ForcedMine, "只读 Delta 也能应用");
 
-    // 逆序撤销（多格时从后往前；单格场景下顺序不可观测，但契约如此）
-    mss::ObservedBoard::applyDelta(board, delta);
-    check(board.board[0][0] == State::Hidden && board.board[0][1] == State::Hidden, "逆序撤销必须回到 Hidden");
+    // 反向撤销（多格时从后往前；单格场景下顺序不可观测，但契约如此）
+    mss::ObservedBoard::reverseDelta(board, delta);
+    check(board.board[0][0] == State::Hidden && board.board[0][1] == State::Hidden, "reverseDelta 必须回到 Hidden");
 
-    mss::ObservedBoard::applyDelta(board, delta, false);
-    check(board.board[0][0] == State::Num1 && board.board[0][1] == State::ForcedMine, "正序重放");
+    mss::ObservedBoard::applyDelta(board, delta);
+    check(board.board[0][0] == State::Num1 && board.board[0][1] == State::ForcedMine, "applyDelta 正向重放");
 
     delta.clear();
     check(delta.changes.empty() && delta.changes.capacity() == capacity, "clear 必须保留 capacity");

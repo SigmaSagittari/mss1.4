@@ -34,14 +34,13 @@ namespace mss {
 //   规则的唯一真相是 isLegalTransition()；测试穷举 12×12 全表。
 //
 // 【Delta 生命周期】
-//   changes 由调用方填充 {cell, next}。Delta 一旦交给 update 就被视为只读
-//   （update 签名是 const Delta&），update 不回写任何字段。
-//   一个 Delta 被 update 之后只能用于 applyDelta；再次当作"新更新"提交是 bug。
-//   applyDelta(reverse=false)：从前往后重放（测试/重放用）。
-//   applyDelta(reverse=true)：必须在该 Delta 对应的子状态上、从后往前撤销，
-//     语义是"把这些格恢复成 Hidden" —— 由【唯一合法迁移】决定，应用前必然是
-//     Hidden，所以不需要额外存一份旧状态。
-//   applyDelta 不修改 Delta。
+//   changes 由调用方填充 {cell, next}。Delta 交给 update 之后即视为只读
+//   （update 收 const Delta&），update 不回写任何字段。
+//   一个 Delta 被 update 之后只能交给 applyDelta / reverseDelta；再次当作
+//   "新更新"提交给 update 是 bug。
+//   applyDelta  ：从前往后把每格写成 next（不检查当前状态）。
+//   reverseDelta：从后往前把每格恢复成 Hidden。
+//   两者都不修改 Delta。
 //   clear() 只清空、保留 capacity（热路径复用契约）。
 //
 // 【Result】
@@ -99,25 +98,16 @@ struct ObservedBoard {
     };
 
     static Result analyze(int rows, int cols, int mines);
-    static void update(Result &board, const Delta &delta);
-    static void applyDelta(Result &board, const Delta &delta, bool reverse = true);
-};
 
-// ═══════════════════════════════════════════════════════════════════════
-// 【已定决策】（D1–D4 已拍板，以下即契约；改动需显式记录）
-//
-//   D1  Change::previous 已删除。反向应用 = 恢复为 Hidden（由唯一合法迁移决定，
-//       应用前必然是 Hidden），因此不需要存旧状态。
-//   D2  只允许 Hidden → 非 Hidden。幂等重复断言（ForcedMine → ForcedMine）
-//       与改判（ForcedMine → ForcedSafe）一律 assert —— 即 1.4 的行为。
-//       注：1.4 的 6 次 target must be Hidden 崩溃与这条同源，属"调用方违约"，
-//       不是本模块的 bug；重现与修复在调用方（见后续 policy 层审计）。
-//   D3  applyDelta 不加校验：在错误状态上回滚仍会静默污染。契约要求调用方
-//       "在该 Delta 对应的子状态上、从后往前撤销"。加校验留待诊断模块统一做。
-//   D4  update 的 Delta 参数为 const Delta&（Delta 只读）。
-//
-//   错误信息与 1.4 不同（合并为一条更明确的），触发条件完全相同。
-//   进程内无法验证"必须 abort"的用例（assert 会 exit）——留待子进程测试。
-// ═══════════════════════════════════════════════════════════════════════
+    // 把 Delta 施加到盘面：每格必须处于 Hidden（见【唯一合法迁移】）。
+    static void update(Result &board, const Delta &delta);
+    // 正向重放：每格写成 change.next（不检查当前状态；用于撤销后重放与测试）。
+    static void applyDelta(Result &board, const Delta &delta);
+    // 反向撤销：每格恢复成 Hidden，从 changes 末尾往前处理。
+    // 前提是【唯一合法迁移】（只允许 Hidden → 非 Hidden），所以"撤销"等价于
+    // "恢复 Hidden"，不必记录旧状态。一旦放开该规则（例如允许改判），本函数
+    // 必须改成依据 Delta 里显式记录的旧状态回滚。
+    static void reverseDelta(Result &board, const Delta &delta);
+};
 
 } // namespace mss
