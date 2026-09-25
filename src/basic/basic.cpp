@@ -1,5 +1,7 @@
 #include "basic/basic.h"
 
+#include "core/assert.h"
+
 namespace mss {
 
 // 已翻开的数字格：CellState::Num0..Num8 取值 0..8 且连续。
@@ -40,30 +42,20 @@ Basic::Result Basic::analyze(const ObservedBoard::Result &board) {
     result.cols = board.cols;
     result.marks.resize(board.rows, board.cols, Mark::S);
 
-    // 初始标记：显式覆盖全部 12 种 CellState，新增状态时由 -Wswitch 挡下。
+    // 初始标记：三个隐藏状态各有对应标记，已翻开的数字格保持 resize 的默认 S
+    // （"非候选"填充值）。末支断言兜住"将来新增 CellState 却忘了处理"。
     for (int x = 0; x < board.rows; ++x)
-        for (int y = 0; y < board.cols; ++y)
-            switch (board.board[x][y]) {
-            case ObservedBoard::CellState::Num0:
-            case ObservedBoard::CellState::Num1:
-            case ObservedBoard::CellState::Num2:
-            case ObservedBoard::CellState::Num3:
-            case ObservedBoard::CellState::Num4:
-            case ObservedBoard::CellState::Num5:
-            case ObservedBoard::CellState::Num6:
-            case ObservedBoard::CellState::Num7:
-            case ObservedBoard::CellState::Num8:
-                break; // 已翻开：保持 S 作为"非候选"填充值
-            case ObservedBoard::CellState::Hidden:
+        for (int y = 0; y < board.cols; ++y) {
+            const ObservedBoard::CellState state = board.board[x][y];
+            if (state == ObservedBoard::CellState::Hidden)
                 result.marks[x][y] = Mark::T;
-                break;
-            case ObservedBoard::CellState::ForcedMine:
+            else if (state == ObservedBoard::CellState::ForcedMine)
                 result.marks[x][y] = Mark::F;
-                break;
-            case ObservedBoard::CellState::ForcedSafe:
+            else if (state == ObservedBoard::CellState::ForcedSafe)
                 result.marks[x][y] = Mark::S;
-                break;
-            }
+            else
+                assert_(isNumber(state), "Basic::analyze: 未处理的 CellState");
+        }
 
     // 前沿：邻接数字的隐藏格从 T 变 H。
     for (int x = 0; x < board.rows; ++x)
