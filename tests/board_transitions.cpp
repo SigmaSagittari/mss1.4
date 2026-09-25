@@ -1,4 +1,4 @@
-// ObservedBoard 迁移契约的可执行形式：合法迁移走行为级验证，非法迁移是规范表（待子进程测试器）。
+// ObservedBoard 迁移契约的可执行形式：合法迁移走行为级验证；非法迁移由断言挡住，不测。
 #include <array>
 #include <cstddef>
 #include <string_view>
@@ -12,27 +12,8 @@ namespace {
 
 using State = mss::ObservedBoard::CellState;
 
-// 非法迁移规范表。update 在这些输入上必须 assert 杀死进程 —— 进程内验证不了
-// （assert 会 exit），需要一个跑子进程的测试器；在那之前这几行是规范文档，
-// 不会红（明确标记，避免被误当成已覆盖的用例）。合法迁移那一侧见
-// testLegalTransitions()，它是行为级验证，不依赖本表。
-struct TransitionCase {
-    State from;
-    State to;
-    std::string_view why;
-};
-
-[[maybe_unused]] constexpr std::array<TransitionCase, 8> kIllegalTransitions{{
-    {State::Num3, State::Num3, "同一格重复 update（1.4 的 target must be Hidden）"},
-    {State::ForcedMine, State::ForcedMine, "重复断言同一事实"},
-    {State::ForcedMine, State::ForcedSafe, "改判（1.4 不允许）"},
-    {State::Num0, State::Num1, "已翻开的数字不能再被 update 改写"},
-    {State::Hidden, State::Hidden, "update 永远不能把格子置回 Hidden"},
-    {State::Num3, State::Hidden, "撤销只能走 reverseDelta"},
-    {State::ForcedSafe, State::Hidden, "同上"},
-    {State::ForcedMine, State::Num1, "断言过的格子不能再翻开"},
-}};
-
+// 非法迁移（重复 update、改判、置回 Hidden）由 update 内部的断言挡住。断言会
+// exit，进程内测不了；按约定不为它引入子进程测试器。
 constexpr std::array<State, 12> kAllStates{
     State::Num0, State::Num1, State::Num2, State::Num3, State::Num4, State::Num5, State::Num6,
     State::Num7, State::Num8, State::Hidden, State::ForcedMine, State::ForcedSafe};
