@@ -74,17 +74,23 @@ void testGeometry() {
 void testDeltaRoundTrip() {
     mss::ObservedBoard::Result board = mss::ObservedBoard::analyze(3, 3, 1);
     mss::ObservedBoard::Delta delta;
-    delta.changes.push_back({board.id(0, 0), State::Num1, State::Hidden});
-    delta.changes.push_back({board.id(0, 1), State::ForcedMine, State::Hidden});
+    delta.changes.push_back({board.id(0, 0), State::Num1});
+    delta.changes.push_back({board.id(0, 1), State::ForcedMine});
     const std::size_t capacity = delta.changes.capacity();
 
     mss::ObservedBoard::update(board, delta);
     check(board.board[0][0] == State::Num1, "正向应用：数字");
     check(board.board[0][1] == State::ForcedMine, "正向应用：断言");
-    for (const mss::ObservedBoard::Change &change : delta.changes)
-        check(change.previous == State::Hidden, "previous 必须被 update 回写（当前契约下恒为 Hidden）");
 
-    mss::ObservedBoard::applyDelta(board, delta);  // reverse=true
+    // 编译期契约：update 只读 Delta —— 传 const Delta 必须能编译并通过。
+    const mss::ObservedBoard::Delta constDelta = delta;
+    mss::ObservedBoard::applyDelta(board, constDelta);
+    check(board.board[0][0] == State::Hidden && board.board[0][1] == State::Hidden, "撤销 = 恢复为 Hidden");
+    mss::ObservedBoard::update(board, constDelta);
+    check(board.board[0][0] == State::Num1 && board.board[0][1] == State::ForcedMine, "只读 Delta 也能应用");
+
+    // 逆序撤销（多格时从后往前；单格场景下顺序不可观测，但契约如此）
+    mss::ObservedBoard::applyDelta(board, delta);
     check(board.board[0][0] == State::Hidden && board.board[0][1] == State::Hidden, "逆序撤销必须回到 Hidden");
 
     mss::ObservedBoard::applyDelta(board, delta, false);
@@ -92,7 +98,7 @@ void testDeltaRoundTrip() {
 
     delta.clear();
     check(delta.changes.empty() && delta.changes.capacity() == capacity, "clear 必须保留 capacity");
-    delta.changes.push_back({board.id(1, 1), State::Num0, State::Hidden});
+    delta.changes.push_back({board.id(1, 1), State::Num0});
     mss::ObservedBoard::update(board, delta);
     check(board.board[1][1] == State::Num0, "Delta 复用");
 }
