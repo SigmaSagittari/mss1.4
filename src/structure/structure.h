@@ -39,11 +39,19 @@ namespace mss {
 //   对应关系：两者 Box 数相同；Shape 的第 i 条约束 ↔ Instance 的第 i 个 constraintCell（同序）。
 //
 // 【Box 与约束】
-//   Box    邻接数字集合完全相同的 H 格集合。不变量：1 <= size <= 8
-//          （H 格至少邻接一个数字；任一数字最多 8 个邻居，故共同邻居不超过 8）。
+//   Box    邻接数字集合完全相同的 H 格集合。
 //   约束   sum    = 数字值 − 该数字邻域内已被确定的雷数（Basic 的 F 标记）
-//          boxIds = 该数字邻接到的 Box 集合（按邻域遍历顺序去重；count 可能为 0，
+//          boxIds = 该数字邻接到的 Box 集合（按邻域遍历顺序去重；区间长度可为 0，
 //                   表示该数字周围没有候选 Box，此时 ConstraintView 的 boxIds 为空）
+//
+//   约束的 boxIds 是池里一段连续区间，用项目统一的 vectorPool<BoxId>::vector 句柄表示
+//   —— 和 boxes_ / cells_ / boxOf_ 同一套词汇，不手搓 offset/count。
+//   两条不变量来自同一个事实 —— **一个格子的邻居上限是 8**：
+//     · Box::size <= kMaxBoxSize(8)：同签名格子都是同一数字的邻居，交集不超过 8；
+//     · 一条约束引用的 Box 数 <= kMaxConstraintBoxes(8)：邻居格至多 8 个，各自落在一个 Box 里。
+//   它们是**构建期校验**（assert），不是存储形态：区间长度由句柄的 size 自带，
+//   按实际引用数分配 → 没有定长浪费。
+//
 //   Shape 里**不存数字格** —— 这是 Shape 能按内容去重的前提；数字格在 Instance 里。
 //
 // 【Result::cellLoc】按 CellId 稠密索引（长度 rows*cols）
@@ -84,6 +92,10 @@ namespace mss {
 // ═══════════════════════════════════════════════════════════════════════
 
 struct Structure {
+    // 一个格子的邻居上限是 8：Box 尺寸与每条约束引用的 Box 数都受它约束。
+    static constexpr int kMaxBoxSize = 8;
+    static constexpr int kMaxConstraintBoxes = 8;
+
     using ComponentId = int;
     using BoxId = int;
     using ShapeId = int;
@@ -95,8 +107,7 @@ struct Structure {
 
     struct Constraint {
         int sum = 0;
-        std::uint32_t offset = 0;
-        std::uint8_t count = 0;
+        vectorPool<BoxId>::vector boxIds; // 本约束引用到的 Box 集合（池里一段区间）
     };
 
     struct ConstraintView {
@@ -116,7 +127,7 @@ struct Structure {
       private:
         vectorPool<Box>::vector boxes_;
         vectorPool<Constraint>::vector constraints_;
-        vectorPool<BoxId>::vector boxIds_;
+        vectorPool<BoxId>::vector boxIds_; // 本 Shape 全部约束的 Box 引用，首尾相接
         U128 hash_ = {};
 
         friend struct Pool;
@@ -207,8 +218,7 @@ struct Structure {
         std::vector<int> boxOfCells;
         std::vector<std::array<ObservedBoard::CellId, 8>> buckets;
         std::vector<std::uint8_t> bucketSize;
-        std::vector<char> boxUsed;
-        std::vector<BoxId> allBoxIds;
+        std::vector<char> boxUsed; // 按 BoxId 索引：本条约束里该 Box 是否已记过
     };
 
     // 全量构建：扫出所有组件 → 压缩 Box → 建约束 → 写池 → 铺 cellLoc。
