@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{E79C07F5-9B9A-48F6-B733-681BC43DB8F9}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>mss14</RootNamespace>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <OutDir>$(ProjectDir)build-vs\Debug\</OutDir>
+    <IntDir>$(ProjectDir)build-vs\obj\Debug\</IntDir>
+    <TargetName>mss1.4-test</TargetName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <OutDir>$(ProjectDir)build-vs\Release\</OutDir>
+    <IntDir>$(ProjectDir)build-vs\obj\Release\</IntDir>
+    <TargetName>mss1.4-test</TargetName>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <DisableSpecificWarnings>4146;4244;4267;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>dbghelp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <DisableSpecificWarnings>4146;4244;4267;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>dbghelp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="src\main.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\algo\probability_engine\basic.h" />
+    <ClInclude Include="src\algo\probability_engine\bruteforce\bruteforce.h" />
+    <ClInclude Include="src\algo\probability_engine\bruteforce\bruteforce_common.h" />
+    <ClInclude Include="src\algo\probability_engine\bruteforce\bruteforce_normal.h" />
+    <ClInclude Include="src\algo\probability_engine\bruteforce\multimask\bruteforce_multimask.h" />
+    <ClInclude Include="src\algo\probability_engine\bruteforce\multimask\bruteforce_multimask_rootparallel.h" />
+    <ClInclude Include="src\algo\probability_engine\observed_board.h" />
+    <ClInclude Include="src\algo\probability_engine\probability\probability.h" />
+    <ClInclude Include="src\algo\probability_engine\probability\observe.h" />
+    <ClInclude Include="src\algo\probability_engine\probability\probability_external.h" />
+    <ClInclude Include="src\algo\probability_engine\shape_solver\dfs_solver.h" />
+    <ClInclude Include="src\algo\probability_engine\shape_solver\graph_solver\graph_solver.h" />
+    <ClInclude Include="src\algo\probability_engine\shape_solver\graph_solver\graph_solver_dp.h" />
+    <ClInclude Include="src\algo\probability_engine\shape_solver\graph_solver\graph_solver_order.h" />
+    <ClInclude Include="src\algo\probability_engine\shape_solver\shape_solver.h" />
+    <ClInclude Include="src\algo\probability_engine\shape_solver\shape_solver_common.h" />
+    <ClInclude Include="src\algo\probability_engine\structure.h" />
+    <ClInclude Include="src\algo\winrate_solver\java_transplant\java_evaluate.h" />
+    <ClInclude Include="src\algo\winrate_solver\java_transplant\long_term_risk_helper.h" />
+    <ClInclude Include="src\algo\winrate_solver\java_transplant\pseudo_helper.h" />
+    <ClInclude Include="src\algo\winrate_solver\native_solver\logic_component_solver.h" />
+    <ClInclude Include="src\algo\winrate_solver\native_solver\logic_structure.h" />
+    <ClInclude Include="src\algo\winrate_solver\native_solver\native_solver.h" />
+    <ClInclude Include="src\core\assert.h" />
+    <ClInclude Include="src\core\config.h" />
+    <ClInclude Include="src\core\workspace.h" />
+    <ClInclude Include="src\core\utility\combinatorics.h" />
+    <ClInclude Include="src\core\utility\dynamic_bitset.h" />
+    <ClInclude Include="src\core\utility\flat_hashtable.h" />
+    <ClInclude Include="src\core\utility\grid.h" />
+    <ClInclude Include="src\core\utility\hash.h" />
+    <ClInclude Include="src\core\utility\neighbors.h" />
+    <ClInclude Include="src\core\utility\radix_sort.h" />
+    <ClInclude Include="src\core\utility\rng.h" />
+    <ClInclude Include="src\test\basic.h" />
+    <ClInclude Include="src\test\bruteforce.h" />
+    <ClInclude Include="src\test\common.h" />
+    <ClInclude Include="src\test\flat_hashtable.h" />
+    <ClInclude Include="src\test\harness.h" />
+    <ClInclude Include="src\test\logic_component_solver.h" />
+    <ClInclude Include="src\test\observed_board.h" />
+    <ClInclude Include="src\test\performance.h" />
+    <ClInclude Include="src\test\probability_case.h" />
+    <ClInclude Include="src\test\radix_sort.h" />
+    <ClInclude Include="src\test\real_endgame_performance.h" />
+    <ClInclude Include="src\test\structure.h" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets" />
+</Project>
