@@ -1,0 +1,385 @@
+#pragma once
+
+#include "algo/probability_engine/shape_solver/graph_solver/graph_solver.h"
+
+namespace mss {
+
+inline ShapeSolver::GraphSolver::Graph ShapeSolver::GraphSolver::Graph::fromShape(const Structure::Shape &shape,
+                                                                                    const Structure::Pool &shapes) {
+    // 将每条约束中的 Box 两两连接，构建消元排序使用的邻接图；同一约束中的
+    // 任意两个 Box 必须在消元前互相可见，才能在局部状态中检查约束剩余量。
+    const int boxCount = shape.boxes.size;
+    Graph graph;
+    graph.offsets.assign(boxCount + 1, 0);
+
+    std::vector<int> head(boxCount, -1);
+    std::vector<Structure::BoxId> to;
+    std::vector<int> next;
+    std::vector<char> marked(boxCount, 0);
+
+    auto addEdge = [&](Structure::BoxId from, Structure::BoxId target) {
+        next.push_back(head[from]);
+        to.push_back(target);
+        head[from] = to.size() - 1;
+    };
+
+    for (int i = 0; i < (int)(shape.constraintCount()); ++i) {
+        const Structure::Shape::ConstraintView constraint = shape.constraint(shapes, i);
+        for (int a = 0; a < (int)(constraint.boxIds.size()); ++a)
+            for (int b = a + 1; b < (int)(constraint.boxIds.size()); ++b) {
+                addEdge(constraint.boxIds[a], constraint.boxIds[b]);
+                addEdge(constraint.boxIds[b], constraint.boxIds[a]);
+            }
+    }
+
+    for (Structure::BoxId box = 0; box < boxCount; ++box) {
+        for (int edge = head[box]; edge >= 0; edge = next[edge]) {
+            const Structure::BoxId target = to[edge];
+            if (marked[target])
+                continue;
+            marked[target] = 1;
+            ++graph.offsets[box + 1];
+        }
+        for (int edge = head[box]; edge >= 0; edge = next[edge])
+            marked[to[edge]] = 0;
+    }
+    for (int box = 0; box < boxCount; ++box)
+        graph.offsets[box + 1] += graph.offsets[box];
+
+    graph.adjacent.resize(graph.offsets.back());
+    for (Structure::BoxId box = 0; box < boxCount; ++box) {
+        int write = graph.offsets[box];
+        for (int edge = head[box]; edge >= 0; edge = next[edge]) {
+            const Structure::BoxId target = to[edge];
+            if (marked[target])
+                continue;
+            marked[target] = 1;
+            graph.adjacent[write++] = target;
+        }
+        for (int edge = head[box]; edge >= 0; edge = next[edge])
+            marked[to[edge]] = 0;
+    }
+    return graph;
+}
+
+inline std::span<const Structure::BoxId> ShapeSolver::GraphSolver::Graph::neighbors(Structure::BoxId box) const {
+    // 返回指定 Box 在压缩邻接数组中的邻居视图。
+    const int begin = offsets[box];
+    const int end = offsets[box + 1];
+    return std::span<const Structure::BoxId>(adjacent.data() + begin, end - begin);
+}
+
+inline std::pair<int, int> ShapeSolver::GraphSolver::orderScore(const Graph &graph, const std::vector<Structure::BoxId> &order, Workspace &workspace) {
+    // 评估一个 Box 顺序的峰值边界宽度和累计边界面积；makeOrder 用它比较
+    // 局部排列和模拟退火结果，优先降低 Graph DP 的峰值状态数。
+    const int boxCount = order.size();
+    // 调用方 Workspace 串行复用评分 scratch，避免 SA 每轮重复申请。
+    Workspace::OrderScore &orderWorkspace = workspace.orderScore;
+    std::vector<int> &remaining = orderWorkspace.remaining;
+    std::vector<char> &selected = orderWorkspace.selected;
+    remaining.resize(graph.offsets.size() - 1);
+    selected.assign(remaining.size(), 0);
+    for (Structure::BoxId box = 0; box < boxCount; ++box)
+        remaining[box] = graph.neighbors(box).size();
+
+    int frontier = 0;
+    int peak = 0;
+    int area = 0;
+    for (Structure::BoxId box : order) {
+        if (remaining[box] != 0)
+            ++frontier;
+        for (Structure::BoxId neighbor : graph.neighbors(box))
+            if (selected[neighbor] && remaining[neighbor] == 1)
+                --frontier;
+        selected[box] = 1;
+        for (Structure::BoxId neighbor : graph.neighbors(box))
+            --remaining[neighbor];
+        peak = (std::max)(peak, frontier);
+        area += frontier;
+    }
+    return {peak, area};
+}
+
+inline Structure::BoxId ShapeSolver::GraphSolver::farthestBox(const Graph &graph, Structure::BoxId source) {
+    const int boxCount = graph.offsets.size() - 1;
+    std::vector<int> distance(boxCount, -1);
+    std::vector<Structure::BoxId> queue;
+    queue.reserve(boxCount);
+    distance[source] = 0;
+    queue.push_back(source);
+    Structure::BoxId farthest = source;
+    for (int head = 0; head < (int)(queue.size()); ++head) {
+        const Structure::BoxId box = queue[head];
+        if (distance[box] > distance[farthest] || (distance[box] == distance[farthest] && box < farthest))
+            farthest = box;
+        for (Structure::BoxId neighbor : graph.neighbors(box))
+            if (distance[neighbor] < 0) {
+                distance[neighbor] = distance[box] + 1;
+                queue.push_back(neighbor);
+            }
+    }
+    return farthest;
+}
+
+inline std::vector<Structure::BoxId> ShapeSolver::GraphSolver::makeGreedyOrder(const Graph &graph, Structure::BoxId first, bool lookahead) {
+    const int boxCount = graph.offsets.size() - 1;
+    const Structure::BoxId fallback = first >= 0 ? first : farthestBox(graph, 0);
+    std::vector<Structure::BoxId> order;
+    order.reserve(boxCount);
+    std::vector<int> remaining(boxCount);
+    std::vector<char> selected(boxCount, 0);
+    for (Structure::BoxId box = 0; box < boxCount; ++box)
+        remaining[box] = graph.neighbors(box).size();
+
+    int frontier = 0;
+    for (int step = 0; step < boxCount; ++step) {
+        Structure::BoxId best = -1;
+        if (step == 0 && first >= 0) {
+            best = first;
+        } else {
+            int bestDelta = 0;
+            std::vector<Structure::BoxId> ties;
+            for (Structure::BoxId candidate = 0; candidate < boxCount; ++candidate) {
+                if (selected[candidate])
+                    continue;
+                int closes = 0;
+                for (Structure::BoxId neighbor : graph.neighbors(candidate))
+                    if (selected[neighbor] && remaining[neighbor] == 1)
+                        ++closes;
+                const int delta = (remaining[candidate] != 0) - closes;
+                if (best < 0 || delta < bestDelta) {
+                    best = candidate;
+                    bestDelta = delta;
+                    if (lookahead) {
+                        ties.clear();
+                        ties.push_back(candidate);
+                    }
+                } else if (lookahead && delta == bestDelta) {
+                    ties.push_back(candidate);
+                }
+            }
+
+            if (lookahead && ties.size() > 1) {
+                std::pair<int, int> previewBest{boxCount + 1, boxCount + 1};
+                for (Structure::BoxId candidate : ties) {
+                    std::vector<int> nextRemaining = remaining;
+                    std::vector<char> nextSelected = selected;
+                    int nextFrontier = frontier;
+                    if (nextRemaining[candidate] != 0)
+                        ++nextFrontier;
+                    for (Structure::BoxId neighbor : graph.neighbors(candidate))
+                        if (nextSelected[neighbor] && nextRemaining[neighbor] == 1)
+                            --nextFrontier;
+                    nextSelected[candidate] = 1;
+                    for (Structure::BoxId neighbor : graph.neighbors(candidate))
+                        --nextRemaining[neighbor];
+
+                    int nextDelta = 0;
+                    Structure::BoxId nextBest = -1;
+                    for (Structure::BoxId follow = 0; follow < boxCount; ++follow) {
+                        if (nextSelected[follow])
+                            continue;
+                        int closes = 0;
+                        for (Structure::BoxId neighbor : graph.neighbors(follow))
+                            if (nextSelected[neighbor] && nextRemaining[neighbor] == 1)
+                                ++closes;
+                        const int delta = (nextRemaining[follow] != 0) - closes;
+                        if (nextBest < 0 || delta < nextDelta) {
+                            nextBest = follow;
+                            nextDelta = delta;
+                        }
+                    }
+                    const std::pair<int, int> preview{(std::max)(nextFrontier, nextFrontier + nextDelta), nextDelta};
+                    if (preview < previewBest) {
+                        previewBest = preview;
+                        best = candidate;
+                    }
+                }
+            }
+        }
+
+        if (best < 0)
+            best = fallback;
+        if (remaining[best] != 0)
+            ++frontier;
+        for (Structure::BoxId neighbor : graph.neighbors(best))
+            if (selected[neighbor] && remaining[neighbor] == 1)
+                --frontier;
+        selected[best] = 1;
+        order.push_back(best);
+        for (Structure::BoxId neighbor : graph.neighbors(best))
+            --remaining[neighbor];
+    }
+    return order;
+}
+
+inline std::vector<Structure::BoxId> ShapeSolver::GraphSolver::makeWindow3Order(const Graph &graph, std::vector<Structure::BoxId> order,
+                                                                     Workspace &workspace) {
+    const int boxCount = graph.offsets.size() - 1;
+    for (int start = 0; start < boxCount; start += 3) {
+        const int length = (std::min)(3, boxCount - start);
+        std::array<Structure::BoxId, 3> candidate{};
+        std::array<Structure::BoxId, 3> best{};
+        for (int i = 0; i < length; ++i) {
+            candidate[i] = order[start + i];
+            best[i] = candidate[i];
+        }
+        std::pair<int, int> bestScore = orderScore(graph, order, workspace);
+
+        auto consider = [&] {
+            for (int i = 0; i < length; ++i)
+                order[start + i] = candidate[i];
+            const std::pair<int, int> score = orderScore(graph, order, workspace);
+            if (score < bestScore) {
+                bestScore = score;
+                best = candidate;
+            }
+        };
+
+        if (length == 1) {
+            consider();
+        } else if (length == 2) {
+            if (candidate[1] < candidate[0])
+                std::swap(candidate[0], candidate[1]);
+            consider();
+            std::swap(candidate[0], candidate[1]);
+            consider();
+        } else {
+            std::sort(candidate.begin(), candidate.end());
+            do {
+                consider();
+            } while (std::next_permutation(candidate.begin(), candidate.end()));
+        }
+        for (int i = 0; i < length; ++i)
+            order[start + i] = best[i];
+    }
+    return order;
+}
+
+inline std::vector<Structure::BoxId> ShapeSolver::GraphSolver::makeSAOrder(const Graph &graph, std::vector<Structure::BoxId> seed, Workspace &workspace) {
+    const int boxCount = graph.offsets.size() - 1;
+    auto nextRandom = [](std::uint64_t &state) {
+        const std::uint64_t value = splitmix64(state);
+        state += 0x9e3779b97f4a7c15ULL;
+        return value;
+    };
+    auto unitRandom = [&](std::uint64_t &state) {
+        return (nextRandom(state) >> 11) * (1.0 / 9007199254740992.0);
+    };
+    auto energy = [](const std::pair<int, int> score) {
+        return score.first * 20000 + score.second;
+    };
+
+    constexpr int rounds = 8;
+    constexpr int iterations = 50000;
+    constexpr double startTemperature = 40000.0;
+    constexpr double endTemperature = 0.1;
+    const double cooling = std::pow(endTemperature / startTemperature, 1.0 / (iterations - 1));
+    std::vector<Structure::BoxId> bestOrder = seed;
+    // 调用方 Workspace 复用 SA 的两个候选缓冲；接受候选时交换缓冲所有权。
+    Workspace::MakeSAOrder &saWorkspace = workspace.makeSAOrder;
+    std::vector<Structure::BoxId> &current = saWorkspace.current;
+    std::vector<Structure::BoxId> &candidate = saWorkspace.candidate;
+    current.reserve(boxCount);
+    candidate.reserve(boxCount);
+    std::pair<int, int> bestScore = orderScore(graph, bestOrder, workspace);
+    for (int round = 0; round < rounds; ++round) {
+        std::uint64_t state = 0x9e3779b97f4a7c15ULL + round * 0x6a09e667f3bcc909ULL;
+        current = seed;
+        for (int perturb = 0; perturb < round; ++perturb) {
+            const int left = nextRandom(state) % boxCount;
+            const int right = nextRandom(state) % boxCount;
+            std::swap(current[left], current[right]);
+        }
+        std::pair<int, int> currentScore = orderScore(graph, current, workspace);
+        int currentEnergy = energy(currentScore);
+        double temperature = startTemperature;
+        for (int iteration = 0; iteration < iterations; ++iteration) {
+            candidate = current;
+            const int left = nextRandom(state) % boxCount;
+            const int right = nextRandom(state) % boxCount;
+            const bool swap = nextRandom(state) % 2 == 0;
+            if (swap) {
+                std::swap(candidate[left], candidate[right]);
+            } else {
+                const Structure::BoxId value = candidate[left];
+                if (left < right) {
+                    for (int i = left; i < right; ++i)
+                        candidate[i] = candidate[i + 1];
+                } else if (right < left) {
+                    for (int i = left; i > right; --i)
+                        candidate[i] = candidate[i - 1];
+                }
+                candidate[right] = value;
+            }
+            const std::pair<int, int> candidateScore = orderScore(graph, candidate, workspace);
+            const int candidateEnergy = energy(candidateScore);
+            const int difference = currentEnergy - candidateEnergy;
+            const bool accept = difference >= 0 || unitRandom(state) < std::exp(difference / temperature);
+            if (candidateScore < bestScore) {
+                bestOrder = candidate;
+                bestScore = candidateScore;
+            }
+            if (accept) {
+                current.swap(candidate);
+                currentScore = candidateScore;
+                currentEnergy = candidateEnergy;
+            }
+            temperature *= cooling;
+        }
+    }
+    return bestOrder;
+}
+
+inline std::vector<Structure::BoxId> ShapeSolver::GraphSolver::makeAutoOrder(const Graph &graph, Workspace &workspace) {
+    const Structure::BoxId initial = farthestBox(graph, 0);
+    std::vector<Structure::BoxId> best = makeGreedyOrder(graph, initial, false);
+    std::pair<int, int> bestScore = orderScore(graph, best, workspace);
+    if (bestScore.first <= 15)
+        return best;
+
+    std::vector<Structure::BoxId> candidate = makeWindow3Order(graph, best, workspace);
+    std::pair<int, int> candidateScore = orderScore(graph, candidate, workspace);
+    if (candidateScore < bestScore) {
+        best = candidate;
+        bestScore = candidateScore;
+    }
+    return best;
+}
+
+inline std::vector<Structure::BoxId> ShapeSolver::GraphSolver::makeAutoSAOrder(const Graph &graph, Workspace &workspace) {
+    std::vector<Structure::BoxId> best = makeAutoOrder(graph, workspace);
+    std::pair<int, int> bestScore = orderScore(graph, best, workspace);
+    if (bestScore.first <= 15)
+        return best;
+
+    std::vector<Structure::BoxId> candidate = makeSAOrder(graph, makeGreedyOrder(graph, -1, true), workspace);
+    const std::pair<int, int> candidateScore = orderScore(graph, candidate, workspace);
+    if (candidateScore < bestScore)
+        best = std::move(candidate);
+    return best;
+}
+
+inline std::vector<Structure::BoxId> ShapeSolver::GraphSolver::makeOrder(const Graph &graph, const OrderAlgo &algo, Workspace &workspace) {
+    const Structure::BoxId initial = farthestBox(graph, 0);
+    switch (algo) {
+    case OrderAlgo::Adjacent:
+        return makeGreedyOrder(graph, initial, false);
+    case OrderAlgo::Window3:
+        return makeWindow3Order(graph, makeGreedyOrder(graph, initial, false), workspace);
+    case OrderAlgo::SA:
+        return makeSAOrder(graph, makeGreedyOrder(graph, -1, true), workspace);
+    case OrderAlgo::Auto:
+        return makeAutoOrder(graph, workspace);
+    case OrderAlgo::AutoSA:
+        return makeAutoSAOrder(graph, workspace);
+    }
+    assert_(false, "GraphSolver::makeOrder: invalid order algorithm");
+#if defined(_MSC_VER)
+    __assume(0);
+#else
+    __builtin_unreachable();
+#endif
+}
+
+} // namespace mss

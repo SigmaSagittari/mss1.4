@@ -31,7 +31,7 @@ template <typename T> struct vectorPool {
     }
 
     vector push_back() {
-        return {static_cast<int>(_data.size()), 0};
+        return {(int)(_data.size()), 0};
     }
 
     void pop_back(const vector &value) {
